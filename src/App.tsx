@@ -1,4 +1,5 @@
 import {
+  ApiOutlined,
   BulbOutlined,
   CheckCircleOutlined,
   CloudUploadOutlined,
@@ -44,6 +45,7 @@ import {
 import TextArea from "antd/es/input/TextArea";
 import { useMemo, useState } from "react";
 import type { AnalysisResponse, Evidence, LocatorType, Priority, Severity } from "./types";
+import ApiTesting from "./ApiTesting";
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -339,6 +341,7 @@ function UploadPanel({
 function Workbench() {
   const { message: toast } = AntdApp.useApp();
   const [collapsed, setCollapsed] = useState(false);
+  const [activePage, setActivePage] = useState<"chat" | "api">("chat");
   const [prompt, setPrompt] = useState("帮我分析这个需求");
   const [attachments, setAttachments] = useState<UploadFile[]>([]);
   const [knowledge, setKnowledge] = useState<UploadFile[]>([]);
@@ -432,10 +435,14 @@ function Workbench() {
           <Menu
             theme="dark"
             mode="inline"
-            selectedKeys={["chat"]}
+            selectedKeys={[activePage]}
+            onClick={({ key }) => {
+              if (key === "chat" || key === "api") setActivePage(key);
+            }}
             items={[
               { key: "overview", icon: <BulbOutlined />, label: "工作台概览", disabled: true },
               { key: "chat", icon: <MessageOutlined />, label: "AI 需求分析" },
+              { key: "api", icon: <ApiOutlined />, label: "API 测试" },
               { key: "knowledge", icon: <DatabaseOutlined />, label: "项目资料", disabled: true },
             ]}
           />
@@ -447,8 +454,8 @@ function Workbench() {
                   进行中
                 </Tag>
               </Flex>
-              <Text className="phase-title">P01 · 需求分析</Text>
-              <Text className="phase-copy">只交付多模态 PRD 分析闭环</Text>
+              <Text className="phase-title">P02 · API 测试闭环</Text>
+              <Text className="phase-copy">OpenAPI → Schemathesis → TestRun</Text>
             </div>
           )}
         </Sider>
@@ -463,19 +470,22 @@ function Workbench() {
                   onClick={() => setCollapsed((value) => !value)}
                 />
                 <div>
-                  <Title level={4}>AI 需求分析</Title>
-                  <Text type="secondary">{subtitle}</Text>
+                  <Title level={4}>{activePage === "chat" ? "AI 需求分析" : "API 测试"}</Title>
+                  <Text type="secondary">
+                    {activePage === "chat" ? subtitle : "导入 OpenAPI，关联需求与证据并运行 Schemathesis"}
+                  </Text>
                 </div>
               </Space>
               <Space>
-                <Tag color="blue">Responses API</Tag>
+                <Tag color="blue">{activePage === "chat" ? "Responses API" : "Schemathesis 4.24.3"}</Tag>
                 <Avatar className="user-avatar">U</Avatar>
               </Space>
             </Flex>
           </Header>
 
           <Content className="app-content">
-            <div className="workspace-grid">
+            {activePage === "chat" ? (
+              <div className="workspace-grid">
               <section className="chat-panel">
                 <div className="chat-feed">
                   {messages.length === 0 && (
@@ -623,7 +633,10 @@ function Workbench() {
                   </Space>
                 </Card>
               </aside>
-            </div>
+              </div>
+            ) : (
+              <ApiTesting />
+            )}
           </Content>
         </Layout>
       </Layout>

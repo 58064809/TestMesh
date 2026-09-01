@@ -474,6 +474,112 @@ body {
   line-height: 1.55;
 }
 
+.api-testing-page {
+  height: 100%;
+  overflow: auto;
+  overflow-x: hidden;
+}
+
+.api-config-card,
+.api-testing-page > .ant-row > .ant-col > .ant-card,
+.api-main-stack > .ant-card {
+  border-color: #e6eaf2;
+  box-shadow: 0 10px 32px rgb(25 41 89 / 5%);
+}
+
+.api-config-card .ant-upload-drag-icon {
+  margin-bottom: 5px !important;
+}
+
+.api-config-card .ant-upload-drag-icon .anticon {
+  color: #2457f5 !important;
+}
+
+.api-import-button {
+  margin-top: 12px;
+}
+
+.api-field {
+  display: grid;
+  margin: 18px 0;
+  gap: 8px;
+}
+
+.api-field > .ant-select {
+  width: 100%;
+}
+
+.api-secret-note,
+.api-run-note {
+  display: block;
+  font-size: 11px;
+}
+
+.api-run-note {
+  margin-top: 8px;
+  text-align: center;
+}
+
+.api-main-stack {
+  width: 100%;
+}
+
+.api-spec-heading h5.ant-typography {
+  margin: 0 0 3px;
+}
+
+.api-trace-warning {
+  margin-top: 14px;
+}
+
+.api-operation-card,
+.api-failure-card {
+  width: 100%;
+}
+
+.api-operation-card {
+  border-color: #e8ecf4;
+  background: #fbfcff;
+}
+
+.api-link-row {
+  margin-top: 13px;
+}
+
+.api-link-row .ant-select {
+  width: 100%;
+}
+
+.api-checks {
+  margin-top: 13px;
+}
+
+.api-failure-card {
+  border-left: 3px solid #ff4d4f;
+}
+
+.api-detail-block {
+  margin-top: 13px;
+}
+
+.api-detail-block pre {
+  max-height: 210px;
+  margin: 6px 0 0;
+  padding: 11px 13px;
+  overflow: auto;
+  border-radius: 8px;
+  background: #111a32;
+  color: #e8edff;
+  font: 12px/1.65 "Cascadia Code", Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.run-warning-icon {
+  color: #fa8c16;
+  font-size: 17px;
+}
+
 @media (max-width: 1080px) {
   .workspace-grid {
     grid-template-columns: minmax(0, 1fr) 270px;
@@ -513,6 +619,10 @@ body {
 
   .message-bubble {
     max-width: 85%;
+  }
+
+  .api-testing-page {
+    overflow: visible;
   }
 }
 

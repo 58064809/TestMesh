@@ -1,6 +1,6 @@
 # TestMesh
 
-TestMesh 是一个 reuse-first 的 AI 测试工程工作台。当前仓库只实现 **P01：PRD 多模态需求分析**。
+TestMesh 是一个 reuse-first 的 AI 测试工程工作台。当前仓库已完成 **P01：PRD 多模态需求分析** 和 **P02：OpenAPI API 测试闭环**。
 
 ## P01 能力
 
@@ -11,9 +11,18 @@ TestMesh 是一个 reuse-first 的 AI 测试工程工作台。当前仓库只实
 - 结构化需求、风险、待确认问题与证据。
 - 无法可靠定位页/段时显式标记，不生成无证据的替代结果。
 
+## P02 能力
+
+- SQLite 持久化 Requirement、Risk、Evidence、TestCase 与 TestRun。
+- 导入 OpenAPI 3.x JSON/YAML，一条 operation 生成一条 TestCase 定义。
+- TestCase 关联需求与证据。
+- 固定通过 `uvx schemathesis@4.24.3` 执行，单 worker、deterministic、zero retry。
+- JUnit 失败结果保存 operation、checks、request、response 与 reproduction。
+- 最小 Header/Bearer/Basic Auth 输入仅用于本次运行，不持久化。
+
 ## 启动
 
-要求 Node.js 22 或更高版本，在 Windows 机器环境变量中提供 `OPENAI_API_KEY`，并启用 Windows 系统代理。
+要求 Node.js 22 或更高版本、`uv`，在 Windows 机器环境变量中提供 `OPENAI_API_KEY`，并启用 Windows 系统代理。
 
 ```bash
 npm install

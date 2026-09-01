@@ -46,6 +46,7 @@ export interface AnalysisResult {
 }
 
 export interface AnalysisResponse {
+  analysisId: string;
   result: AnalysisResult;
   model: string;
   usage: {
@@ -63,3 +64,69 @@ export interface AnalysisResponse {
   }>;
 }
 
+export interface TraceRequirement {
+  id: string;
+  analysisId: string;
+  externalId: string;
+  title: string;
+  description: string;
+  priority: Priority;
+}
+
+export interface TraceEvidence {
+  id: string;
+  analysisId: string;
+  externalId: string;
+  sourceName: string;
+  locatorType: LocatorType;
+  locator: string;
+  excerpt: string;
+}
+
+export interface TestCaseRecord {
+  id: string;
+  specId: string;
+  operationId: string;
+  method: string;
+  path: string;
+  summary: string;
+  requirementIds: string[];
+  evidenceIds: string[];
+}
+
+export interface OpenApiSpecRecord {
+  id: string;
+  name: string;
+  version: string;
+  filename: string;
+  testCases: TestCaseRecord[];
+}
+
+export interface TestRunItem {
+  id: string;
+  testCaseId: string | null;
+  operation: string;
+  status: "passed" | "failed" | "error";
+  durationMs: number;
+  failureType: string;
+  checks: string[];
+  request: string;
+  response: string;
+  reproduction: string;
+  detail: string;
+}
+
+export interface TestRunRecord {
+  id: string;
+  specId: string;
+  targetBaseUrl: string;
+  status: "running" | "passed" | "failed" | "error";
+  startedAt: string;
+  finishedAt: string | null;
+  generatedExamples: number;
+  passed: number;
+  failed: number;
+  exitCode: number | null;
+  runnerOutput: string;
+  items: TestRunItem[];
+}

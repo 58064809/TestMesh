@@ -4,6 +4,7 @@ dist/
 .env.*
 !.env.example
 uploads/
+data/
+.schemathesis/
 *.log
 .DS_Store
-

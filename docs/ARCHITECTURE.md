@@ -49,12 +49,28 @@ TestMesh 采用“统一工作台 + 薄领域层 + 成熟能力适配”的演�
 - 单次请求限制输出 token；不自动重试或切换模型。
 - 上传文件和分析结果不提交到 Git。
 
+## P02 运行结构
+
+```text
+OpenAPI JSON/YAML
+  └─ operation → TestCase 定义
+       ├─ Requirement / Evidence 追溯关系
+       └─ uvx Schemathesis 4.24.3
+             └─ JUnit → TestRun / 失败复现信息
+
+SQLite（better-sqlite3 12.10.0）
+  └─ Requirement / Risk / Evidence / TestCase / TestRun
+```
+
+- Header/Auth 仅进入本次 Runner 进程，不持久化。
+- generated examples 只归属于 TestRun，不展开成 TestCase。
+- JUnit 缺失时 TestRun 标记为 error 并停止，不解析其他报告格式。
+
 ## 后续演进边界
 
-- P02 增加领域数据模型与 Schemathesis API 测试闭环。
+- P02 已交付领域数据模型与 Schemathesis API 测试闭环。
 - P03 接入 OpenHands 提供工程上下文。
 - P04 通过适配层接入 Playwright、Appium、k6、ZAP。
 - P05 增加检索、失败归因、质量门禁和 CI。
 
 任何提前接入均视为路线变更，必须先获用户批准。
-
