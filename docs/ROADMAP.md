@@ -13,7 +13,7 @@
 | --- | --- | --- | --- |
 | P01 | 统一工作台中的 PRD 多模态需求分析闭环 | 已完成 | 获得用户明确授权后进入 P02 |
 | P02 | 领域模型与 OpenAPI API 测试闭环 | 已完成 | 获得用户明确授权后进入 P03 |
-| P03 | 接入 OpenHands 与工程上下文 | 已规划 | P03 全部验收通过后进入 P04 |
+| P03 | 接入 OpenHands 与工程上下文 | 已完成 | 获得用户明确授权后进入 P04 |
 | P04 | 扩展 UI、APP、性能与安全测试 | 已规划 | P04 全部验收通过后进入 P05 |
 | P05 | 检索、失败归因、质量门禁、完整回归与 CI | 已规划 | 路线完成，后续规划须重新批准 |
 
@@ -45,7 +45,7 @@
 - **明确不做**：自研 Agent Loop/Harness/Checkpoint；P04 测试引擎；P05 质量门禁。
 - **依赖**：P02 已完成；OpenHands 的部署与授权方案获批准。
 - **下一阶段入口**：工程上下文闭环通过并获得继续授权后进入 P04。
-- **状态**：已规划。
+- **状态**：已完成。2026-09-02 使用 OpenHands Agent Server 1.44.0 与 TypeScript Client 1.39.0 完成真实工程任务验收；Agent 在只挂载所选仓库的一次性 Docker 容器中执行 `pwd && git status --short --branch`，返回 `/workspace`、`## main` 和退出码 0。共保存 17 条真实 Agent Event、终端证据、最终结论、Token/Cost 与 Git Diff；未暴露 API Key，仓库无改动，容器已清理。详见 `docs/PHASES/P03.md`。
 
 ## P04 — 多类型测试引擎
 

@@ -130,3 +130,62 @@ export interface TestRunRecord {
   runnerOutput: string;
   items: TestRunItem[];
 }
+
+export interface RepositoryInspection {
+  repoPath: string;
+  branch: string;
+  status: string;
+  files: string[];
+}
+
+export interface DockerContainerSummary {
+  id: string;
+  name: string;
+  image: string;
+  status: string;
+}
+
+export type EngineeringTaskStatus =
+  | "queued"
+  | "starting"
+  | "running"
+  | "completed"
+  | "failed"
+  | "stopped";
+
+export interface EngineeringEventRecord {
+  id: string;
+  taskId: string;
+  ordinal: number;
+  kind: string;
+  source: string;
+  timestamp: string;
+  payload: unknown;
+  terminalOutput: string;
+}
+
+export interface EngineeringTaskRecord {
+  id: string;
+  repoPath: string;
+  instruction: string;
+  selectedFiles: string[];
+  logContext: string;
+  dockerContainerId: string;
+  dockerContainerName: string;
+  dockerContext: string;
+  status: EngineeringTaskStatus;
+  model: string;
+  agentServerImage: string;
+  clientVersion: string;
+  conversationId: string;
+  finalResponse: string;
+  terminalOutput: string;
+  gitDiff: string;
+  tokenUsage: unknown;
+  cost: number | null;
+  error: string;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  events: EngineeringEventRecord[];
+}

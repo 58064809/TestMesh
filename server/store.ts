@@ -70,6 +70,51 @@ export interface TestRunRecord {
   items: Array<TestRunItemInput & { id: string }>;
 }
 
+export type EngineeringTaskStatus =
+  | "queued"
+  | "starting"
+  | "running"
+  | "completed"
+  | "failed"
+  | "stopped";
+
+export interface EngineeringEventRecord {
+  id: string;
+  taskId: string;
+  ordinal: number;
+  kind: string;
+  source: string;
+  timestamp: string;
+  payload: unknown;
+  terminalOutput: string;
+}
+
+export interface EngineeringTaskRecord {
+  id: string;
+  repoPath: string;
+  instruction: string;
+  selectedFiles: string[];
+  logContext: string;
+  dockerContainerId: string;
+  dockerContainerName: string;
+  dockerContext: string;
+  status: EngineeringTaskStatus;
+  model: string;
+  agentServerImage: string;
+  clientVersion: string;
+  conversationId: string;
+  finalResponse: string;
+  terminalOutput: string;
+  gitDiff: string;
+  tokenUsage: unknown;
+  cost: number | null;
+  error: string;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  events: EngineeringEventRecord[];
+}
+
 const schema = `
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS analyses (
@@ -170,6 +215,41 @@ CREATE TABLE IF NOT EXISTS test_run_items (
   response_text TEXT NOT NULL,
   reproduction TEXT NOT NULL,
   detail TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS engineering_tasks (
+  id TEXT PRIMARY KEY,
+  repo_path TEXT NOT NULL,
+  instruction TEXT NOT NULL,
+  selected_files TEXT NOT NULL,
+  log_context TEXT NOT NULL,
+  docker_container_id TEXT NOT NULL,
+  docker_container_name TEXT NOT NULL,
+  docker_context TEXT NOT NULL,
+  status TEXT NOT NULL,
+  model TEXT NOT NULL,
+  agent_server_image TEXT NOT NULL,
+  client_version TEXT NOT NULL,
+  conversation_id TEXT NOT NULL DEFAULT '',
+  final_response TEXT NOT NULL DEFAULT '',
+  terminal_output TEXT NOT NULL DEFAULT '',
+  git_diff TEXT NOT NULL DEFAULT '',
+  token_usage TEXT NOT NULL DEFAULT '{}',
+  cost REAL,
+  error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  started_at TEXT,
+  completed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS engineering_task_events (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES engineering_tasks(id) ON DELETE CASCADE,
+  ordinal INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  source TEXT NOT NULL,
+  timestamp TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  terminal_output TEXT NOT NULL,
+  UNIQUE(task_id, ordinal)
 );
 `;
 
@@ -474,6 +554,146 @@ export class DomainStore {
     return {
       ...row,
       items: items.map((item) => ({ ...item, checks: JSON.parse(item.checks) as string[] })),
+    };
+  }
+
+  createEngineeringTask(input: {
+    repoPath: string;
+    instruction: string;
+    selectedFiles: string[];
+    logContext: string;
+    dockerContainerId: string;
+    dockerContainerName: string;
+    dockerContext: string;
+    model: string;
+    agentServerImage: string;
+    clientVersion: string;
+  }): EngineeringTaskRecord {
+    const id = randomUUID();
+    this.db.prepare(
+      `INSERT INTO engineering_tasks
+       (id, repo_path, instruction, selected_files, log_context, docker_container_id,
+        docker_container_name, docker_context, status, model, agent_server_image,
+        client_version, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
+    ).run(
+      id,
+      input.repoPath,
+      input.instruction,
+      JSON.stringify(input.selectedFiles),
+      input.logContext,
+      input.dockerContainerId,
+      input.dockerContainerName,
+      input.dockerContext,
+      input.model,
+      input.agentServerImage,
+      input.clientVersion,
+      new Date().toISOString(),
+    );
+    return this.getEngineeringTask(id);
+  }
+
+  markEngineeringTaskStarted(id: string): void {
+    this.db.prepare(
+      "UPDATE engineering_tasks SET status = 'starting', started_at = ? WHERE id = ?",
+    ).run(new Date().toISOString(), id);
+  }
+
+  markEngineeringTaskRunning(id: string, conversationId: string): void {
+    this.db.prepare(
+      "UPDATE engineering_tasks SET status = 'running', conversation_id = ? WHERE id = ?",
+    ).run(conversationId, id);
+  }
+
+  addEngineeringEvent(input: {
+    taskId: string;
+    ordinal: number;
+    kind: string;
+    source: string;
+    timestamp: string;
+    payload: unknown;
+    terminalOutput: string;
+  }): void {
+    this.db.prepare(
+      `INSERT INTO engineering_task_events
+       (id, task_id, ordinal, kind, source, timestamp, payload, terminal_output)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      randomUUID(),
+      input.taskId,
+      input.ordinal,
+      input.kind,
+      input.source,
+      input.timestamp,
+      JSON.stringify(input.payload),
+      input.terminalOutput,
+    );
+  }
+
+  finishEngineeringTask(input: {
+    id: string;
+    status: "completed" | "failed" | "stopped";
+    finalResponse: string;
+    terminalOutput: string;
+    gitDiff: string;
+    tokenUsage: unknown;
+    cost: number | null;
+    error: string;
+  }): EngineeringTaskRecord {
+    this.db.prepare(
+      `UPDATE engineering_tasks
+       SET status = ?, final_response = ?, terminal_output = ?, git_diff = ?, token_usage = ?,
+           cost = ?, error = ?, completed_at = ?
+       WHERE id = ?`,
+    ).run(
+      input.status,
+      input.finalResponse,
+      input.terminalOutput,
+      input.gitDiff,
+      JSON.stringify(input.tokenUsage),
+      input.cost,
+      input.error,
+      new Date().toISOString(),
+      input.id,
+    );
+    return this.getEngineeringTask(input.id);
+  }
+
+  listEngineeringTasks(): EngineeringTaskRecord[] {
+    const ids = this.db
+      .prepare("SELECT id FROM engineering_tasks ORDER BY created_at DESC LIMIT 20")
+      .all() as Array<{ id: string }>;
+    return ids.map(({ id }) => this.getEngineeringTask(id));
+  }
+
+  getEngineeringTask(id: string): EngineeringTaskRecord {
+    const row = this.db.prepare(
+      `SELECT id, repo_path AS repoPath, instruction, selected_files AS selectedFiles,
+              log_context AS logContext, docker_container_id AS dockerContainerId,
+              docker_container_name AS dockerContainerName, docker_context AS dockerContext,
+              status, model, agent_server_image AS agentServerImage,
+              client_version AS clientVersion, conversation_id AS conversationId,
+              final_response AS finalResponse, terminal_output AS terminalOutput,
+              git_diff AS gitDiff, token_usage AS tokenUsage, cost, error,
+              created_at AS createdAt, started_at AS startedAt, completed_at AS completedAt
+       FROM engineering_tasks WHERE id = ?`,
+    ).get(id) as
+      | (Omit<EngineeringTaskRecord, "selectedFiles" | "tokenUsage" | "events"> & {
+          selectedFiles: string;
+          tokenUsage: string;
+        })
+      | undefined;
+    if (!row) throw new Error(`工程任务 ${id} 不存在`);
+    const events = this.db.prepare(
+      `SELECT id, task_id AS taskId, ordinal, kind, source, timestamp, payload,
+              terminal_output AS terminalOutput
+       FROM engineering_task_events WHERE task_id = ? ORDER BY ordinal`,
+    ).all(id) as Array<Omit<EngineeringEventRecord, "payload"> & { payload: string }>;
+    return {
+      ...row,
+      selectedFiles: JSON.parse(row.selectedFiles) as string[],
+      tokenUsage: JSON.parse(row.tokenUsage) as unknown,
+      events: events.map((event) => ({ ...event, payload: JSON.parse(event.payload) as unknown })),
     };
   }
 }

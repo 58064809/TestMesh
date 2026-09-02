@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.4",
+    "@openhands/typescript-client": "1.39.0",
     "@refinedev/core": "^5.0.12",
     "antd": "^5.29.3",
     "better-sqlite3": "^12.10.0",

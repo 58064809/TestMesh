@@ -2,6 +2,7 @@ import {
   ApiOutlined,
   BulbOutlined,
   CheckCircleOutlined,
+  CodeOutlined,
   CloudUploadOutlined,
   DatabaseOutlined,
   FileSearchOutlined,
@@ -46,6 +47,7 @@ import TextArea from "antd/es/input/TextArea";
 import { useMemo, useState } from "react";
 import type { AnalysisResponse, Evidence, LocatorType, Priority, Severity } from "./types";
 import ApiTesting from "./ApiTesting";
+import EngineeringTasks from "./EngineeringTasks";
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -341,7 +343,7 @@ function UploadPanel({
 function Workbench() {
   const { message: toast } = AntdApp.useApp();
   const [collapsed, setCollapsed] = useState(false);
-  const [activePage, setActivePage] = useState<"chat" | "api">("chat");
+  const [activePage, setActivePage] = useState<"chat" | "api" | "engineering">("engineering");
   const [prompt, setPrompt] = useState("帮我分析这个需求");
   const [attachments, setAttachments] = useState<UploadFile[]>([]);
   const [knowledge, setKnowledge] = useState<UploadFile[]>([]);
@@ -437,12 +439,13 @@ function Workbench() {
             mode="inline"
             selectedKeys={[activePage]}
             onClick={({ key }) => {
-              if (key === "chat" || key === "api") setActivePage(key);
+              if (key === "chat" || key === "api" || key === "engineering") setActivePage(key);
             }}
             items={[
               { key: "overview", icon: <BulbOutlined />, label: "工作台概览", disabled: true },
               { key: "chat", icon: <MessageOutlined />, label: "AI 需求分析" },
               { key: "api", icon: <ApiOutlined />, label: "API 测试" },
+              { key: "engineering", icon: <CodeOutlined />, label: "工程任务" },
               { key: "knowledge", icon: <DatabaseOutlined />, label: "项目资料", disabled: true },
             ]}
           />
@@ -454,8 +457,8 @@ function Workbench() {
                   进行中
                 </Tag>
               </Flex>
-              <Text className="phase-title">P02 · API 测试闭环</Text>
-              <Text className="phase-copy">OpenAPI → Schemathesis → TestRun</Text>
+              <Text className="phase-title">P03 · 工程上下文</Text>
+              <Text className="phase-copy">Repo → OpenHands → Evidence</Text>
             </div>
           )}
         </Sider>
@@ -470,14 +473,26 @@ function Workbench() {
                   onClick={() => setCollapsed((value) => !value)}
                 />
                 <div>
-                  <Title level={4}>{activePage === "chat" ? "AI 需求分析" : "API 测试"}</Title>
+                  <Title level={4}>
+                    {activePage === "chat" ? "AI 需求分析" : activePage === "api" ? "API 测试" : "工程任务"}
+                  </Title>
                   <Text type="secondary">
-                    {activePage === "chat" ? subtitle : "导入 OpenAPI，关联需求与证据并运行 Schemathesis"}
+                    {activePage === "chat"
+                      ? subtitle
+                      : activePage === "api"
+                        ? "导入 OpenAPI，关联需求与证据并运行 Schemathesis"
+                        : "选择仓库和工程上下文，明确授权后交给 OpenHands"}
                   </Text>
                 </div>
               </Space>
               <Space>
-                <Tag color="blue">{activePage === "chat" ? "Responses API" : "Schemathesis 4.24.3"}</Tag>
+                <Tag color="blue">
+                  {activePage === "chat"
+                    ? "Responses API"
+                    : activePage === "api"
+                      ? "Schemathesis 4.24.3"
+                      : "OpenHands 1.39.0"}
+                </Tag>
                 <Avatar className="user-avatar">U</Avatar>
               </Space>
             </Flex>
@@ -634,8 +649,10 @@ function Workbench() {
                 </Card>
               </aside>
               </div>
-            ) : (
+            ) : activePage === "api" ? (
               <ApiTesting />
+            ) : (
+              <EngineeringTasks />
             )}
           </Content>
         </Layout>

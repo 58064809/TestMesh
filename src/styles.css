@@ -580,6 +580,90 @@ body {
   font-size: 17px;
 }
 
+.engineering-page {
+  height: 100%;
+  overflow: auto;
+  overflow-x: hidden;
+}
+
+.engineering-config-card,
+.engineering-task-card,
+.engineering-result-card,
+.engineering-main-stack > .ant-card {
+  border-color: #e6eaf2;
+  box-shadow: 0 10px 32px rgb(25 41 89 / 5%);
+}
+
+.engineering-field {
+  display: grid;
+  margin-bottom: 18px;
+  gap: 8px;
+}
+
+.engineering-field > .ant-select {
+  width: 100%;
+}
+
+.engineering-status {
+  max-height: 100px;
+  margin: 8px 0 0;
+  overflow: auto;
+  font: 11px/1.55 "Cascadia Code", Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.engineering-main-stack {
+  width: 100%;
+}
+
+.engineering-authorization {
+  display: flex;
+  margin: 16px 0;
+  line-height: 1.6;
+}
+
+.engineering-boundary-note {
+  display: block;
+  margin-top: 10px;
+  font-size: 11px;
+}
+
+.engineering-task-error,
+.engineering-metrics {
+  margin-top: 16px;
+}
+
+.engineering-output,
+.engineering-event-output {
+  overflow: auto;
+  border-radius: 8px;
+  background: #111a32;
+  color: #e8edff;
+  font: 12px/1.65 "Cascadia Code", Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.engineering-output {
+  max-height: 420px;
+  margin: 0;
+  padding: 13px 15px;
+}
+
+.engineering-event-output {
+  max-height: 160px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+}
+
+.engineering-history-item {
+  cursor: pointer;
+}
+
+.engineering-history-item:hover {
+  background: #f7f9ff;
+}
+
 @media (max-width: 1080px) {
   .workspace-grid {
     grid-template-columns: minmax(0, 1fr) 270px;
@@ -622,6 +706,10 @@ body {
   }
 
   .api-testing-page {
+    overflow: visible;
+  }
+
+  .engineering-page {
     overflow: visible;
   }
 }

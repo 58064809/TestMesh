@@ -14,6 +14,15 @@ import {
 } from "./analysis.js";
 import { MAX_OPENAPI_BYTES, parseHeaderLines, parseOpenApi, validateTargetBaseUrl } from "./openapi.js";
 import { SCHEMATHESIS_VERSION, runSchemathesis, type RunnerAuth } from "./schemathesis.js";
+import {
+  OPENHANDS_AGENT_SERVER_IMAGE,
+  OPENHANDS_CLIENT_VERSION,
+  OPENHANDS_MODEL,
+  inspectRepository,
+  listDockerContainers,
+  startEngineeringTask,
+  stopEngineeringTask,
+} from "./openhands.js";
 import { DomainStore, defaultDatabasePath } from "./store.js";
 
 const app = express();
@@ -21,7 +30,7 @@ const port = Number(process.env.PORT ?? 3000);
 const isProduction = process.env.NODE_ENV === "production";
 const store = new DomainStore(defaultDatabasePath());
 
-app.use(express.json({ limit: "64kb" }));
+app.use(express.json({ limit: "256kb" }));
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -53,9 +62,12 @@ const openApiUpload = multer({
 app.get("/api/health", (_request, response) => {
   response.json({
     ok: true,
-    phase: "P02",
+    phase: "P03",
     model: MODEL,
     schemathesisVersion: SCHEMATHESIS_VERSION,
+    openhandsModel: OPENHANDS_MODEL,
+    openhandsAgentServerImage: OPENHANDS_AGENT_SERVER_IMAGE,
+    openhandsClientVersion: OPENHANDS_CLIENT_VERSION,
     openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
   });
 });
@@ -180,6 +192,72 @@ app.post("/api/p02/test-runs", async (request, response) => {
   }
 });
 
+app.post("/api/p03/repository/inspect", async (request, response) => {
+  try {
+    const repoPath = typeof request.body.repoPath === "string" ? request.body.repoPath : "";
+    response.json(await inspectRepository(repoPath));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "仓库检查失败";
+    response.status(400).json({ error: message });
+  }
+});
+
+app.get("/api/p03/docker/containers", async (_request, response) => {
+  try {
+    response.json(await listDockerContainers());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Docker 容器读取失败";
+    response.status(502).json({ error: `Docker 上下文读取失败，流程已停止：${message}` });
+  }
+});
+
+app.get("/api/p03/tasks", (_request, response) => {
+  response.json(store.listEngineeringTasks());
+});
+
+app.get("/api/p03/tasks/:id", (request, response) => {
+  try {
+    response.json(store.getEngineeringTask(request.params.id));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "工程任务不存在";
+    response.status(404).json({ error: message });
+  }
+});
+
+app.post("/api/p03/tasks", async (request, response) => {
+  try {
+    const selectedFiles = Array.isArray(request.body.selectedFiles)
+      ? request.body.selectedFiles.filter((item: unknown): item is string => typeof item === "string")
+      : [];
+    const task = await startEngineeringTask(
+      {
+        repoPath: typeof request.body.repoPath === "string" ? request.body.repoPath : "",
+        instruction: typeof request.body.instruction === "string" ? request.body.instruction : "",
+        selectedFiles,
+        logContext: typeof request.body.logContext === "string" ? request.body.logContext : "",
+        dockerContainerId:
+          typeof request.body.dockerContainerId === "string" ? request.body.dockerContainerId : "",
+        authorized: request.body.authorized === true,
+      },
+      store,
+    );
+    response.status(202).json(task);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "工程任务启动失败";
+    response.status(400).json({ error: `OpenHands 工程任务未启动：${message}` });
+  }
+});
+
+app.post("/api/p03/tasks/:id/stop", async (request, response) => {
+  try {
+    await stopEngineeringTask(request.params.id);
+    response.status(202).json({ ok: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "工程任务停止失败";
+    response.status(400).json({ error: message });
+  }
+});
+
 if (isProduction) {
   const serverDir = path.dirname(fileURLToPath(import.meta.url));
   const clientDir = path.resolve(serverDir, "../client");
@@ -215,5 +293,5 @@ const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => 
 app.use(errorHandler);
 
 app.listen(port, () => {
-  console.log(`TestMesh P02 running at http://localhost:${port}`);
+  console.log(`TestMesh P03 running at http://localhost:${port}`);
 });
