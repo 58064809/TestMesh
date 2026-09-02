@@ -23,6 +23,7 @@ import {
   startEngineeringTask,
   stopEngineeringTask,
 } from "./openhands.js";
+import { PLAYWRIGHT_IMAGE, PLAYWRIGHT_VERSION, runPlaywrightTest } from "./playwright.js";
 import { DomainStore, defaultDatabasePath } from "./store.js";
 
 const app = express();
@@ -62,12 +63,14 @@ const openApiUpload = multer({
 app.get("/api/health", (_request, response) => {
   response.json({
     ok: true,
-    phase: "P03",
+    phase: "P04-A",
     model: MODEL,
     schemathesisVersion: SCHEMATHESIS_VERSION,
     openhandsModel: OPENHANDS_MODEL,
     openhandsAgentServerImage: OPENHANDS_AGENT_SERVER_IMAGE,
     openhandsClientVersion: OPENHANDS_CLIENT_VERSION,
+    playwrightVersion: PLAYWRIGHT_VERSION,
+    playwrightImage: PLAYWRIGHT_IMAGE,
     openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
   });
 });
@@ -258,6 +261,44 @@ app.post("/api/p03/tasks/:id/stop", async (request, response) => {
   }
 });
 
+app.get("/api/p04/ui-runs", (_request, response) => {
+  response.json(store.listUiTestRuns());
+});
+
+app.get("/api/p04/ui-runs/:id", (request, response) => {
+  try {
+    response.json(store.getUiTestRun(request.params.id));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "UI TestRun 不存在" });
+  }
+});
+
+app.post("/api/p04/ui-runs", async (request, response) => {
+  try {
+    const run = await runPlaywrightTest(
+      {
+        repoPath: typeof request.body.repoPath === "string" ? request.body.repoPath : "",
+        testFile: typeof request.body.testFile === "string" ? request.body.testFile : "",
+        authorized: request.body.authorized === true,
+      },
+      store,
+    );
+    response.json(run);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Playwright UI 测试未启动";
+    response.status(400).json({ error: `Playwright UI 测试未启动：${message}` });
+  }
+});
+
+app.get("/api/p04/ui-runs/:id/artifacts/:artifactId", (request, response) => {
+  try {
+    const artifact = store.getUiTestArtifact(request.params.id, request.params.artifactId);
+    response.download(artifact.path, artifact.name);
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "Trace Evidence 不存在" });
+  }
+});
+
 if (isProduction) {
   const serverDir = path.dirname(fileURLToPath(import.meta.url));
   const clientDir = path.resolve(serverDir, "../client");
@@ -293,5 +334,5 @@ const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => 
 app.use(errorHandler);
 
 app.listen(port, () => {
-  console.log(`TestMesh P03 running at http://localhost:${port}`);
+  console.log(`TestMesh P04-A running at http://localhost:${port}`);
 });

@@ -189,3 +189,39 @@ export interface EngineeringTaskRecord {
   completedAt: string | null;
   events: EngineeringEventRecord[];
 }
+
+export interface UiTestResultRecord {
+  id: string;
+  title: string;
+  projectName: string;
+  status: "passed" | "failed" | "skipped" | "timedOut" | "interrupted";
+  durationMs: number;
+  error: string;
+}
+
+export interface UiTestArtifactRecord {
+  id: string;
+  runId: string;
+  name: string;
+  kind: "trace";
+}
+
+export interface UiTestRunRecord {
+  id: string;
+  repoPath: string;
+  testFile: string;
+  status: "running" | "passed" | "failed" | "error";
+  playwrightVersion: string;
+  image: string;
+  containerName: string;
+  startedAt: string;
+  finishedAt: string | null;
+  passed: number;
+  failed: number;
+  skipped: number;
+  exitCode: number | null;
+  runnerOutput: string;
+  error: string;
+  results: UiTestResultRecord[];
+  artifacts: UiTestArtifactRecord[];
+}

@@ -660,6 +660,16 @@ body {
   cursor: pointer;
 }
 
+.ui-test-pass {
+  color: #52c41a;
+  margin-top: 4px;
+}
+
+.ui-test-fail {
+  color: #ff4d4f;
+  margin-top: 4px;
+}
+
 .engineering-history-item:hover {
   background: #f7f9ff;
 }

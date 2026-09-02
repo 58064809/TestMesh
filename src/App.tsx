@@ -5,6 +5,7 @@ import {
   CodeOutlined,
   CloudUploadOutlined,
   DatabaseOutlined,
+  DesktopOutlined,
   FileSearchOutlined,
   FolderOpenOutlined,
   MenuFoldOutlined,
@@ -48,6 +49,7 @@ import { useMemo, useState } from "react";
 import type { AnalysisResponse, Evidence, LocatorType, Priority, Severity } from "./types";
 import ApiTesting from "./ApiTesting";
 import EngineeringTasks from "./EngineeringTasks";
+import UiTesting from "./UiTesting";
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -343,7 +345,7 @@ function UploadPanel({
 function Workbench() {
   const { message: toast } = AntdApp.useApp();
   const [collapsed, setCollapsed] = useState(false);
-  const [activePage, setActivePage] = useState<"chat" | "api" | "engineering">("engineering");
+  const [activePage, setActivePage] = useState<"chat" | "api" | "engineering" | "ui">("ui");
   const [prompt, setPrompt] = useState("帮我分析这个需求");
   const [attachments, setAttachments] = useState<UploadFile[]>([]);
   const [knowledge, setKnowledge] = useState<UploadFile[]>([]);
@@ -439,13 +441,14 @@ function Workbench() {
             mode="inline"
             selectedKeys={[activePage]}
             onClick={({ key }) => {
-              if (key === "chat" || key === "api" || key === "engineering") setActivePage(key);
+              if (key === "chat" || key === "api" || key === "engineering" || key === "ui") setActivePage(key);
             }}
             items={[
               { key: "overview", icon: <BulbOutlined />, label: "工作台概览", disabled: true },
               { key: "chat", icon: <MessageOutlined />, label: "AI 需求分析" },
               { key: "api", icon: <ApiOutlined />, label: "API 测试" },
               { key: "engineering", icon: <CodeOutlined />, label: "工程任务" },
+              { key: "ui", icon: <DesktopOutlined />, label: "UI 测试" },
               { key: "knowledge", icon: <DatabaseOutlined />, label: "项目资料", disabled: true },
             ]}
           />
@@ -457,8 +460,8 @@ function Workbench() {
                   进行中
                 </Tag>
               </Flex>
-              <Text className="phase-title">P03 · 工程上下文</Text>
-              <Text className="phase-copy">Repo → OpenHands → Evidence</Text>
+              <Text className="phase-title">P04-A · UI 测试</Text>
+              <Text className="phase-copy">Repo → Playwright → TestRun</Text>
             </div>
           )}
         </Sider>
@@ -474,14 +477,16 @@ function Workbench() {
                 />
                 <div>
                   <Title level={4}>
-                    {activePage === "chat" ? "AI 需求分析" : activePage === "api" ? "API 测试" : "工程任务"}
+                    {activePage === "chat" ? "AI 需求分析" : activePage === "api" ? "API 测试" : activePage === "engineering" ? "工程任务" : "UI 测试"}
                   </Title>
                   <Text type="secondary">
                     {activePage === "chat"
                       ? subtitle
                       : activePage === "api"
                         ? "导入 OpenAPI，关联需求与证据并运行 Schemathesis"
-                        : "选择仓库和工程上下文，明确授权后交给 OpenHands"}
+                        : activePage === "engineering"
+                          ? "选择仓库和工程上下文，明确授权后交给 OpenHands"
+                          : "在一次性 Docker 容器中运行所选 Playwright 测试"}
                   </Text>
                 </div>
               </Space>
@@ -491,7 +496,9 @@ function Workbench() {
                     ? "Responses API"
                     : activePage === "api"
                       ? "Schemathesis 4.24.3"
-                      : "OpenHands 1.39.0"}
+                      : activePage === "engineering"
+                        ? "OpenHands 1.39.0"
+                        : "Playwright 1.62.1"}
                 </Tag>
                 <Avatar className="user-avatar">U</Avatar>
               </Space>
@@ -651,8 +658,10 @@ function Workbench() {
               </div>
             ) : activePage === "api" ? (
               <ApiTesting />
-            ) : (
+            ) : activePage === "engineering" ? (
               <EngineeringTasks />
+            ) : (
+              <UiTesting />
             )}
           </Content>
         </Layout>

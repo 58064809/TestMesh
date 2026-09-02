@@ -115,6 +115,41 @@ export interface EngineeringTaskRecord {
   events: EngineeringEventRecord[];
 }
 
+export interface UiTestResultInput {
+  title: string;
+  projectName: string;
+  status: "passed" | "failed" | "skipped" | "timedOut" | "interrupted";
+  durationMs: number;
+  error: string;
+}
+
+export interface UiTestArtifactRecord {
+  id: string;
+  runId: string;
+  name: string;
+  kind: "trace";
+}
+
+export interface UiTestRunRecord {
+  id: string;
+  repoPath: string;
+  testFile: string;
+  status: "running" | "passed" | "failed" | "error";
+  playwrightVersion: string;
+  image: string;
+  containerName: string;
+  startedAt: string;
+  finishedAt: string | null;
+  passed: number;
+  failed: number;
+  skipped: number;
+  exitCode: number | null;
+  runnerOutput: string;
+  error: string;
+  results: Array<UiTestResultInput & { id: string }>;
+  artifacts: UiTestArtifactRecord[];
+}
+
 const schema = `
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS analyses (
@@ -250,6 +285,39 @@ CREATE TABLE IF NOT EXISTS engineering_task_events (
   payload TEXT NOT NULL,
   terminal_output TEXT NOT NULL,
   UNIQUE(task_id, ordinal)
+);
+CREATE TABLE IF NOT EXISTS ui_test_runs (
+  id TEXT PRIMARY KEY,
+  repo_path TEXT NOT NULL,
+  test_file TEXT NOT NULL,
+  status TEXT NOT NULL,
+  playwright_version TEXT NOT NULL,
+  image TEXT NOT NULL,
+  container_name TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  passed INTEGER NOT NULL DEFAULT 0,
+  failed INTEGER NOT NULL DEFAULT 0,
+  skipped INTEGER NOT NULL DEFAULT 0,
+  exit_code INTEGER,
+  runner_output TEXT NOT NULL DEFAULT '',
+  error TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS ui_test_results (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES ui_test_runs(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  project_name TEXT NOT NULL,
+  status TEXT NOT NULL,
+  duration_ms REAL NOT NULL,
+  error TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ui_test_artifacts (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES ui_test_runs(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  path TEXT NOT NULL
 );
 `;
 
@@ -695,6 +763,118 @@ export class DomainStore {
       tokenUsage: JSON.parse(row.tokenUsage) as unknown,
       events: events.map((event) => ({ ...event, payload: JSON.parse(event.payload) as unknown })),
     };
+  }
+
+  createUiTestRun(input: {
+    repoPath: string;
+    testFile: string;
+    playwrightVersion: string;
+    image: string;
+    containerName: string;
+  }): UiTestRunRecord {
+    const id = randomUUID();
+    this.db.prepare(
+      `INSERT INTO ui_test_runs
+       (id, repo_path, test_file, status, playwright_version, image, container_name, started_at)
+       VALUES (?, ?, ?, 'running', ?, ?, ?, ?)`,
+    ).run(
+      id,
+      input.repoPath,
+      input.testFile,
+      input.playwrightVersion,
+      input.image,
+      input.containerName,
+      new Date().toISOString(),
+    );
+    return this.getUiTestRun(id);
+  }
+
+  finishUiTestRun(input: {
+    id: string;
+    status: "passed" | "failed" | "error";
+    passed: number;
+    failed: number;
+    skipped: number;
+    exitCode: number;
+    runnerOutput: string;
+    error: string;
+    results: UiTestResultInput[];
+    artifacts: Array<{ name: string; kind: "trace"; path: string }>;
+  }): UiTestRunRecord {
+    const save = this.db.transaction(() => {
+      this.db.prepare(
+        `UPDATE ui_test_runs SET status = ?, finished_at = ?, passed = ?, failed = ?, skipped = ?,
+         exit_code = ?, runner_output = ?, error = ? WHERE id = ?`,
+      ).run(
+        input.status,
+        new Date().toISOString(),
+        input.passed,
+        input.failed,
+        input.skipped,
+        input.exitCode,
+        input.runnerOutput,
+        input.error,
+        input.id,
+      );
+      const insertResult = this.db.prepare(
+        `INSERT INTO ui_test_results
+         (id, run_id, title, project_name, status, duration_ms, error)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const result of input.results) {
+        insertResult.run(
+          randomUUID(),
+          input.id,
+          result.title,
+          result.projectName,
+          result.status,
+          result.durationMs,
+          result.error,
+        );
+      }
+      const insertArtifact = this.db.prepare(
+        `INSERT INTO ui_test_artifacts (id, run_id, name, kind, path) VALUES (?, ?, ?, ?, ?)`,
+      );
+      for (const artifact of input.artifacts) {
+        insertArtifact.run(randomUUID(), input.id, artifact.name, artifact.kind, artifact.path);
+      }
+    });
+    save();
+    return this.getUiTestRun(input.id);
+  }
+
+  listUiTestRuns(): UiTestRunRecord[] {
+    const ids = this.db
+      .prepare("SELECT id FROM ui_test_runs ORDER BY started_at DESC LIMIT 20")
+      .all() as Array<{ id: string }>;
+    return ids.map(({ id }) => this.getUiTestRun(id));
+  }
+
+  getUiTestRun(id: string): UiTestRunRecord {
+    const row = this.db.prepare(
+      `SELECT id, repo_path AS repoPath, test_file AS testFile, status,
+              playwright_version AS playwrightVersion, image, container_name AS containerName,
+              started_at AS startedAt, finished_at AS finishedAt, passed, failed, skipped,
+              exit_code AS exitCode, runner_output AS runnerOutput, error
+       FROM ui_test_runs WHERE id = ?`,
+    ).get(id) as Omit<UiTestRunRecord, "results" | "artifacts"> | undefined;
+    if (!row) throw new Error(`UI TestRun ${id} 不存在`);
+    const results = this.db.prepare(
+      `SELECT id, title, project_name AS projectName, status, duration_ms AS durationMs, error
+       FROM ui_test_results WHERE run_id = ? ORDER BY rowid`,
+    ).all(id) as UiTestRunRecord["results"];
+    const artifacts = this.db.prepare(
+      `SELECT id, run_id AS runId, name, kind FROM ui_test_artifacts WHERE run_id = ? ORDER BY rowid`,
+    ).all(id) as UiTestArtifactRecord[];
+    return { ...row, results, artifacts };
+  }
+
+  getUiTestArtifact(runId: string, artifactId: string): { name: string; path: string } {
+    const row = this.db.prepare(
+      "SELECT name, path FROM ui_test_artifacts WHERE id = ? AND run_id = ?",
+    ).get(artifactId, runId) as { name: string; path: string } | undefined;
+    if (!row) throw new Error("该 Trace Evidence 不存在");
+    return row;
   }
 }
 
