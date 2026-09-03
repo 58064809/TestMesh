@@ -225,3 +225,42 @@ export interface UiTestRunRecord {
   results: UiTestResultRecord[];
   artifacts: UiTestArtifactRecord[];
 }
+
+export interface AndroidTestResultRecord {
+  id: string;
+  title: string;
+  suite: string;
+  status: "passed" | "failed" | "skipped";
+  durationMs: number;
+  error: string;
+}
+
+export interface AndroidTestArtifactRecord {
+  id: string;
+  runId: string;
+  name: string;
+  kind: "screenshot" | "page_source" | "appium_log";
+}
+
+export interface AndroidTestRunRecord {
+  id: string;
+  repoPath: string;
+  configFile: string;
+  testFile: string;
+  status: "running" | "passed" | "failed" | "error";
+  deviceSerial: string;
+  platformVersion: string;
+  appiumVersion: string;
+  driverVersion: string;
+  wdioVersion: string;
+  startedAt: string;
+  finishedAt: string | null;
+  passed: number;
+  failed: number;
+  skipped: number;
+  exitCode: number | null;
+  runnerOutput: string;
+  error: string;
+  results: AndroidTestResultRecord[];
+  artifacts: AndroidTestArtifactRecord[];
+}

@@ -16,7 +16,8 @@
 - P02 已于 2026-09-01 完成，验收记录见 `docs/PHASES/P02.md`，实现路径见 ADR 0004。
 - P03 已于 2026-09-02 完成，验收记录见 `docs/PHASES/P03.md`。
 - P04-A Playwright UI 测试闭环已于 2026-09-02 完成，验收记录见 `docs/PHASES/P04.md`。
-- P04 仍在进行中；P04-B Appium 是已规划的下一入口，但尚未获得用户授权。P04-B、P04-C k6、P04-D ZAP 及 P05 仅允许维护规划文档，不得提前实现。
+- P04-B Android Emulator + Appium 测试闭环已于 2026-09-03 完成，验收记录见 `docs/PHASES/P04.md`。
+- P04 仍在进行中；P04-C k6 是已规划的下一入口，但尚未获得用户授权。P04-C、P04-D ZAP 及 P05 仅允许维护规划文档，不得提前实现。
 
 ## P01 实现约束
 

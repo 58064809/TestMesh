@@ -24,6 +24,12 @@ import {
   stopEngineeringTask,
 } from "./openhands.js";
 import { PLAYWRIGHT_IMAGE, PLAYWRIGHT_VERSION, runPlaywrightTest } from "./playwright.js";
+import {
+  APPIUM_VERSION,
+  UIAUTOMATOR2_VERSION,
+  WDIO_VERSION,
+  runAndroidTest,
+} from "./android.js";
 import { DomainStore, defaultDatabasePath } from "./store.js";
 
 const app = express();
@@ -63,7 +69,7 @@ const openApiUpload = multer({
 app.get("/api/health", (_request, response) => {
   response.json({
     ok: true,
-    phase: "P04-A",
+    phase: "P04-B",
     model: MODEL,
     schemathesisVersion: SCHEMATHESIS_VERSION,
     openhandsModel: OPENHANDS_MODEL,
@@ -71,6 +77,9 @@ app.get("/api/health", (_request, response) => {
     openhandsClientVersion: OPENHANDS_CLIENT_VERSION,
     playwrightVersion: PLAYWRIGHT_VERSION,
     playwrightImage: PLAYWRIGHT_IMAGE,
+    appiumVersion: APPIUM_VERSION,
+    uiautomator2Version: UIAUTOMATOR2_VERSION,
+    webdriverioVersion: WDIO_VERSION,
     openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
   });
 });
@@ -299,6 +308,45 @@ app.get("/api/p04/ui-runs/:id/artifacts/:artifactId", (request, response) => {
   }
 });
 
+app.get("/api/p04/android-runs", (_request, response) => {
+  response.json(store.listAndroidTestRuns());
+});
+
+app.get("/api/p04/android-runs/:id", (request, response) => {
+  try {
+    response.json(store.getAndroidTestRun(request.params.id));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "Android TestRun 不存在" });
+  }
+});
+
+app.post("/api/p04/android-runs", async (request, response) => {
+  try {
+    const run = await runAndroidTest(
+      {
+        repoPath: typeof request.body.repoPath === "string" ? request.body.repoPath : "",
+        configFile: typeof request.body.configFile === "string" ? request.body.configFile : "",
+        testFile: typeof request.body.testFile === "string" ? request.body.testFile : "",
+        authorized: request.body.authorized === true,
+      },
+      store,
+    );
+    response.json(run);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Android Emulator 测试未启动";
+    response.status(400).json({ error: `Android Emulator 测试未启动：${message}` });
+  }
+});
+
+app.get("/api/p04/android-runs/:id/artifacts/:artifactId", (request, response) => {
+  try {
+    const artifact = store.getAndroidTestArtifact(request.params.id, request.params.artifactId);
+    response.download(artifact.path, artifact.name);
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "Android Evidence 不存在" });
+  }
+});
+
 if (isProduction) {
   const serverDir = path.dirname(fileURLToPath(import.meta.url));
   const clientDir = path.resolve(serverDir, "../client");
@@ -334,5 +382,5 @@ const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => 
 app.use(errorHandler);
 
 app.listen(port, () => {
-  console.log(`TestMesh P04-A running at http://localhost:${port}`);
+  console.log(`TestMesh P04-B running at http://localhost:${port}`);
 });
