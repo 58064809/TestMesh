@@ -264,3 +264,41 @@ export interface AndroidTestRunRecord {
   results: AndroidTestResultRecord[];
   artifacts: AndroidTestArtifactRecord[];
 }
+
+export interface PerformanceThresholdRecord {
+  id: string;
+  metric: string;
+  expression: string;
+  failed: boolean;
+}
+
+export interface PerformanceTestArtifactRecord {
+  id: string;
+  runId: string;
+  name: string;
+  kind: "summary" | "terminal_output";
+}
+
+export interface PerformanceTestRunRecord {
+  id: string;
+  repoPath: string;
+  scriptFile: string;
+  status: "running" | "passed" | "failed" | "error";
+  k6Version: string;
+  startedAt: string;
+  finishedAt: string | null;
+  exitCode: number | null;
+  httpRequests: number;
+  requestFailedRate: number;
+  iterations: number;
+  checksPassed: number;
+  checksFailed: number;
+  durationAvgMs: number;
+  durationP90Ms: number;
+  durationP95Ms: number;
+  durationMaxMs: number;
+  runnerOutput: string;
+  error: string;
+  thresholds: PerformanceThresholdRecord[];
+  artifacts: PerformanceTestArtifactRecord[];
+}

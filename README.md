@@ -1,6 +1,6 @@
 # TestMesh
 
-TestMesh 是一个 reuse-first 的 AI 测试工程工作台。当前仓库已完成 **P01：PRD 多模态需求分析** 和 **P02：OpenAPI API 测试闭环**。
+TestMesh 是一个 reuse-first 的 AI 测试工程工作台。当前已完成 P01–P03，以及 P04 的 Playwright、Android Emulator + Appium 和 k6 子阶段。
 
 ## P01 能力
 
@@ -19,6 +19,14 @@ TestMesh 是一个 reuse-first 的 AI 测试工程工作台。当前仓库已完
 - 固定通过 `uvx schemathesis@4.24.3` 执行，单 worker、deterministic、zero retry。
 - JUnit 失败结果保存 operation、checks、request、response 与 reproduction。
 - 最小 Header/Bearer/Basic Auth 输入仅用于本次运行，不持久化。
+
+## P04-C 性能测试
+
+- 固定使用 `D:\TestHome\k6\2.2.0\k6.exe`，宿主 Windows 单进程执行。
+- 用户选择 Git 仓库与一个本地 `.js` k6 脚本，每次运行前明确授权。
+- VU、时长、scenario 和 threshold 由脚本定义，TestMesh 不修改脚本。
+- `--summary-export` JSON 是唯一结构化结果源；保存 summary 与终端输出 Evidence。
+- 无 summary 时立即标记运行错误，不从终端输出补建结果。
 
 ## 启动
 

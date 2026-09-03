@@ -16,6 +16,7 @@ import {
   QuestionCircleOutlined,
   SafetyCertificateOutlined,
   SendOutlined,
+  ThunderboltOutlined,
   WarningOutlined,
 } from "@ant-design/icons";
 import { Refine } from "@refinedev/core";
@@ -52,6 +53,7 @@ import ApiTesting from "./ApiTesting";
 import EngineeringTasks from "./EngineeringTasks";
 import UiTesting from "./UiTesting";
 import AppTesting from "./AppTesting";
+import PerformanceTesting from "./PerformanceTesting";
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -347,7 +349,7 @@ function UploadPanel({
 function Workbench() {
   const { message: toast } = AntdApp.useApp();
   const [collapsed, setCollapsed] = useState(false);
-  const [activePage, setActivePage] = useState<"chat" | "api" | "engineering" | "ui" | "app">("app");
+  const [activePage, setActivePage] = useState<"chat" | "api" | "engineering" | "ui" | "app" | "performance">("performance");
   const [prompt, setPrompt] = useState("帮我分析这个需求");
   const [attachments, setAttachments] = useState<UploadFile[]>([]);
   const [knowledge, setKnowledge] = useState<UploadFile[]>([]);
@@ -443,7 +445,7 @@ function Workbench() {
             mode="inline"
             selectedKeys={[activePage]}
             onClick={({ key }) => {
-              if (key === "chat" || key === "api" || key === "engineering" || key === "ui" || key === "app") setActivePage(key);
+              if (key === "chat" || key === "api" || key === "engineering" || key === "ui" || key === "app" || key === "performance") setActivePage(key);
             }}
             items={[
               { key: "overview", icon: <BulbOutlined />, label: "工作台概览", disabled: true },
@@ -452,6 +454,7 @@ function Workbench() {
               { key: "engineering", icon: <CodeOutlined />, label: "工程任务" },
               { key: "ui", icon: <DesktopOutlined />, label: "UI 测试" },
               { key: "app", icon: <AndroidOutlined />, label: "APP 测试" },
+              { key: "performance", icon: <ThunderboltOutlined />, label: "性能测试" },
               { key: "knowledge", icon: <DatabaseOutlined />, label: "项目资料", disabled: true },
             ]}
           />
@@ -463,8 +466,8 @@ function Workbench() {
                   进行中
                 </Tag>
               </Flex>
-              <Text className="phase-title">P04-B · APP 测试</Text>
-              <Text className="phase-copy">Repo → Appium → Emulator → TestRun</Text>
+              <Text className="phase-title">P04-C · 性能测试</Text>
+              <Text className="phase-copy">Repo → k6 → Summary → TestRun</Text>
             </div>
           )}
         </Sider>
@@ -480,7 +483,7 @@ function Workbench() {
                 />
                 <div>
                   <Title level={4}>
-                    {activePage === "chat" ? "AI 需求分析" : activePage === "api" ? "API 测试" : activePage === "engineering" ? "工程任务" : activePage === "ui" ? "UI 测试" : "APP 测试"}
+                    {activePage === "chat" ? "AI 需求分析" : activePage === "api" ? "API 测试" : activePage === "engineering" ? "工程任务" : activePage === "ui" ? "UI 测试" : activePage === "app" ? "APP 测试" : "性能测试"}
                   </Title>
                   <Text type="secondary">
                     {activePage === "chat"
@@ -491,7 +494,9 @@ function Workbench() {
                           ? "选择仓库和工程上下文，明确授权后交给 OpenHands"
                           : activePage === "ui"
                             ? "在一次性 Docker 容器中运行所选 Playwright 测试"
-                            : "连接本机已启动的 Android Emulator，运行所选 WebdriverIO 测试"}
+                            : activePage === "app"
+                              ? "连接本机已启动的 Android Emulator，运行所选 WebdriverIO 测试"
+                              : "以当前 Windows 用户权限运行所选本地 k6 脚本"}
                   </Text>
                 </div>
               </Space>
@@ -505,7 +510,9 @@ function Workbench() {
                         ? "OpenHands 1.39.0"
                         : activePage === "ui"
                           ? "Playwright 1.62.1"
-                          : "Appium 3.7.0"}
+                          : activePage === "app"
+                            ? "Appium 3.7.0"
+                            : "k6 2.2.0"}
                 </Tag>
                 <Avatar className="user-avatar">U</Avatar>
               </Space>
@@ -669,8 +676,10 @@ function Workbench() {
               <EngineeringTasks />
             ) : activePage === "ui" ? (
               <UiTesting />
-            ) : (
+            ) : activePage === "app" ? (
               <AppTesting />
+            ) : (
+              <PerformanceTesting />
             )}
           </Content>
         </Layout>

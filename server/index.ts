@@ -30,6 +30,7 @@ import {
   WDIO_VERSION,
   runAndroidTest,
 } from "./android.js";
+import { K6_VERSION, runK6Test } from "./k6.js";
 import { DomainStore, defaultDatabasePath } from "./store.js";
 
 const app = express();
@@ -69,7 +70,7 @@ const openApiUpload = multer({
 app.get("/api/health", (_request, response) => {
   response.json({
     ok: true,
-    phase: "P04-B",
+    phase: "P04-C",
     model: MODEL,
     schemathesisVersion: SCHEMATHESIS_VERSION,
     openhandsModel: OPENHANDS_MODEL,
@@ -80,6 +81,7 @@ app.get("/api/health", (_request, response) => {
     appiumVersion: APPIUM_VERSION,
     uiautomator2Version: UIAUTOMATOR2_VERSION,
     webdriverioVersion: WDIO_VERSION,
+    k6Version: K6_VERSION,
     openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
   });
 });
@@ -347,6 +349,44 @@ app.get("/api/p04/android-runs/:id/artifacts/:artifactId", (request, response) =
   }
 });
 
+app.get("/api/p04/performance-runs", (_request, response) => {
+  response.json(store.listPerformanceTestRuns());
+});
+
+app.get("/api/p04/performance-runs/:id", (request, response) => {
+  try {
+    response.json(store.getPerformanceTestRun(request.params.id));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "性能 TestRun 不存在" });
+  }
+});
+
+app.post("/api/p04/performance-runs", async (request, response) => {
+  try {
+    const run = await runK6Test(
+      {
+        repoPath: typeof request.body.repoPath === "string" ? request.body.repoPath : "",
+        scriptFile: typeof request.body.scriptFile === "string" ? request.body.scriptFile : "",
+        authorized: request.body.authorized === true,
+      },
+      store,
+    );
+    response.json(run);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "k6 性能测试未启动";
+    response.status(400).json({ error: `k6 性能测试未启动：${message}` });
+  }
+});
+
+app.get("/api/p04/performance-runs/:id/artifacts/:artifactId", (request, response) => {
+  try {
+    const artifact = store.getPerformanceTestArtifact(request.params.id, request.params.artifactId);
+    response.download(artifact.path, artifact.name);
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "性能测试 Evidence 不存在" });
+  }
+});
+
 if (isProduction) {
   const serverDir = path.dirname(fileURLToPath(import.meta.url));
   const clientDir = path.resolve(serverDir, "../client");
@@ -382,5 +422,5 @@ const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => 
 app.use(errorHandler);
 
 app.listen(port, () => {
-  console.log(`TestMesh P04-B running at http://localhost:${port}`);
+  console.log(`TestMesh P04-C running at http://localhost:${port}`);
 });

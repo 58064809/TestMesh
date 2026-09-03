@@ -188,6 +188,43 @@ export interface AndroidTestRunRecord {
   artifacts: AndroidTestArtifactRecord[];
 }
 
+export interface PerformanceThresholdInput {
+  metric: string;
+  expression: string;
+  failed: boolean;
+}
+
+export interface PerformanceTestArtifactRecord {
+  id: string;
+  runId: string;
+  name: string;
+  kind: "summary" | "terminal_output";
+}
+
+export interface PerformanceTestRunRecord {
+  id: string;
+  repoPath: string;
+  scriptFile: string;
+  status: "running" | "passed" | "failed" | "error";
+  k6Version: string;
+  startedAt: string;
+  finishedAt: string | null;
+  exitCode: number | null;
+  httpRequests: number;
+  requestFailedRate: number;
+  iterations: number;
+  checksPassed: number;
+  checksFailed: number;
+  durationAvgMs: number;
+  durationP90Ms: number;
+  durationP95Ms: number;
+  durationMaxMs: number;
+  runnerOutput: string;
+  error: string;
+  thresholds: Array<PerformanceThresholdInput & { id: string }>;
+  artifacts: PerformanceTestArtifactRecord[];
+}
+
 const schema = `
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS analyses (
@@ -389,6 +426,42 @@ CREATE TABLE IF NOT EXISTS android_test_results (
 CREATE TABLE IF NOT EXISTS android_test_artifacts (
   id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL REFERENCES android_test_runs(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  path TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS performance_test_runs (
+  id TEXT PRIMARY KEY,
+  repo_path TEXT NOT NULL,
+  script_file TEXT NOT NULL,
+  status TEXT NOT NULL,
+  k6_version TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  exit_code INTEGER,
+  http_requests INTEGER NOT NULL DEFAULT 0,
+  request_failed_rate REAL NOT NULL DEFAULT 0,
+  iterations INTEGER NOT NULL DEFAULT 0,
+  checks_passed INTEGER NOT NULL DEFAULT 0,
+  checks_failed INTEGER NOT NULL DEFAULT 0,
+  duration_avg_ms REAL NOT NULL DEFAULT 0,
+  duration_p90_ms REAL NOT NULL DEFAULT 0,
+  duration_p95_ms REAL NOT NULL DEFAULT 0,
+  duration_max_ms REAL NOT NULL DEFAULT 0,
+  runner_output TEXT NOT NULL DEFAULT '',
+  summary_json TEXT NOT NULL DEFAULT '',
+  error TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS performance_test_thresholds (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES performance_test_runs(id) ON DELETE CASCADE,
+  metric TEXT NOT NULL,
+  expression TEXT NOT NULL,
+  failed INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS performance_test_artifacts (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES performance_test_runs(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   kind TEXT NOT NULL,
   path TEXT NOT NULL
@@ -1073,6 +1146,130 @@ export class DomainStore {
       "SELECT name, path FROM android_test_artifacts WHERE id = ? AND run_id = ?",
     ).get(artifactId, runId) as { name: string; path: string } | undefined;
     if (!row) throw new Error("该 Android Evidence 不存在");
+    return row;
+  }
+
+  createPerformanceTestRun(input: {
+    repoPath: string;
+    scriptFile: string;
+    k6Version: string;
+  }): PerformanceTestRunRecord {
+    const id = randomUUID();
+    this.db.prepare(
+      `INSERT INTO performance_test_runs
+       (id, repo_path, script_file, status, k6_version, started_at)
+       VALUES (?, ?, ?, 'running', ?, ?)`,
+    ).run(id, input.repoPath, input.scriptFile, input.k6Version, new Date().toISOString());
+    return this.getPerformanceTestRun(id);
+  }
+
+  finishPerformanceTestRun(input: {
+    id: string;
+    status: "passed" | "failed" | "error";
+    exitCode: number;
+    httpRequests: number;
+    requestFailedRate: number;
+    iterations: number;
+    checksPassed: number;
+    checksFailed: number;
+    durationAvgMs: number;
+    durationP90Ms: number;
+    durationP95Ms: number;
+    durationMaxMs: number;
+    runnerOutput: string;
+    summaryJson: string;
+    error: string;
+    thresholds: PerformanceThresholdInput[];
+    artifacts: Array<{ name: string; kind: "summary" | "terminal_output"; path: string }>;
+  }): PerformanceTestRunRecord {
+    const save = this.db.transaction(() => {
+      this.db.prepare(
+        `UPDATE performance_test_runs SET status = ?, finished_at = ?, exit_code = ?,
+         http_requests = ?, request_failed_rate = ?, iterations = ?, checks_passed = ?,
+         checks_failed = ?, duration_avg_ms = ?, duration_p90_ms = ?, duration_p95_ms = ?,
+         duration_max_ms = ?, runner_output = ?, summary_json = ?, error = ? WHERE id = ?`,
+      ).run(
+        input.status,
+        new Date().toISOString(),
+        input.exitCode,
+        input.httpRequests,
+        input.requestFailedRate,
+        input.iterations,
+        input.checksPassed,
+        input.checksFailed,
+        input.durationAvgMs,
+        input.durationP90Ms,
+        input.durationP95Ms,
+        input.durationMaxMs,
+        input.runnerOutput,
+        input.summaryJson,
+        input.error,
+        input.id,
+      );
+      const insertThreshold = this.db.prepare(
+        `INSERT INTO performance_test_thresholds
+         (id, run_id, metric, expression, failed) VALUES (?, ?, ?, ?, ?)`,
+      );
+      for (const threshold of input.thresholds) {
+        insertThreshold.run(
+          randomUUID(),
+          input.id,
+          threshold.metric,
+          threshold.expression,
+          threshold.failed ? 1 : 0,
+        );
+      }
+      const insertArtifact = this.db.prepare(
+        `INSERT INTO performance_test_artifacts
+         (id, run_id, name, kind, path) VALUES (?, ?, ?, ?, ?)`,
+      );
+      for (const artifact of input.artifacts) {
+        insertArtifact.run(randomUUID(), input.id, artifact.name, artifact.kind, artifact.path);
+      }
+    });
+    save();
+    return this.getPerformanceTestRun(input.id);
+  }
+
+  listPerformanceTestRuns(): PerformanceTestRunRecord[] {
+    const ids = this.db
+      .prepare("SELECT id FROM performance_test_runs ORDER BY started_at DESC LIMIT 20")
+      .all() as Array<{ id: string }>;
+    return ids.map(({ id }) => this.getPerformanceTestRun(id));
+  }
+
+  getPerformanceTestRun(id: string): PerformanceTestRunRecord {
+    const row = this.db.prepare(
+      `SELECT id, repo_path AS repoPath, script_file AS scriptFile, status,
+              k6_version AS k6Version, started_at AS startedAt, finished_at AS finishedAt,
+              exit_code AS exitCode, http_requests AS httpRequests,
+              request_failed_rate AS requestFailedRate, iterations, checks_passed AS checksPassed,
+              checks_failed AS checksFailed, duration_avg_ms AS durationAvgMs,
+              duration_p90_ms AS durationP90Ms, duration_p95_ms AS durationP95Ms,
+              duration_max_ms AS durationMaxMs, runner_output AS runnerOutput, error
+       FROM performance_test_runs WHERE id = ?`,
+    ).get(id) as Omit<PerformanceTestRunRecord, "thresholds" | "artifacts"> | undefined;
+    if (!row) throw new Error(`性能 TestRun ${id} 不存在`);
+    const thresholds = this.db.prepare(
+      `SELECT id, metric, expression, failed
+       FROM performance_test_thresholds WHERE run_id = ? ORDER BY rowid`,
+    ).all(id) as Array<{ id: string; metric: string; expression: string; failed: number }>;
+    const artifacts = this.db.prepare(
+      `SELECT id, run_id AS runId, name, kind
+       FROM performance_test_artifacts WHERE run_id = ? ORDER BY rowid`,
+    ).all(id) as PerformanceTestArtifactRecord[];
+    return {
+      ...row,
+      thresholds: thresholds.map((item) => ({ ...item, failed: Boolean(item.failed) })),
+      artifacts,
+    };
+  }
+
+  getPerformanceTestArtifact(runId: string, artifactId: string): { name: string; path: string } {
+    const row = this.db.prepare(
+      "SELECT name, path FROM performance_test_artifacts WHERE id = ? AND run_id = ?",
+    ).get(artifactId, runId) as { name: string; path: string } | undefined;
+    if (!row) throw new Error("该性能测试 Evidence 不存在");
     return row;
   }
 }
