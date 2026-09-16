@@ -23,4 +23,4 @@ P02 需要把 Requirement/Risk/Evidence/TestCase 持久化，并完成 OpenAPI �
 
 ## 明确不做
 
-Docker、备用 Runner、数据库抽象、环境管理系统、Credential Vault、通用 Runner Framework，以及 P03–P05 能力。
+Docker、备用 Runner、数据库抽象、环境管理系统、Credential Vault、通用 Runner Framework，以及 P03–P06 能力。

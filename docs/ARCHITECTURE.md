@@ -2,7 +2,7 @@
 
 ## 架构原则
 
-TestMesh 采用“统一工作台 + 薄领域层 + 成熟能力适配”的演进方式。当前架构仅描述已批准阶段；P02–P05 的组件是规划边界，不是 P01 的实现授权。
+TestMesh 采用“统一工作台 + 薄领域层 + 成熟能力适配”的演进方式。P01–P03 已完成；P04-A 至 P04-C 已完成，P04-D 仍阻塞。P05“测试设计与用例生成”和 P06“质量治理与持续回归”是已批准的规划边界，不构成提前实施授权。
 
 ## P01 运行结构
 
@@ -71,6 +71,8 @@ SQLite（better-sqlite3 12.10.0）
 - P02 已交付领域数据模型与 Schemathesis API 测试闭环。
 - P03 接入 OpenHands 提供工程上下文。
 - P04 通过适配层接入 Playwright、Appium、k6、ZAP。
-- P05 增加检索、失败归因、质量门禁和 CI。
+- P05 复用 OpenAI Agents SDK 管理“覆盖规划 → 分批生成 → 缺口复核”，底层由单一 Responses API 模型读取原始 PRD 多模态内容与 Requirement/Risk/Evidence；服务端只提供无副作用的草稿收集和确定性覆盖复核领域工具。用户评审批准后，复用 OpenHands 生成 Playwright 测试代码，并交给现有 P04-A Runner 执行；不自研 Agent Loop、工作流运行时或第二套 Runner。
+- P05 必须统一既有 API TestCase 与新通用 TestCase 的领域语义，并建立 TestCase → 自动化代码 → TestRun 的追溯关系，不保留平行 TestCase 模型。
+- P06 增加知识与历史缺陷/用例检索、Failure Triage、Quality Gate、完整回归和 CI。
 
 任何提前接入均视为路线变更，必须先获用户批准。

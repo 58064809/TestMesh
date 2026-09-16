@@ -45,11 +45,73 @@ export interface AnalysisResult {
   evidence: Evidence[];
 }
 
+export type AnalysisOrigin = "explicit" | "inferred" | "missing" | "conflict";
+
+export interface AnalysisItem {
+  id: string;
+  description: string;
+  origin: AnalysisOrigin;
+  source_refs: string[];
+  confidence: number;
+}
+
+export interface AnalysisSource extends AnalysisItem {
+  source_file_id: string;
+  source_file_name: string;
+  locator_type: LocatorType;
+  locator: string;
+  excerpt: string;
+}
+
+export interface RequirementAnalysis {
+  summary: AnalysisItem | null;
+  requirements: Array<AnalysisItem & { acceptance_criteria: string[] }>;
+  actors: AnalysisItem[];
+  business_rules: AnalysisItem[];
+  flows: AnalysisItem[];
+  states: AnalysisItem[];
+  constraints: AnalysisItem[];
+  exceptions: AnalysisItem[];
+  open_questions: AnalysisItem[];
+  sources: AnalysisSource[];
+}
+
+export type AnalysisReviewStatus = "accepted" | "rejected" | "merged" | "clarify";
+export type AnalysisIssueType = "missing" | "ambiguity" | "conflict";
+
+export interface AnalysisReviewRecord {
+  id: string;
+  analysisId: string;
+  itemId: string;
+  status: AnalysisReviewStatus;
+  reviewer: string;
+  reason: string;
+  evidenceChecked: boolean;
+  issueType: AnalysisIssueType | "";
+  mergeInto: string;
+  decision: string;
+  decisionBy: string;
+  prdRevision: string;
+  createdAt: string;
+}
+
+export interface RequirementBaselineRecord {
+  id: string;
+  analysisId: string;
+  previousBaselineId: string | null;
+  version: number;
+  prdRevision: string;
+  prdFilename: string;
+  prdSha256: string;
+  approvedBy: string;
+  approvedAt: string;
+}
+
 export interface AnalysisResponse {
   analysisId: string;
-  result: AnalysisResult;
+  result: RequirementAnalysis;
   model: string;
-  usage: {
+  usage?: {
     inputTokens: number;
     outputTokens: number;
     totalTokens: number;
@@ -81,6 +143,27 @@ export interface TraceEvidence {
   locatorType: LocatorType;
   locator: string;
   excerpt: string;
+}
+
+export interface TraceRisk {
+  id: string;
+  analysisId: string;
+  externalId: string;
+  title: string;
+  description: string;
+  severity: Severity;
+  mitigation: string;
+}
+
+export interface TestDesignAnalysis {
+  id: string;
+  summary: string;
+  model: string;
+  createdAt: string;
+  analysisFormat: "legacy" | "requirement-analysis";
+  requirements: Array<TraceRequirement & { acceptanceCriteria: string[]; evidenceIds: string[] }>;
+  risks: Array<TraceRisk & { evidenceIds: string[] }>;
+  evidence: TraceEvidence[];
 }
 
 export interface TestCaseRecord {
@@ -226,6 +309,67 @@ export interface UiTestRunRecord {
   artifacts: UiTestArtifactRecord[];
 }
 
+export interface TestDesignCaseRecord {
+  id: string;
+  analysisId: string;
+  title: string;
+  testType: "playwright";
+  objective: string;
+  preconditions: string[];
+  steps: string[];
+  expectedResults: string[];
+  priority: Priority;
+  requirementIds: string[];
+  riskIds: string[];
+  evidenceIds: string[];
+  reviewStatus: "draft" | "approved";
+  automationRepoPath: string;
+  automationFile: string;
+  engineeringTaskId: string | null;
+  engineeringTaskStatus: EngineeringTaskStatus | null;
+  uiRuns: UiTestRunRecord[];
+  createdAt: string;
+}
+
+export interface TestDesignGenerationResponse {
+  model: string;
+  usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+  sourceReviews: Array<{
+    sourceId: string;
+    reviewedText: boolean;
+    reviewedImages: boolean;
+    visualFindings: Array<{ locator: string; description: string; evidenceIds: string[] }>;
+  }>;
+  coverageReview: {
+    requirements: Array<{ requirementId: string; disposition: "covered" | "not_playwright_applicable" }>;
+    acceptanceCriteria: Array<{ requirementId: string; criterionNumber: number; disposition: "covered" | "not_playwright_applicable" }>;
+    risks: Array<{ riskId: string; disposition: "covered" | "not_playwright_applicable" }>;
+  };
+  qualityReview: {
+    approved: boolean;
+    summary: string;
+    findings: Array<{ draftKey: string; title: string; issue: string; recommendation: string }>;
+  };
+  savedCaseCount: number;
+}
+
+export interface TestDesignProgress {
+  phase: "source_review" | "partition_generation" | "partition_review" | "coverage_review" | "fill_generation" | "complete";
+  status: "started" | "streaming" | "completed";
+  message: string;
+  partitionKey?: string;
+  partitionTitle?: string;
+  completedPartitions: number;
+  totalPartitions: number;
+  acceptedCaseCount: number;
+}
+
+export type TestDesignStreamEvent =
+  | { type: "progress"; progress: TestDesignProgress }
+  | { type: "batch_saved"; partitionKey: string; partitionTitle: string; savedCaseCount: number; testCases: TestDesignCaseRecord[] }
+  | ({ type: "complete" } & TestDesignGenerationResponse)
+  | { type: "error"; error: string; savedCaseCount: number };
+
 export interface AndroidTestResultRecord {
   id: string;
   title: string;
@@ -301,4 +445,47 @@ export interface PerformanceTestRunRecord {
   error: string;
   thresholds: PerformanceThresholdRecord[];
   artifacts: PerformanceTestArtifactRecord[];
+}
+
+export type SecurityRisk = "high" | "medium" | "low" | "informational" | "unknown";
+
+export interface SecurityFindingRecord {
+  id: string;
+  pluginId: string;
+  name: string;
+  risk: SecurityRisk;
+  confidence: string;
+  url: string;
+  method: string;
+  parameter: string;
+  evidence: string;
+  description: string;
+  solution: string;
+  reference: string;
+}
+
+export interface SecurityTestArtifactRecord {
+  id: string;
+  runId: string;
+  name: string;
+  kind: "report" | "terminal_output";
+}
+
+export interface SecurityTestRunRecord {
+  id: string;
+  targetUrl: string;
+  status: "running" | "completed" | "error";
+  zapVersion: string;
+  startedAt: string;
+  finishedAt: string | null;
+  exitCode: number | null;
+  high: number;
+  medium: number;
+  low: number;
+  informational: number;
+  totalFindings: number;
+  runnerOutput: string;
+  error: string;
+  findings: SecurityFindingRecord[];
+  artifacts: SecurityTestArtifactRecord[];
 }

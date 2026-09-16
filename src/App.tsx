@@ -2,22 +2,20 @@ import {
   AndroidOutlined,
   ApiOutlined,
   BulbOutlined,
-  CheckCircleOutlined,
   CodeOutlined,
   CloudUploadOutlined,
   DatabaseOutlined,
   DesktopOutlined,
   FileSearchOutlined,
   FolderOpenOutlined,
+  ExperimentOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   MessageOutlined,
   PaperClipOutlined,
-  QuestionCircleOutlined,
   SafetyCertificateOutlined,
   SendOutlined,
   ThunderboltOutlined,
-  WarningOutlined,
 } from "@ant-design/icons";
 import { Refine } from "@refinedev/core";
 import {
@@ -26,34 +24,29 @@ import {
   Avatar,
   Button,
   Card,
-  Col,
   ConfigProvider,
-  Divider,
-  Empty,
   Flex,
   Layout,
-  List,
   Menu,
-  Row,
-  Segmented,
   Space,
   Spin,
-  Statistic,
   Tag,
-  Tooltip,
   Typography,
   Upload,
   theme,
   type UploadFile,
 } from "antd";
 import TextArea from "antd/es/input/TextArea";
-import { useMemo, useState } from "react";
-import type { AnalysisResponse, Evidence, LocatorType, Priority, Severity } from "./types";
+import { useEffect, useMemo, useState } from "react";
+import type { AnalysisResponse, RequirementAnalysis } from "./types";
 import ApiTesting from "./ApiTesting";
 import EngineeringTasks from "./EngineeringTasks";
 import UiTesting from "./UiTesting";
 import AppTesting from "./AppTesting";
 import PerformanceTesting from "./PerformanceTesting";
+import SecurityTesting from "./SecurityTesting";
+import TestDesign from "./TestDesign";
+import RequirementAnalysisView from "./RequirementAnalysisView";
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -67,24 +60,7 @@ type Message =
   | { id: string; role: "user"; text: string }
   | { id: string; role: "assistant"; analysis: AnalysisResponse };
 
-const priorityMeta: Record<Priority, { label: string; color: string }> = {
-  must: { label: "必须", color: "red" },
-  should: { label: "应该", color: "gold" },
-  could: { label: "可选", color: "blue" },
-};
-
-const severityMeta: Record<Severity, { label: string; color: string }> = {
-  high: { label: "高风险", color: "red" },
-  medium: { label: "中风险", color: "orange" },
-  low: { label: "低风险", color: "green" },
-};
-
-const locatorMeta: Record<LocatorType, string> = {
-  page: "页码",
-  paragraph: "段落",
-  image: "图片",
-  limited: "定位受限",
-};
+type SavedAnalysis = { id: string; summary: string; model: string; createdAt: string };
 
 function fileObject(file: UploadFile): File | undefined {
   return file.originFileObj;
@@ -94,200 +70,8 @@ function hasOfficeLocationLimit(files: UploadFile[]): boolean {
   return files.some((file) => /\.(docx?|rtf|odt|pptx?)$/i.test(file.name));
 }
 
-function EvidenceLinks({ ids, evidence }: { ids: string[]; evidence: Evidence[] }) {
-  const byId = new Map(evidence.map((item) => [item.id, item]));
-  return (
-    <Space size={[6, 6]} wrap>
-      {ids.map((id) => {
-        const item = byId.get(id);
-        return (
-          <Tooltip
-            key={id}
-            title={item ? `${item.sourceName} · ${locatorMeta[item.locatorType]} ${item.locator}` : "证据不存在"}
-          >
-            <Tag color={item ? "geekblue" : "red"}>{id}</Tag>
-          </Tooltip>
-        );
-      })}
-    </Space>
-  );
-}
-
 function AnalysisView({ response }: { response: AnalysisResponse }) {
-  const { result, usage, model, sources } = response;
-  const [section, setSection] = useState("需求");
-
-  return (
-    <div className="analysis-result">
-      <Flex justify="space-between" align="flex-start" gap={16} wrap>
-        <div>
-          <Space size={8}>
-            <CheckCircleOutlined className="success-icon" />
-            <Text strong>分析完成</Text>
-            <Tag color="blue">{model}</Tag>
-          </Space>
-          <Paragraph className="analysis-summary">{result.summary}</Paragraph>
-        </div>
-        <Text type="secondary" className="token-note">
-          本次 {usage.totalTokens.toLocaleString()} tokens
-        </Text>
-      </Flex>
-
-      <Row gutter={[12, 12]} className="metric-row">
-        <Col xs={12} lg={6}>
-          <Statistic title="需求" value={result.requirements.length} prefix={<FileSearchOutlined />} />
-        </Col>
-        <Col xs={12} lg={6}>
-          <Statistic title="风险" value={result.risks.length} prefix={<WarningOutlined />} />
-        </Col>
-        <Col xs={12} lg={6}>
-          <Statistic title="待确认" value={result.pendingQuestions.length} prefix={<QuestionCircleOutlined />} />
-        </Col>
-        <Col xs={12} lg={6}>
-          <Statistic title="证据" value={result.evidence.length} prefix={<SafetyCertificateOutlined />} />
-        </Col>
-      </Row>
-
-      <Segmented
-        block
-        value={section}
-        onChange={setSection}
-        options={[
-          `需求 ${result.requirements.length}`,
-          `风险 ${result.risks.length}`,
-          `待确认 ${result.pendingQuestions.length}`,
-          `证据 ${result.evidence.length}`,
-        ]}
-      />
-
-      <div className="analysis-section">
-        {section.startsWith("需求") && (
-          <List
-            dataSource={result.requirements}
-            locale={{ emptyText: <Empty description="未识别到明确需求" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
-            renderItem={(item) => (
-              <List.Item>
-                <Card size="small" className="result-card">
-                  <Flex justify="space-between" align="flex-start" gap={12}>
-                    <Space align="start">
-                      <Tag>{item.id}</Tag>
-                      <Text strong>{item.title}</Text>
-                    </Space>
-                    <Tag color={priorityMeta[item.priority].color}>{priorityMeta[item.priority].label}</Tag>
-                  </Flex>
-                  <Paragraph>{item.description}</Paragraph>
-                  {item.acceptanceCriteria.length > 0 && (
-                    <div className="criteria-list">
-                      <Text type="secondary">验收标准</Text>
-                      <ul>
-                        {item.acceptanceCriteria.map((criterion) => (
-                          <li key={criterion}>{criterion}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  <EvidenceLinks ids={item.evidenceIds} evidence={result.evidence} />
-                </Card>
-              </List.Item>
-            )}
-          />
-        )}
-
-        {section.startsWith("风险") && (
-          <List
-            dataSource={result.risks}
-            locale={{ emptyText: <Empty description="未识别到风险" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
-            renderItem={(item) => (
-              <List.Item>
-                <Card size="small" className="result-card risk-card">
-                  <Flex justify="space-between" align="flex-start" gap={12}>
-                    <Space align="start">
-                      <Tag>{item.id}</Tag>
-                      <Text strong>{item.title}</Text>
-                    </Space>
-                    <Tag color={severityMeta[item.severity].color}>{severityMeta[item.severity].label}</Tag>
-                  </Flex>
-                  <Paragraph>{item.description}</Paragraph>
-                  <Paragraph className="mitigation">
-                    <Text strong>建议：</Text>
-                    {item.mitigation}
-                  </Paragraph>
-                  <EvidenceLinks ids={item.evidenceIds} evidence={result.evidence} />
-                </Card>
-              </List.Item>
-            )}
-          />
-        )}
-
-        {section.startsWith("待确认") && (
-          <List
-            dataSource={result.pendingQuestions}
-            locale={{ emptyText: <Empty description="暂无待确认问题" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
-            renderItem={(item) => (
-              <List.Item>
-                <Card size="small" className="result-card question-card">
-                  <Space align="start">
-                    <Tag color="purple">{item.id}</Tag>
-                    <div>
-                      <Text strong>{item.question}</Text>
-                      <Paragraph type="secondary">为什么要确认：{item.reason}</Paragraph>
-                      {item.relatedRequirementIds.length > 0 && (
-                        <Space size={4} wrap>
-                          {item.relatedRequirementIds.map((id) => (
-                            <Tag key={id}>{id}</Tag>
-                          ))}
-                        </Space>
-                      )}
-                    </div>
-                  </Space>
-                </Card>
-              </List.Item>
-            )}
-          />
-        )}
-
-        {section.startsWith("证据") && (
-          <List
-            dataSource={result.evidence}
-            renderItem={(item) => (
-              <List.Item>
-                <Card size="small" className="result-card evidence-card">
-                  <Flex justify="space-between" align="flex-start" gap={12} wrap>
-                    <Space align="start">
-                      <Tag color="geekblue">{item.id}</Tag>
-                      <div>
-                        <Text strong>{item.sourceName}</Text>
-                        <div>
-                          <Text type="secondary">{item.sourceId}</Text>
-                        </div>
-                      </div>
-                    </Space>
-                    <Tag color={item.locatorType === "limited" ? "warning" : "success"}>
-                      {locatorMeta[item.locatorType]}
-                      {item.locator ? ` ${item.locator}` : ""}
-                    </Tag>
-                  </Flex>
-                  {item.excerpt && <blockquote>{item.excerpt}</blockquote>}
-                  {item.note && <Alert type={item.locatorType === "limited" ? "warning" : "info"} message={item.note} showIcon />}
-                </Card>
-              </List.Item>
-            )}
-          />
-        )}
-      </div>
-
-      <Divider />
-      <Flex gap={8} wrap>
-        {sources.map((source) => (
-          <Tooltip key={source.id} title={source.capabilityNote}>
-            <Tag color={source.capability === "limited" ? "warning" : "default"}>
-              {source.id} · {source.name}
-            </Tag>
-          </Tooltip>
-        ))}
-      </Flex>
-    </div>
-  );
+  return <RequirementAnalysisView response={response} />;
 }
 
 function UploadPanel({
@@ -341,6 +125,7 @@ function UploadPanel({
         </p>
         <p className="ant-upload-text">拖入或选择文件</p>
         <p className="ant-upload-hint">单个不超过 {MAX_FILE_MB} MB</p>
+        <p className="ant-upload-hint">PDF 看正文和页面图片；PNG/JPG/WEBP/静态 GIF 看视觉内容；Word、Markdown 等非 PDF 文档只看文本。</p>
       </Dragger>
     </Card>
   );
@@ -349,11 +134,13 @@ function UploadPanel({
 function Workbench() {
   const { message: toast } = AntdApp.useApp();
   const [collapsed, setCollapsed] = useState(false);
-  const [activePage, setActivePage] = useState<"chat" | "api" | "engineering" | "ui" | "app" | "performance">("performance");
+  const [activePage, setActivePage] = useState<"chat" | "api" | "engineering" | "ui" | "app" | "performance" | "security" | "design">("chat");
   const [prompt, setPrompt] = useState("帮我分析这个需求");
   const [attachments, setAttachments] = useState<UploadFile[]>([]);
   const [knowledge, setKnowledge] = useState<UploadFile[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [savedAnalyses, setSavedAnalyses] = useState<SavedAnalysis[]>([]);
+  const [selectedAnalysisId, setSelectedAnalysisId] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -362,10 +149,33 @@ function Workbench() {
   const remaining = Math.max(0, MAX_FILES - totalFiles);
   const lastResponse = [...messages].reverse().find((item) => item.role === "assistant");
 
+  useEffect(() => {
+    void fetch("/api/analyses")
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`读取已保存报告失败（HTTP ${response.status}）`);
+        setSavedAnalyses((await response.json()) as SavedAnalysis[]);
+      })
+      .catch((caught) => setError(caught instanceof Error ? caught.message : "读取已保存报告失败"));
+  }, []);
+
+  async function openSavedAnalysis(item: SavedAnalysis) {
+    setError(undefined);
+    try {
+      const response = await fetch(`/api/analyses/${encodeURIComponent(item.id)}`);
+      const body = (await response.json()) as RequirementAnalysis | { error?: string };
+      if (!response.ok) throw new Error("error" in body && body.error ? body.error : `读取报告失败（HTTP ${response.status}）`);
+      const analysis: AnalysisResponse = { analysisId: item.id, result: body as RequirementAnalysis, model: item.model, sources: [] };
+      setSelectedAnalysisId(item.id);
+      setMessages([{ id: item.id, role: "assistant", analysis }]);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "读取报告失败");
+    }
+  }
+
   const subtitle = useMemo(() => {
     if (loading) return "OpenAI 正在读取资料并生成结构化分析";
     if (lastResponse?.role === "assistant") return `最近一次分析使用 ${lastResponse.analysis.model}`;
-    return "上传 PRD 或截图，获得可追溯的需求与风险分析";
+    return "上传 PRD 或截图，获得可追溯的需求分析";
   }, [lastResponse, loading]);
 
   async function submit() {
@@ -405,6 +215,13 @@ function Workbench() {
         ...current,
         { id: crypto.randomUUID(), role: "assistant", analysis },
       ]);
+      setSelectedAnalysisId(analysis.analysisId);
+      void fetch("/api/analyses")
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`刷新已保存报告失败（HTTP ${response.status}）`);
+          setSavedAnalyses((await response.json()) as SavedAnalysis[]);
+        })
+        .catch((caught) => setError(caught instanceof Error ? caught.message : "刷新已保存报告失败"));
       toast.success("需求分析完成");
     } catch (caught) {
       const detail = caught instanceof Error ? caught.message : "未知错误";
@@ -445,16 +262,18 @@ function Workbench() {
             mode="inline"
             selectedKeys={[activePage]}
             onClick={({ key }) => {
-              if (key === "chat" || key === "api" || key === "engineering" || key === "ui" || key === "app" || key === "performance") setActivePage(key);
+              if (key === "chat" || key === "api" || key === "engineering" || key === "ui" || key === "app" || key === "performance" || key === "security" || key === "design") setActivePage(key);
             }}
             items={[
               { key: "overview", icon: <BulbOutlined />, label: "工作台概览", disabled: true },
               { key: "chat", icon: <MessageOutlined />, label: "AI 需求分析" },
+              { key: "design", icon: <ExperimentOutlined />, label: "测试设计" },
               { key: "api", icon: <ApiOutlined />, label: "API 测试" },
               { key: "engineering", icon: <CodeOutlined />, label: "工程任务" },
               { key: "ui", icon: <DesktopOutlined />, label: "UI 测试" },
               { key: "app", icon: <AndroidOutlined />, label: "APP 测试" },
               { key: "performance", icon: <ThunderboltOutlined />, label: "性能测试" },
+              { key: "security", icon: <SafetyCertificateOutlined />, label: "安全测试" },
               { key: "knowledge", icon: <DatabaseOutlined />, label: "项目资料", disabled: true },
             ]}
           />
@@ -466,8 +285,8 @@ function Workbench() {
                   进行中
                 </Tag>
               </Flex>
-              <Text className="phase-title">P04-C · 性能测试</Text>
-              <Text className="phase-copy">Repo → k6 → Summary → TestRun</Text>
+              <Text className="phase-title">P01 · 需求分析</Text>
+              <Text className="phase-copy">P05 测试设计暂停，待需求分析评审</Text>
             </div>
           )}
         </Sider>
@@ -483,7 +302,7 @@ function Workbench() {
                 />
                 <div>
                   <Title level={4}>
-                    {activePage === "chat" ? "AI 需求分析" : activePage === "api" ? "API 测试" : activePage === "engineering" ? "工程任务" : activePage === "ui" ? "UI 测试" : activePage === "app" ? "APP 测试" : "性能测试"}
+                    {activePage === "chat" ? "AI 需求分析" : activePage === "api" ? "API 测试" : activePage === "engineering" ? "工程任务" : activePage === "ui" ? "UI 测试" : activePage === "app" ? "APP 测试" : activePage === "performance" ? "性能测试" : activePage === "security" ? "安全测试" : "测试设计与用例生成"}
                   </Title>
                   <Text type="secondary">
                     {activePage === "chat"
@@ -496,7 +315,11 @@ function Workbench() {
                             ? "在一次性 Docker 容器中运行所选 Playwright 测试"
                             : activePage === "app"
                               ? "连接本机已启动的 Android Emulator，运行所选 WebdriverIO 测试"
-                              : "以当前 Windows 用户权限运行所选本地 k6 脚本"}
+                            : activePage === "performance"
+                              ? "以当前 Windows 用户权限运行所选本地 k6 脚本"
+                              : activePage === "security"
+                                ? "明确授权后运行无认证 Traditional Spider 与被动安全扫描"
+                                : "结合原始 PRD 与真实分析结果生成可追溯测试用例"}
                   </Text>
                 </div>
               </Space>
@@ -512,18 +335,33 @@ function Workbench() {
                           ? "Playwright 1.62.1"
                           : activePage === "app"
                             ? "Appium 3.7.0"
-                            : "k6 2.2.0"}
+                            : activePage === "performance"
+                              ? "k6 2.2.0"
+                              : activePage === "security"
+                                ? "ZAP 2.17.0"
+                                : "Responses API + OpenHands"}
                 </Tag>
                 <Avatar className="user-avatar">U</Avatar>
               </Space>
             </Flex>
           </Header>
 
-          <Content className="app-content">
+          <Content className={`app-content ${activePage === "chat" ? "app-content--fixed" : "app-content--scrollable"}`}>
             {activePage === "chat" ? (
               <div className="workspace-grid">
               <section className="chat-panel">
                 <div className="chat-feed">
+                  {savedAnalyses.length > 0 && (
+                    <Card size="small" title="已保存的需求分析报告">
+                      <Space size={[8, 8]} wrap>
+                        {savedAnalyses.map((item) => (
+                          <Button key={item.id} type={selectedAnalysisId === item.id ? "primary" : "default"} onClick={() => void openSavedAnalysis(item)}>
+                            {new Date(item.createdAt).toLocaleString("zh-CN")} · {item.summary.slice(0, 28) || "需求分析"}
+                          </Button>
+                        ))}
+                      </Space>
+                    </Card>
+                  )}
                   {messages.length === 0 && (
                     <div className="welcome-state">
                       <div className="welcome-orbit">
@@ -531,12 +369,12 @@ function Workbench() {
                       </div>
                       <Title level={3}>从 PRD 到可测试需求</Title>
                       <Paragraph>
-                        上传 PRD、截图或补充资料。TestMesh 会返回结构化需求、风险、待确认问题和可追溯证据。
+                        上传 PRD、截图或补充资料。TestMesh 会返回固定格式的需求分析报告、待确认问题和可追溯原文引用。
                       </Paragraph>
                       <Space size={[8, 8]} wrap>
                         <Tag>功能与边界</Tag>
                         <Tag>异常路径</Tag>
-                        <Tag>风险识别</Tag>
+                        <Tag>业务规则</Tag>
                         <Tag>证据追溯</Tag>
                       </Space>
                     </div>
@@ -655,7 +493,7 @@ function Workbench() {
                     type="warning"
                     showIcon
                     message="Office 文件定位受限"
-                    description="DOC/DOCX/PPT/PPTX 只抽取文本，嵌入图片不会送入模型。请转为 PDF 或把图片单独上传。"
+                    description="OpenAI 文件输入只从 DOC/DOCX/RTF/ODT/PPT/PPTX 抽取文本，嵌入图片不会进入模型。请转为 PDF 或把图片单独上传。"
                   />
                 )}
 
@@ -678,8 +516,12 @@ function Workbench() {
               <UiTesting />
             ) : activePage === "app" ? (
               <AppTesting />
-            ) : (
+            ) : activePage === "performance" ? (
               <PerformanceTesting />
+            ) : activePage === "security" ? (
+              <SecurityTesting />
+            ) : (
+              <TestDesign />
             )}
           </Content>
         </Layout>

@@ -145,7 +145,17 @@ body {
 .app-content {
   height: calc(100vh - 74px);
   padding: 18px;
+}
+
+.app-content--fixed {
   overflow: hidden;
+}
+
+.app-content--scrollable {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .workspace-grid {
@@ -167,14 +177,18 @@ body {
 .chat-panel {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex-direction: column;
   overflow: hidden;
 }
 
 .chat-feed {
   flex: 1;
+  min-height: 0;
   padding: 26px clamp(18px, 4vw, 54px);
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .welcome-state {
@@ -495,6 +509,74 @@ body {
   color: #2457f5 !important;
 }
 
+.test-design-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding-bottom: 24px;
+}
+
+.test-design-page ul,
+.test-design-page ol {
+  margin: 4px 0 8px;
+  padding-left: 22px;
+}
+
+.test-design-upload-formats {
+  display: grid;
+  max-width: 620px;
+  margin: 8px auto 0;
+  gap: 4px;
+  color: #64708c;
+  font-size: 12px;
+  line-height: 1.55;
+  text-align: left;
+}
+
+.test-design-upload-formats > div:not(.test-design-upload-limit) {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.test-design-upload-formats .ant-typography {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.test-design-upload-limit {
+  margin-top: 3px;
+  color: #8a94aa;
+}
+
+.test-design-case {
+  scroll-margin-top: 18px;
+}
+
+.test-design-evidence-list {
+  display: grid;
+  width: 100%;
+  gap: 8px;
+}
+
+.test-design-evidence-item .ant-card-body {
+  padding: 10px 12px;
+}
+
+.test-design-evidence-item .ant-typography {
+  margin-bottom: 0;
+}
+
+.test-design-evidence-item blockquote {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-left: 3px solid #8da9ff;
+  background: #f7f9ff;
+  color: #4d5a75;
+}
+
 .api-import-button {
   margin-top: 12px;
 }
@@ -756,5 +838,52 @@ body {
 
   .composer .ant-btn {
     width: 100%;
+  }
+}
+.analysis-report section {
+  margin-top: 20px;
+}
+
+.analysis-report section .result-card {
+  margin-bottom: 8px;
+}
+
+.analysis-report [id^="analysis-source-"] {
+  scroll-margin-top: 24px;
+}
+
+.review-evidence-card {
+  width: 100%;
+}
+
+.review-evidence-preview {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.review-evidence-preview img,
+.review-evidence-preview iframe {
+  display: block;
+  width: 100%;
+  border: 1px solid #d9e1ef;
+  border-radius: 8px;
+  background: #f6f8fc;
+}
+
+.review-evidence-preview img {
+  max-height: 520px;
+  object-fit: contain;
+}
+
+.review-evidence-preview iframe {
+  height: min(55vh, 520px);
+  min-height: 320px;
+}
+
+@media (max-width: 560px) {
+  .review-evidence-preview iframe {
+    height: 340px;
+    min-height: 0;
   }
 }

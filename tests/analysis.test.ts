@@ -31,6 +31,7 @@ describe("P01 source handling", () => {
 
     expect(normalizeUploadFilename(mojibake)).toBe(expected);
     expect(normalizeUploadFilename(expected)).toBe(expected);
+    expect(normalizeUploadFilename("流程.pdf")).toBe("流程.pdf");
     expect(normalizeUploadFilename("prd.pdf")).toBe("prd.pdf");
   });
 

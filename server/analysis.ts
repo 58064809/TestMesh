@@ -84,6 +84,50 @@ export type AnalysisResult = z.infer<typeof AnalysisSchema>;
 export type Evidence = AnalysisResult["evidence"][number];
 type ModelAnalysisResult = z.infer<typeof ModelAnalysisSchema>;
 
+// The document is the source of truth for new analyses. The older AnalysisResult
+// shape is retained only for previously saved analyses and their trace records.
+const AnalysisItemSchema = z.object({
+  id: z.string().min(1),
+  description: z.string(),
+  origin: z.enum(["explicit", "inferred", "missing", "conflict"]),
+  source_refs: z.array(z.string().min(1)),
+  confidence: z.number().min(0).max(1),
+}).strict();
+
+const ModelSourceSchema = AnalysisItemSchema.extend({
+  source_file_id: z.string().min(1),
+  locator_type: z.enum(["page", "paragraph", "image", "limited"]),
+  locator: z.string(),
+  excerpt: z.string(),
+}).strict();
+
+const documentFields = {
+  summary: AnalysisItemSchema.nullable(),
+  requirements: z.array(AnalysisItemSchema.extend({ acceptance_criteria: z.array(z.string()) })),
+  actors: z.array(AnalysisItemSchema),
+  business_rules: z.array(AnalysisItemSchema),
+  flows: z.array(AnalysisItemSchema),
+  states: z.array(AnalysisItemSchema),
+  constraints: z.array(AnalysisItemSchema),
+  exceptions: z.array(AnalysisItemSchema),
+  open_questions: z.array(AnalysisItemSchema),
+};
+
+export const ModelRequirementAnalysisSchema = z.object({
+  ...documentFields,
+  sources: z.array(ModelSourceSchema),
+}).strict();
+
+export const RequirementAnalysisSchema = z.object({
+  ...documentFields,
+  sources: z.array(ModelSourceSchema.extend({ source_file_name: z.string().min(1) })),
+}).strict();
+
+export type RequirementAnalysis = z.infer<typeof RequirementAnalysisSchema>;
+type ModelRequirementAnalysis = z.infer<typeof ModelRequirementAnalysisSchema>;
+
+export class RequirementAnalysisValidationError extends Error {}
+
 export type SourceScope = "attachment" | "knowledge";
 export type LocationCapability = "page" | "paragraph" | "image" | "limited";
 
@@ -122,7 +166,7 @@ export function isAcceptedFilename(filename: string): boolean {
 }
 
 export function normalizeUploadFilename(filename: string): string {
-  if (Buffer.byteLength(filename, "utf8") === filename.length) {
+  if (Buffer.byteLength(filename, "utf8") === filename.length || [...filename].some((character) => character.codePointAt(0)! > 0xff)) {
     return filename;
   }
 
@@ -164,7 +208,7 @@ export function locationCapability(filename: string): {
 } {
   const ext = extensionOf(filename);
   if (ext === ".pdf") {
-    return { capability: "page", note: "PDF 同时输入抽取文本与页面图像，可按页定位。" };
+    return { capability: "page", note: "PDF 同时输入抽取文本与页面图像；正文按页定位，嵌入图可使用图片定位并注明页码。" };
   }
   if (TEXT_EXTENSIONS.has(ext)) {
     return { capability: "paragraph", note: "文本已在发送前加入稳定段落编号。" };
@@ -255,8 +299,9 @@ export function attachEvidenceSourceNames(
   result: ModelAnalysisResult,
   sources: SourceFile[],
 ): AnalysisResult {
+  const validated = ModelAnalysisSchema.parse(result);
   const sourceById = new Map(sources.map((source) => [source.id, source]));
-  const evidence = result.evidence.map((item) => {
+  const evidence = validated.evidence.map((item) => {
     const source = sourceById.get(item.sourceId);
     if (!source) {
       throw new Error(`Evidence ${item.id} 引用了未知来源 ${item.sourceId}`);
@@ -264,10 +309,71 @@ export function attachEvidenceSourceNames(
     return { ...item, sourceName: source.name };
   });
 
-  return AnalysisSchema.parse({ ...result, evidence });
+  return AnalysisSchema.parse({ ...validated, evidence });
 }
 
-function buildInput(message: string, sources: SourceFile[]): InputContent[] {
+export function attachRequirementSources(
+  result: ModelRequirementAnalysis,
+  files: SourceFile[],
+): RequirementAnalysis {
+  const byId = new Map(files.map((file) => [file.id, file]));
+  const sources = result.sources.map((source) => {
+    const file = byId.get(source.source_file_id);
+    if (!file) throw new Error(`来源引用 ${source.id} 引用了未知文件 ${source.source_file_id}`);
+    return { ...source, source_file_name: file.name };
+  });
+  return RequirementAnalysisSchema.parse({ ...result, sources });
+}
+
+export function validateRequirementAnalysis(result: RequirementAnalysis, files: SourceFile[]): void {
+  const fileById = new Map(files.map((file) => [file.id, file]));
+  const items = [
+    ...(result.summary ? [result.summary] : []),
+    ...result.requirements,
+    ...result.actors,
+    ...result.business_rules,
+    ...result.flows,
+    ...result.states,
+    ...result.constraints,
+    ...result.exceptions,
+    ...result.open_questions,
+    ...result.sources,
+  ];
+  const itemIds = new Set<string>();
+  for (const item of items) {
+    if (itemIds.has(item.id)) throw new Error(`需求分析条目 ID 重复：${item.id}`);
+    itemIds.add(item.id);
+  }
+  const sourceIds = new Set(result.sources.map((source) => source.id));
+  for (const item of items) {
+    for (const ref of item.source_refs) {
+      if (!sourceIds.has(ref)) throw new Error(`需求分析条目 ${item.id} 引用了不存在的原文来源 ${ref}`);
+    }
+    if (item.origin !== "missing" && item.description && item.source_refs.length === 0 && !result.sources.some((source) => source.id === item.id)) {
+      throw new Error(`需求分析条目 ${item.id} 缺少原文来源`);
+    }
+    if (item.origin === "conflict" && item.source_refs.length < 2) {
+      throw new Error(`冲突条目 ${item.id} 至少要关联相互矛盾的两处原文；单处表述歧义请作为待确认问题保留，不标成冲突`);
+    }
+  }
+  for (const source of result.sources) {
+    const file = fileById.get(source.source_file_id);
+    if (!file) throw new Error(`来源引用 ${source.id} 引用了未知文件`);
+    if (source.source_file_name !== file.name) throw new Error(`来源引用 ${source.id} 的文件名不一致`);
+    if (file.capability === "limited" && source.locator_type !== "limited") {
+      throw new Error(`来源引用 ${source.id} 对定位受限文件给出了未经保证的位置`);
+    }
+    const isPdfImage = file.capability === "page" && source.locator_type === "image";
+    if (source.locator_type !== file.capability && !isPdfImage && file.capability !== "limited") {
+      throw new Error(`来源引用 ${source.id} 的定位类型 ${source.locator_type} 与文件定位能力 ${file.capability} 不一致（locator=${source.locator}）`);
+    }
+    if (isPdfImage && !/(?:第\s*)?\d+\s*页|page\s*\d+|p\.\s*\d+/i.test(source.locator)) {
+      throw new Error(`来源引用 ${source.id} 指向 PDF 嵌入图片，但没有可核对的页码（locator=${source.locator}）`);
+    }
+  }
+}
+
+export function buildSourceInput(message: string, sources: SourceFile[]): InputContent[] {
   const content: InputContent[] = [
     {
       type: "input_text",
@@ -291,6 +397,10 @@ function buildInput(message: string, sources: SourceFile[]): InputContent[] {
     }
 
     const dataUrl = `data:${source.mimeType};base64,${source.buffer.toString("base64")}`;
+    content.push({
+      type: "input_text",
+      text: `紧接着的视觉或文件输入来自来源 ${source.id}（${source.name}）。请只把对它的观察关联到该来源；跨来源判断分别保留引用。`,
+    });
     if (IMAGE_EXTENSIONS.has(extension)) {
       content.push({ type: "input_image", image_url: dataUrl, detail: "high" });
       continue;
@@ -307,24 +417,20 @@ function buildInput(message: string, sources: SourceFile[]): InputContent[] {
   return content;
 }
 
-const INSTRUCTIONS = `你是 TestMesh 的资深测试分析师。请用中文分析用户提供的 PRD、截图和项目资料。
+const INSTRUCTIONS = `你是 TestMesh 的需求分析师。请用中文理解用户提供的 PRD、截图和项目资料；逐页审阅 PDF 正文与页面图像，并审阅独立截图的视觉内容。返回固定的 RequirementAnalysis JSON，不撰写自由格式作文。
 
-必须遵守：
-1. 只依据用户文本和来源目录中的文件；不得臆测不存在的业务规则。
-2. 输出 Requirement、Risk、Pending Question、Evidence，并严格符合给定结构。
-3. Requirement 和 Risk 的 evidenceIds 只能引用本次输出中的 Evidence id。
-4. Evidence.sourceId 必须逐字使用来源目录中的值；来源文件名由服务端依据 sourceId 确定性填入。
-5. PDF 可用 page 定位；带编号文本用 paragraph 定位；独立图片用 image 定位。
-6. 定位能力为 limited 的来源，locatorType 必须为 limited，locator 留空，并在 note 明确说明无法可靠定位页/段及嵌入图片限制。
-7. excerpt 应简短；如果图片没有可引用文字，可为空并在 note 描述视觉依据。
-8. 不要把推断伪装成 Evidence。资料不足时生成 Pending Question。
-9. 优先识别功能需求、边界条件、异常路径、权限、数据一致性和可测试性风险。`;
+1. 顶层固定为 summary、requirements、actors、business_rules、flows、states、constraints、exceptions、open_questions、sources；不存在的类别返回空数组，无法概述时 summary 返回 null，不为填满栏目编造内容。
+2. 每个条目填写 id、description、origin、source_refs、confidence。origin 只使用 explicit（原文明确）、inferred（根据原文推导）、missing（需求缺失）、conflict（原文冲突）。推断不能伪装成明确事实。
+3. sources 是可查看的原文引用，每条有独立 id、source_file_id、locator_type、locator、excerpt，并使用共同基础属性。source_file_id 逐字使用来源目录的文件 ID；文件名由服务端填入。其他条目的 source_refs 引用 sources 的 id。明确事实、推断和冲突都给出真实引用；缺失项没有可引用材料时留空。
+4. PDF 正文使用 page；PDF 内的流程图、架构图或截图可使用 image，但 locator 写明真实页码；带编号文本使用 paragraph、独立图片使用 image。定位能力 limited 的文件使用 limited，locator 留空，并在 description 说明定位限制。图片没有文字时 excerpt 可以为空，description 记录实际视觉依据。
+5. requirements 的 acceptance_criteria 只记录原文明确给出的标准；没有就返回空数组。不要将测试风险和测试用例放进需求分析，它们属于测试设计阶段。
+6. 多文件来源默认没有优先级。PRD、流程图、截图或补充说明规则不同时，不擅自选定一个版本；在 open_questions 中描述差异，origin 标记 conflict，并关联每一方独立的原文引用。只有上传材料明确给出“PRD 优先”等来源优先规则，才作为 explicit 的 business_rules 记录，引用规则原文；即使有规则，也保留冲突双方引用，让人工确认规则适用范围。单一表述的歧义不标为 conflict。`;
 
 export async function analyzeRequirement(
   message: string,
   sources: SourceFile[],
   apiKey: string,
-): Promise<{ result: AnalysisResult; usage: { inputTokens: number; outputTokens: number; totalTokens: number } }> {
+): Promise<{ result: RequirementAnalysis; usage: { inputTokens: number; outputTokens: number; totalTokens: number } }> {
   if (sources.length === 0) {
     throw new Error("至少需要上传一个 PRD、文档或图片来源");
   }
@@ -332,18 +438,18 @@ export async function analyzeRequirement(
     throw new Error(`单次最多上传 ${MAX_FILES} 个文件`);
   }
 
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey, maxRetries: 0 });
   const response = await client.responses.parse({
     model: MODEL,
     instructions: INSTRUCTIONS,
     input: [
       {
         role: "user",
-        content: buildInput(message, sources),
+        content: buildSourceInput(message, sources),
       },
     ],
     text: {
-      format: zodTextFormat(ModelAnalysisSchema, "requirement_analysis"),
+      format: zodTextFormat(ModelRequirementAnalysisSchema, "requirement_analysis"),
     },
     max_output_tokens: MAX_OUTPUT_TOKENS,
     prompt_cache_options: { mode: "explicit" },
@@ -356,8 +462,13 @@ export async function analyzeRequirement(
     throw new Error(`OpenAI 未返回可解析的结构化结果（${detail ?? "未知状态"}）`);
   }
 
-  const result = attachEvidenceSourceNames(parsed, sources);
-  validateEvidenceSources(result, sources);
+  let result: RequirementAnalysis;
+  try {
+    result = attachRequirementSources(parsed, sources);
+    validateRequirementAnalysis(result, sources);
+  } catch (error) {
+    throw new RequirementAnalysisValidationError(error instanceof Error ? error.message : "结构或来源校验失败");
+  }
 
   return {
     result,

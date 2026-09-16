@@ -23,5 +23,4 @@ TestMesh 是一个面向软件交付团队的全链路 AI 测试工程工作台�
 
 ## 当前边界
 
-当前只交付 P01：PRD 多模态需求分析。自动化执行、工程 Agent、知识库增强和质量门禁均属于后续阶段。
-
+P01–P03 已完成；P04 的 UI、APP、性能路径已完成，安全路径仍阻塞在 ZAP 2.17.0 安装包的 Defender 检测复核。P05 已规划为“测试设计与用例生成”，负责补齐 Requirement/Risk/Evidence 到通用 TestCase、批准用例到自动化代码及 TestRun 的闭环；知识库增强、Failure Triage、Quality Gate、完整回归与 CI 顺延至 P06。P04 全部完成并获得用户授权前不得实施 P05 或 P06。
