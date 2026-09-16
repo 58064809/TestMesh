@@ -31,6 +31,10 @@ function downloadMarkdown(filename: string, markdown: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function requiredLabel(label: string) {
+  return <Text><Text type="danger">*</Text> {label}</Text>;
+}
+
 type StoredSourceFile = { sourceFileId: string; mimeType: string; provenance: string };
 
 export default function RequirementReviewView({ response, sourceFiles }: { response: AnalysisResponse; sourceFiles: StoredSourceFile[] }) {
@@ -248,15 +252,15 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
               </Card>;
             })}</>}
           <Text>评审人（选填）</Text><Input value={draft.reviewer} onChange={(event) => updateDraft({ reviewer: event.target.value })} placeholder="需要留痕时填写" />
-          <Text>处理结果</Text><Select value={draft.status} onChange={(status: AnalysisReviewStatus) => updateDraft({ status, mergeInto: status === "merged" ? draft.mergeInto : "" })} options={Object.entries(reviewStatusLabels).map(([value, label]) => ({ value, label }))} />
-          {draft.status === "merged" && <><Text>合并到</Text><Select value={draft.mergeInto || undefined} onChange={(mergeInto) => updateDraft({ mergeInto })} placeholder="选择同类条目" options={entries.filter((entry) => entry.section === selected.section && entry.item.id !== selected.item.id).map((entry) => ({ value: entry.item.id, label: `${entry.item.id} · ${entry.item.description.slice(0, 30)}` }))} /></>}
+          {requiredLabel("处理结果")}<Select value={draft.status} onChange={(status: AnalysisReviewStatus) => updateDraft({ status, mergeInto: status === "merged" ? draft.mergeInto : "" })} options={Object.entries(reviewStatusLabels).map(([value, label]) => ({ value, label }))} />
+          {draft.status === "merged" && <>{requiredLabel("合并到")}<Select value={draft.mergeInto || undefined} onChange={(mergeInto) => updateDraft({ mergeInto })} placeholder="选择同类条目" options={entries.filter((entry) => entry.section === selected.section && entry.item.id !== selected.item.id).map((entry) => ({ value: entry.item.id, label: `${entry.item.id} · ${entry.item.description.slice(0, 30)}` }))} /></>}
           <Text>理由或补充说明（选填）</Text><Input.TextArea value={draft.reason} onChange={(event) => updateDraft({ reason: event.target.value })} rows={2} />
           {selected.section === "open_questions" && <>
-            <Text>问题类型（人工复核，不改写 AI issue_type）</Text><Select value={draft.issueType || undefined} onChange={(issueType: AnalysisIssueType) => updateDraft({ issueType })} placeholder="选择缺失、歧义或冲突" options={Object.entries(issueTypeLabels).map(([value, label]) => ({ value, label }))} />
+            {draft.status === "accepted" ? requiredLabel("问题类型（人工复核，不改写 AI issue_type）") : <Text>问题类型（人工复核，不改写 AI issue_type）</Text>}<Select value={draft.issueType || undefined} onChange={(issueType: AnalysisIssueType) => updateDraft({ issueType })} placeholder="选择缺失、歧义或冲突" options={Object.entries(issueTypeLabels).map(([value, label]) => ({ value, label }))} />
             {draft.status === "accepted" && <>
-              <Text>正式评审决策（进入基线前填写）</Text><Input.TextArea value={draft.decision} onChange={(event) => updateDraft({ decision: event.target.value })} rows={2} placeholder="记录产品、开发和测试讨论后的最终规则" />
-              <Text>决策人（进入基线前填写）</Text><Input value={draft.decisionBy} onChange={(event) => updateDraft({ decisionBy: event.target.value })} />
-              <Text>回写到哪版 PRD（进入基线前填写）</Text><Input value={draft.prdRevision} onChange={(event) => updateDraft({ prdRevision: event.target.value })} placeholder="例如 v1.1" />
+              {requiredLabel("正式评审决策（进入基线前填写）")}<Input.TextArea value={draft.decision} onChange={(event) => updateDraft({ decision: event.target.value })} rows={2} placeholder="记录产品、开发和测试讨论后的最终规则" />
+              {requiredLabel("决策人（进入基线前填写）")}<Input value={draft.decisionBy} onChange={(event) => updateDraft({ decisionBy: event.target.value })} />
+              {requiredLabel("回写到哪版 PRD（进入基线前填写）")}<Input value={draft.prdRevision} onChange={(event) => updateDraft({ prdRevision: event.target.value })} placeholder="例如 v1.1" />
               <Text type="secondary">尚未形成结论时可先选择“待澄清”；确认问题不成立时选择“驳回”。</Text>
             </>}
           </>}
@@ -266,10 +270,10 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
       <Modal title="建立需求基线" open={baselineOpen} onCancel={() => setBaselineOpen(false)} onOk={() => void createBaseline()} okText="冻结基线" confirmLoading={saving} destroyOnHidden>
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           <Alert type="info" showIcon message="先由产品修订并批准 PRD，再上传获批版本。基线冻结后不覆盖；发生变更时重新上传新 PRD 生成新分析，并关联前一基线。" />
-          <Text>获批 PRD 修订标识</Text><Input value={baselineRevision} onChange={(event) => setBaselineRevision(event.target.value)} placeholder="例如 v1.0" />
-          <Text>登记批准人</Text><Input value={baselineApprover} onChange={(event) => setBaselineApprover(event.target.value)} placeholder="产品负责人" />
+          {requiredLabel("获批 PRD 修订标识")}<Input value={baselineRevision} onChange={(event) => setBaselineRevision(event.target.value)} placeholder="例如 v1.0" />
+          {requiredLabel("登记批准人")}<Input value={baselineApprover} onChange={(event) => setBaselineApprover(event.target.value)} placeholder="产品负责人" />
           <Text>前一基线（首次建立可留空）</Text><Select allowClear value={previousBaselineId || undefined} onChange={(value) => setPreviousBaselineId(value ?? "")} options={baselines.map((item) => ({ value: item.id, label: `v${item.version} · ${item.prdRevision} · ${item.prdFilename}` }))} />
-          <Text>上传评审后获批的 PRD 文件</Text><Upload accept=".pdf,.doc,.docx,.rtf,.odt,.md,.txt,.html,.htm" beforeUpload={() => false} maxCount={1} fileList={reviewedPrd} onChange={({ fileList }) => setReviewedPrd(fileList.slice(-1))}><Button>选择获批 PRD</Button></Upload>
+          {requiredLabel("上传评审后获批的 PRD 文件")}<Upload accept=".pdf,.doc,.docx,.rtf,.odt,.md,.txt,.html,.htm" beforeUpload={() => false} maxCount={1} fileList={reviewedPrd} onChange={({ fileList }) => setReviewedPrd(fileList.slice(-1))}><Button>选择获批 PRD</Button></Upload>
         </Space>
       </Modal>
 
