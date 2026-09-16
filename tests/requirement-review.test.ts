@@ -7,7 +7,7 @@ const document: RequirementAnalysis = {
   summary: null,
   requirements: [{ id: "REQ-1", description: "续费成功后增加 365 天", origin: "explicit", source_refs: ["SRC-1"], confidence: 0.95, acceptance_criteria: [] }],
   actors: [], business_rules: [], flows: [], states: [], constraints: [], exceptions: [],
-  open_questions: [{ id: "OQ-1", description: "从支付时间还是原到期时间开始算？", origin: "conflict", source_refs: ["SRC-1"], confidence: 0.9 }],
+  open_questions: [{ id: "OQ-1", description: "从支付时间还是原到期时间开始算？", origin: "inferred", issue_type: "ambiguity", source_refs: ["SRC-1"], confidence: 0.9 }],
   sources: [{ id: "SRC-1", description: "续费规则原文", origin: "explicit", source_refs: [], confidence: 1,
     source_file_id: "ATT-1", source_file_name: "prd.md", locator_type: "paragraph", locator: "1", excerpt: "续费成功后有效期增加 365 天" }],
 };
@@ -32,6 +32,7 @@ describe("requirement review and approved baseline", () => {
       expect(renderReviewMarkdown(document, reviews, "accepted")).toContain("REQ-1");
       expect(renderReviewMarkdown(document, reviews, "accepted")).not.toContain("OQ-1");
       expect(renderReviewMarkdown(document, reviews, "all")).toContain("OQ-1");
+      expect(renderReviewMarkdown(document, reviews, "all")).toContain("AI 问题分类：歧义");
       expect(store.listAnalysisReviewHistory(analysisId, "OQ-1")).toHaveLength(1);
     } finally { store.close(); }
   });

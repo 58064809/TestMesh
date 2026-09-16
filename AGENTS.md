@@ -27,6 +27,7 @@
 - 2026-09-15 用户批准继续补齐 P01 的人工评审、缩减导出、决策回写、基线和持久化；飞书因无权限明确搁置。评审事件按条目追加，原分析 JSON 不改；原文件字节与 SHA-256、获批 PRD 与冻结快照保存于现有 SQLite。当前 PRD 的原文件在分析后补录，页面标明不能证明与当时上传字节相同。现有报告待用户实际评审，暂无需求基线；不能把本地模拟测试说成已完成正式评审。来源优先级默认不存在，明确规则作为带原文引用的业务规则；跨文件冲突保留双方证据，在人工评审时决策并写入获批 PRD。最终 41 项测试、lint 和 build 通过。用户说明个人项目仅企业内部使用，本次不扩展网络/权限方案。P05 仍暂停，P04-D 安全阻塞不变。
 - 2026-09-15 核对 P01 图片/流程图参与分析：独立 PNG/JPEG/WEBP/静态 GIF 作为高细节 `input_image`，PDF 作为高细节 `input_file` 由 OpenAI 提取正文和页面图像；Markdown 等纯文本由服务端编号，Word/Office 非 PDF 文件由 OpenAI 只抽取文本，内嵌图不进入模型。所有来源汇入同一次固定 RequirementAnalysis 输出；视觉/文件块前增加来源 ID 与文件名标记，中文原生文件名误转码已修正。数据库现有报告含 8 条图片定位来源、18 条页码定位来源；不以此证明未来任意 Word 内嵌图或任意视觉判断都正确。当前没有独立 OCR 流水线，飞书继续搁置。42 项测试、lint、build 通过；本次未重新发送付费模型请求，P05 保持暂停。
 - 2026-09-16 人工评审弹窗已内嵌留存的独立图片和 PDF 图片页，PDF 跨页引用可翻页，仍可打开原文件；原文件缺失、定位受限及分析后补录的一致性限制均明确显示。不增加自研 OCR、图像裁剪或证据高亮。浏览器已核对当前 PDF 第 1-3 页及弹窗滚动，独立图片和窄屏仍待真实体验；未保存评审决定、未发模型请求。45 项测试、lint、build 通过；P05、飞书及 P04-D 状态不变。
+- 2026-09-16 需求分析协议继续拆分来源与问题分类：公共 `origin` 只允许 `explicit/inferred`；`open_questions[]` 单独增加 `issue_type=missing/ambiguity/conflict`。歧义至少关联一处原文，冲突至少关联两处相互矛盾的原文，缺失在确无材料时可不引用。人工评审仍保存独立的问题分类复核，不覆盖 AI 字段。现有真实报告使用旧混合协议，原 JSON 不自动迁移、不补造 `issue_type`；本地接口返回 HTTP 409 和重新分析提示，库内旧值保持不变。46 项测试、lint、build 通过，未发模型请求；P05 保持暂停。
 - P04-D 仍等待官方 ZAP 文件下载与安全复核；在满足已批准的恢复条件前，不得绕过 Defender、替换安装包、改用 Docker/Installer 或继续 P04-D 真实运行。用户已明确批准在该等待期间先执行 P05，这是一次已记录的阶段顺序例外，不得据此提前进入 P06。
 
 ## P01 实现约束
@@ -35,7 +36,7 @@
 - AI Chat：薄 UI，支持文本、图片和文件上传。
 - AI：服务端直接调用 OpenAI Responses API；不得把 API Key 暴露到浏览器。
 - 模型：单一模型配置，不自动改用其他模型。
-- 输出：新需求分析固定十字段 RequirementAnalysis JSON，顶层为 `summary/requirements/actors/business_rules/flows/states/constraints/exceptions/open_questions/sources`；各非空条目含 `id/description/origin/source_refs/confidence`，没有内容时 summary 为 `null`、数组为空。Risk 与 TestCase 属于测试设计阶段，不在需求分析里补造。
+- 输出：新需求分析固定十字段 RequirementAnalysis JSON，顶层为 `summary/requirements/actors/business_rules/flows/states/constraints/exceptions/open_questions/sources`；各非空条目含 `id/description/origin/source_refs/confidence`，公共 `origin` 只表达来源并取 `explicit/inferred`，`open_questions[]` 另含 `issue_type=missing/ambiguity/conflict`。没有内容时 summary 为 `null`、数组为空。Risk 与 TestCase 属于测试设计阶段，不在需求分析里补造。
 - `sources[]` 原文引用关联上传来源；能可靠定位时给出页码/段落/图片，不能定位时明确标记定位限制，不得输出伪造定位。页面报告和 Markdown 导出只从同一 JSON 渲染。
 - Chat Attachment 与 Project Knowledge 在概念和界面上分开；P01 只实现完成分析闭环的最小存储。
 - 不引入 Open WebUI、Langflow、Temporal、Keploy、Playwright、Appium、k6、ZAP 或其他后续阶段能力。

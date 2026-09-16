@@ -2,16 +2,13 @@ import { DownloadOutlined, FileDoneOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Checkbox, Empty, Flex, Input, Modal, Segmented, Select, Space, Tag, Tooltip, Typography, Upload, type UploadFile } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { renderReviewMarkdown, reviewEntries, visibleReviewEntries, type ReviewEntry, type ReviewView } from "./review-report";
-import { locatorLabels } from "./analysis-report";
+import { issueTypeLabels, locatorLabels } from "./analysis-report";
 import { pdfPageRange, sourceFileUrl, visualEvidence } from "./evidence-preview";
 import type { AnalysisResponse, AnalysisReviewRecord, AnalysisReviewStatus, AnalysisIssueType, RequirementBaselineRecord } from "./types";
 
 const { Text, Paragraph } = Typography;
 const reviewStatusLabels: Record<AnalysisReviewStatus, string> = {
   accepted: "接受", rejected: "驳回", merged: "合并", clarify: "待澄清",
-};
-const issueTypeLabels: Record<AnalysisIssueType, string> = {
-  missing: "缺失", ambiguity: "歧义", conflict: "冲突",
 };
 type ReviewDraft = Omit<AnalysisReviewRecord, "id" | "analysisId" | "itemId" | "createdAt">;
 const emptyDraft: ReviewDraft = {
@@ -170,7 +167,7 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
       {visible.length ? visible.map((entry) => (
         <Card size="small" key={entry.item.id} className="result-card">
           <Flex justify="space-between" gap={8} wrap align="center">
-            <Space wrap><Tag>{entry.item.id}</Tag><Text strong>{entry.label}</Text><Tag color={entry.review?.status === "accepted" ? "green" : entry.review?.status === "rejected" ? "red" : "orange"}>{entry.review ? reviewStatusLabels[entry.review.status] : "待评审"}</Tag>{entry.review?.issueType && <Tag>{issueTypeLabels[entry.review.issueType]}</Tag>}</Space>
+            <Space wrap><Tag>{entry.item.id}</Tag><Text strong>{entry.label}</Text>{"issue_type" in entry.item && <Tag color="gold">AI 分类：{issueTypeLabels[entry.item.issue_type as AnalysisIssueType]}</Tag>}<Tag color={entry.review?.status === "accepted" ? "green" : entry.review?.status === "rejected" ? "red" : "orange"}>{entry.review ? reviewStatusLabels[entry.review.status] : "待评审"}</Tag>{entry.review?.issueType && <Tag>人工分类：{issueTypeLabels[entry.review.issueType]}</Tag>}</Space>
             <Space><Button size="small" onClick={() => void openHistory(entry.item.id)}>查看历史</Button><Button size="small" disabled={Boolean(currentBaseline)} onClick={() => openReview(entry)}>评审</Button></Space>
           </Flex>
           <Paragraph style={{ marginTop: 8, marginBottom: 6 }}>{entry.item.description}</Paragraph>
@@ -196,6 +193,7 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
       <Modal title={`人工评审 · ${selected?.item.id ?? ""}`} open={Boolean(selected)} onCancel={() => setSelected(undefined)} onOk={() => void saveReview()} okText="保存评审" confirmLoading={saving} destroyOnHidden width={920} style={{ maxWidth: "calc(100vw - 24px)" }}>
         {selected && <Space direction="vertical" size={12} style={{ width: "100%" }}>
           <Paragraph>{selected.item.description}</Paragraph>
+          {"issue_type" in selected.item && <Tag color="gold">AI 问题分类：{issueTypeLabels[selected.item.issue_type as AnalysisIssueType]}</Tag>}
           {selected.item.source_refs.length > 0 && <><Text strong>关联原文（先核对原文件和图片，再登记接受）</Text>
             {selected.item.source_refs.map((id) => {
               const source = sources.get(id);
@@ -237,7 +235,7 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
           <Checkbox checked={draft.evidenceChecked} onChange={(event) => updateDraft({ evidenceChecked: event.target.checked })}>我已核对来源原文与图片定位（接受条目时填写）</Checkbox>
           <Text>理由或补充说明</Text><Input.TextArea value={draft.reason} onChange={(event) => updateDraft({ reason: event.target.value })} rows={2} />
           {selected.section === "open_questions" && <>
-            <Text>问题类型（人工判定，不改写 AI origin）</Text><Select value={draft.issueType || undefined} onChange={(issueType: AnalysisIssueType) => updateDraft({ issueType })} placeholder="选择缺失、歧义或冲突" options={Object.entries(issueTypeLabels).map(([value, label]) => ({ value, label }))} />
+            <Text>问题类型（人工复核，不改写 AI issue_type）</Text><Select value={draft.issueType || undefined} onChange={(issueType: AnalysisIssueType) => updateDraft({ issueType })} placeholder="选择缺失、歧义或冲突" options={Object.entries(issueTypeLabels).map(([value, label]) => ({ value, label }))} />
             <Text>正式评审决策（尚无决策可留空）</Text><Input.TextArea value={draft.decision} onChange={(event) => updateDraft({ decision: event.target.value })} rows={2} placeholder="记录产品/开发/测试讨论后的最终规则" />
             {draft.decision && <><Text>决策人</Text><Input value={draft.decisionBy} onChange={(event) => updateDraft({ decisionBy: event.target.value })} /><Text>回写到哪版 PRD</Text><Input value={draft.prdRevision} onChange={(event) => updateDraft({ prdRevision: event.target.value })} placeholder="例如 v1.1" /></>}
           </>}
@@ -258,7 +256,7 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
         {baselineSnapshot && <Space direction="vertical" size={8} style={{ width: "100%" }}>
           <Text>获批 PRD：{baselineSnapshot.record.prdFilename} · {baselineSnapshot.record.prdRevision}</Text>
           <Text type="secondary">文件 SHA-256：{baselineSnapshot.record.prdSha256}</Text>
-          {baselineSnapshot.accepted.map((entry) => <Card size="small" key={entry.item.id}><Text strong>{entry.item.id} · {entry.section}</Text><Paragraph>{entry.item.description}</Paragraph>{entry.review.issueType && <Tag color="blue">人工判定：{issueTypeLabels[entry.review.issueType]}</Tag>}{entry.review.decision && <Text>最终决策：{entry.review.decision}</Text>}</Card>)}
+          {baselineSnapshot.accepted.map((entry) => <Card size="small" key={entry.item.id}><Text strong>{entry.item.id} · {entry.section}</Text><Paragraph>{entry.item.description}</Paragraph>{"issue_type" in entry.item && <Tag color="gold">AI 分类：{issueTypeLabels[entry.item.issue_type as AnalysisIssueType]}</Tag>}{entry.review.issueType && <Tag color="blue">人工分类：{issueTypeLabels[entry.review.issueType]}</Tag>}{entry.review.decision && <Text>最终决策：{entry.review.decision}</Text>}</Card>)}
         </Space>}
       </Modal>
 

@@ -183,7 +183,8 @@ app.get("/api/analyses/:id", (request, response) => {
     }
     response.json(document);
   } catch (error) {
-    response.status(404).json({ error: error instanceof Error ? error.message : "分析结果不存在" });
+    const message = error instanceof Error ? error.message : "分析结果不存在";
+    response.status(message.includes("不符合当前需求分析协议") ? 409 : 404).json({ error: message });
   }
 });
 

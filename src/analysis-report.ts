@@ -1,4 +1,4 @@
-import type { AnalysisItem, AnalysisOrigin, LocatorType, RequirementAnalysis } from "./types";
+import type { AnalysisIssueType, AnalysisItem, AnalysisOrigin, LocatorType, RequirementAnalysis } from "./types";
 
 export const analysisSections = [
   ["requirements", "需求项"],
@@ -14,9 +14,8 @@ export const analysisSections = [
 export const originLabels: Record<AnalysisOrigin, string> = {
   explicit: "原文明确",
   inferred: "基于原文推导",
-  missing: "需求缺失",
-  conflict: "需求冲突",
 };
+export const issueTypeLabels: Record<AnalysisIssueType, string> = { missing: "缺失", ambiguity: "歧义", conflict: "冲突" };
 export const locatorLabels: Record<LocatorType, string> = { page: "页码", paragraph: "段落", image: "图片", limited: "定位受限" };
 
 function itemMarkdown(item: AnalysisItem, document: RequirementAnalysis): string[] {
@@ -28,7 +27,7 @@ function itemMarkdown(item: AnalysisItem, document: RequirementAnalysis): string
       : `${id}（来源未找到）`;
   });
   return [
-    `- ${item.id} · ${originLabels[item.origin]} · 可信度 ${Math.round(item.confidence * 100)}%：${item.description}`,
+    `- ${item.id} · ${originLabels[item.origin]}${"issue_type" in item ? ` · 问题类型：${issueTypeLabels[item.issue_type as AnalysisIssueType]}` : ""} · 可信度 ${Math.round(item.confidence * 100)}%：${item.description}`,
     ...(references.length ? [`  - 原文引用：${references.join("；")}`] : []),
   ];
 }

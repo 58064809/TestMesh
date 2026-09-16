@@ -1,8 +1,7 @@
-import { analysisSections, locatorLabels, originLabels } from "./analysis-report";
-import type { AnalysisItem, AnalysisReviewRecord, RequirementAnalysis } from "./types";
+import { analysisSections, issueTypeLabels, locatorLabels, originLabels } from "./analysis-report";
+import type { AnalysisIssueType, AnalysisItem, AnalysisReviewRecord, RequirementAnalysis } from "./types";
 
 const reviewLabels = { accepted: "已接受", rejected: "已驳回", merged: "已合并", clarify: "待澄清" } as const;
-const issueLabels = { missing: "缺失", ambiguity: "歧义", conflict: "冲突" } as const;
 
 export type ReviewView = "pending" | "accepted" | "all";
 export type ReviewEntry = { section: string; label: string; item: AnalysisItem; review?: AnalysisReviewRecord };
@@ -31,7 +30,7 @@ export function renderReviewMarkdown(document: RequirementAnalysis, reviews: Ana
     const merged = view === "accepted" ? all.filter((other) => other.review?.status === "merged" && other.review.mergeInto === entry.item.id) : [];
     const refs = [...new Set([...entry.item.source_refs, ...merged.flatMap((other) => other.item.source_refs)])];
     lines.push(`## ${entry.label} · ${entry.item.id}`, "", entry.item.description, "",
-      `AI 原判定：${originLabels[entry.item.origin]}；人工评审：${entry.review ? reviewLabels[entry.review.status] : "待评审"}${entry.review?.issueType ? `；人工问题判定：${issueLabels[entry.review.issueType]}` : ""}`, "");
+      `结论来源：${originLabels[entry.item.origin]}${"issue_type" in entry.item ? `；AI 问题分类：${issueTypeLabels[entry.item.issue_type as AnalysisIssueType]}` : ""}；人工评审：${entry.review ? reviewLabels[entry.review.status] : "待评审"}${entry.review?.issueType ? `；人工问题分类：${issueTypeLabels[entry.review.issueType]}` : ""}`, "");
     if (entry.review?.decision) lines.push(`评审决策：${entry.review.decision}（${entry.review.decisionBy}；PRD ${entry.review.prdRevision}）`, "");
     if (merged.length) lines.push(`合并来源：${merged.map((other) => other.item.id).join("、")}`, "");
     for (const id of refs) {

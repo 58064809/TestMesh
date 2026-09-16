@@ -938,7 +938,12 @@ export class DomainStore {
     const row = this.db.prepare("SELECT document_json AS documentJson FROM analyses WHERE id = ?")
       .get(analysisId) as { documentJson: string | null } | undefined;
     if (!row) throw new Error(`分析结果 ${analysisId} 不存在`);
-    return row.documentJson ? RequirementAnalysisSchema.parse(JSON.parse(row.documentJson)) : null;
+    if (!row.documentJson) return null;
+    const parsed = RequirementAnalysisSchema.safeParse(JSON.parse(row.documentJson));
+    if (!parsed.success) {
+      throw new Error("这份已保存分析不符合当前需求分析协议；原记录保持不变，请使用原始资料按新协议重新分析");
+    }
+    return parsed.data;
   }
 
   listAnalysisSourceFiles(analysisId: string): Array<{ sourceFileId: string; filename: string; mimeType: string; sha256: string; provenance: string; storedAt: string }> {

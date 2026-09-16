@@ -1,8 +1,8 @@
 import { CheckCircleOutlined, DownloadOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Flex, Space, Tag, Tooltip, Typography } from "antd";
 import { useEffect, useState } from "react";
-import { analysisSections, locatorLabels, originLabels, renderAnalysisMarkdown } from "./analysis-report";
-import type { AnalysisItem, AnalysisResponse } from "./types";
+import { analysisSections, issueTypeLabels, locatorLabels, originLabels, renderAnalysisMarkdown } from "./analysis-report";
+import type { AnalysisIssueType, AnalysisItem, AnalysisResponse } from "./types";
 import RequirementReviewView from "./RequirementReviewView";
 
 const { Text, Paragraph } = Typography;
@@ -24,9 +24,12 @@ function ItemCard({ item, response }: { item: AnalysisItem; response: AnalysisRe
     <Card size="small" className="result-card" key={item.id}>
       <Flex gap={8} wrap align="center">
         <Tag>{item.id}</Tag>
-        <Tag color={item.origin === "conflict" ? "red" : item.origin === "missing" ? "orange" : "blue"}>
+        <Tag color={item.origin === "explicit" ? "blue" : "purple"}>
           {originLabels[item.origin]}
         </Tag>
+        {"issue_type" in item && <Tag color={item.issue_type === "conflict" ? "red" : item.issue_type === "missing" ? "orange" : "gold"}>
+          {issueTypeLabels[item.issue_type as AnalysisIssueType]}
+        </Tag>}
         <Text type="secondary">可信度 {Math.round(item.confidence * 100)}%</Text>
       </Flex>
       {item.description && <Paragraph className="analysis-item-description">{item.description}</Paragraph>}

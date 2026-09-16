@@ -45,7 +45,8 @@ export interface AnalysisResult {
   evidence: Evidence[];
 }
 
-export type AnalysisOrigin = "explicit" | "inferred" | "missing" | "conflict";
+export type AnalysisOrigin = "explicit" | "inferred";
+export type AnalysisIssueType = "missing" | "ambiguity" | "conflict";
 
 export interface AnalysisItem {
   id: string;
@@ -63,6 +64,10 @@ export interface AnalysisSource extends AnalysisItem {
   excerpt: string;
 }
 
+export interface AnalysisOpenQuestion extends AnalysisItem {
+  issue_type: AnalysisIssueType;
+}
+
 export interface RequirementAnalysis {
   summary: AnalysisItem | null;
   requirements: Array<AnalysisItem & { acceptance_criteria: string[] }>;
@@ -72,12 +77,11 @@ export interface RequirementAnalysis {
   states: AnalysisItem[];
   constraints: AnalysisItem[];
   exceptions: AnalysisItem[];
-  open_questions: AnalysisItem[];
+  open_questions: AnalysisOpenQuestion[];
   sources: AnalysisSource[];
 }
 
 export type AnalysisReviewStatus = "accepted" | "rejected" | "merged" | "clarify";
-export type AnalysisIssueType = "missing" | "ambiguity" | "conflict";
 
 export interface AnalysisReviewRecord {
   id: string;

@@ -52,6 +52,14 @@ describe("fixed RequirementAnalysis document", () => {
       "constraints", "exceptions", "open_questions", "sources",
     ]);
     expect(() => RequirementAnalysisSchema.parse({ ...emptyDocument, risks: [] })).toThrow();
+    expect(() => RequirementAnalysisSchema.parse({
+      ...emptyDocument,
+      open_questions: [{ id: "OQ-1", description: "时限未明确", origin: "missing", source_refs: [], confidence: 0.8, issue_type: "missing" }],
+    })).toThrow();
+    expect(() => RequirementAnalysisSchema.parse({
+      ...emptyDocument,
+      open_questions: [{ id: "OQ-1", description: "时限未明确", origin: "inferred", source_refs: [], confidence: 0.8 }],
+    })).toThrow();
   });
 
   it("sends a strict ten-field JSON Schema to the existing OpenAI helper", () => {
@@ -112,12 +120,22 @@ describe("fixed RequirementAnalysis document", () => {
       { id: "SRC-B", description: "补充说明关闭规则", origin: "explicit" as const, source_refs: [], confidence: 1,
         source_file_id: "KNOW-1", source_file_name: "补充说明.md", locator_type: "paragraph" as const, locator: "1", excerpt: "15分钟未支付关闭订单" },
     ];
-    const conflict = { id: "OQ-1", description: "订单关闭时间是30分钟还是15分钟？", origin: "conflict" as const,
-      source_refs: ["SRC-A", "SRC-B"], confidence: 0.9 };
+    const conflict = { id: "OQ-1", description: "订单关闭时间是30分钟还是15分钟？", origin: "inferred" as const,
+      issue_type: "conflict" as const, source_refs: ["SRC-A", "SRC-B"], confidence: 0.9 };
     const result = { ...emptyDocument, open_questions: [conflict], sources: conflictSources };
     expect(() => validateRequirementAnalysis(result, conflictFiles)).not.toThrow();
     expect(() => validateRequirementAnalysis({ ...result, open_questions: [{ ...conflict, source_refs: ["SRC-A"] }] }, conflictFiles)).toThrow("至少要关联");
     expect(result.business_rules).toEqual([]);
+  });
+
+  it("separates conclusion origin from open-question issue type", () => {
+    const document = documentWithSource();
+    const ambiguity = { id: "OQ-1", description: "长时间具体指多久？", origin: "inferred" as const,
+      issue_type: "ambiguity" as const, source_refs: ["SRC-1"], confidence: 0.9 };
+    const missing = { id: "OQ-2", description: "未说明失败重试规则", origin: "inferred" as const,
+      issue_type: "missing" as const, source_refs: [], confidence: 0.85 };
+    expect(() => validateRequirementAnalysis({ ...document, open_questions: [ambiguity, missing] }, files)).not.toThrow();
+    expect(() => validateRequirementAnalysis({ ...document, open_questions: [{ ...ambiguity, source_refs: [] }] }, files)).toThrow("缺少原文来源");
   });
 
   it("stores the canonical JSON and derives trace indexes without analysis risks", () => {
