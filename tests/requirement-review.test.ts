@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DomainStore, type AnalysisReviewInput } from "../server/store.js";
 import { createSources, type RequirementAnalysis } from "../server/analysis.js";
-import { renderReviewMarkdown, reviewEntries, unresolvedDecisionEntries, visibleReviewEntries } from "../src/review-report.js";
+import { mergedSourceEntries, renderReviewMarkdown, reviewEntries, unresolvedDecisionEntries, visibleReviewEntries } from "../src/review-report.js";
 
 const document: RequirementAnalysis = {
   summary: null,
@@ -97,6 +97,12 @@ describe("requirement review and approved baseline", () => {
         prdRevision: "v1.0", approvedBy: "产品负责人", previousBaselineId: null,
         prdFilename: "评审后PRD.md", prdFile: Buffer.from("approved"),
       })).toThrow("OQ-1、OQ-2");
+
+      store.recordAnalysisReview(analysisId, "OQ-1", { ...accepted, status: "merged", issueType: "ambiguity", mergeInto: "OQ-2" });
+      const mergedEntries = reviewEntries(expandedDocument, store.listAnalysisReviews(analysisId));
+      expect(unresolvedDecisionEntries(mergedEntries).map(({ item }) => item.id)).toEqual(["OQ-2"]);
+      expect(mergedSourceEntries(mergedEntries, "OQ-2").map(({ item }) => item.id)).toEqual(["OQ-1"]);
+      expect(renderReviewMarkdown(expandedDocument, store.listAnalysisReviews(analysisId), "accepted")).toContain("合并来源：OQ-1");
     } finally { store.close(); }
   });
 

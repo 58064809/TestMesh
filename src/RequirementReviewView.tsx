@@ -1,7 +1,7 @@
 import { DownloadOutlined, FileDoneOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Empty, Flex, Input, Modal, Segmented, Select, Space, Tag, Tooltip, Typography, Upload, type UploadFile } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { renderReviewMarkdown, reviewEntries, unresolvedDecisionEntries, visibleReviewEntries, type ReviewEntry, type ReviewView } from "./review-report";
+import { mergedSourceEntries, renderReviewMarkdown, reviewEntries, unresolvedDecisionEntries, visibleReviewEntries, type ReviewEntry, type ReviewView } from "./review-report";
 import { issueTypeLabels, locatorLabels } from "./analysis-report";
 import { pdfPageRange, sourceFileUrl, visualEvidence } from "./evidence-preview";
 import type { AnalysisResponse, AnalysisReviewRecord, AnalysisReviewStatus, AnalysisIssueType, RequirementBaselineRecord } from "./types";
@@ -71,6 +71,7 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
   const visible = visibleReviewEntries(entries, view);
   const unresolvedDecisions = unresolvedDecisionEntries(entries);
   const currentBaseline = baselines.find((item) => item.analysisId === response.analysisId);
+  const mergeTarget = draft.mergeInto ? entries.find((entry) => entry.item.id === draft.mergeInto) : undefined;
   const baselineBlockedReason = currentBaseline
     ? `已建立需求基线 v${currentBaseline.version}`
     : pending.length > 0
@@ -167,7 +168,10 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
         message={`${unresolvedDecisions.length} 条待确认问题尚未回写完整决策`}
         description={<Space direction="vertical" size={4}>
           <Text>进入需求基线前，请登记正式评审决策、决策人和回写的 PRD 版本。点击问题编号可直接处理。</Text>
-          <Space size={[8, 4]} wrap>{unresolvedDecisions.map((entry) => <Button key={entry.item.id} type="link" size="small" style={{ paddingInline: 0 }} onClick={() => openReview(entry)}>处理 {entry.item.id}</Button>)}</Space>
+          <Space size={[8, 4]} wrap>{unresolvedDecisions.map((entry) => {
+            const mergedFrom = mergedSourceEntries(entries, entry.item.id).map(({ item }) => item.id);
+            return <Button key={entry.item.id} type="link" size="small" style={{ paddingInline: 0 }} onClick={() => openReview(entry)}>处理 {entry.item.id}{mergedFrom.length ? `（已合并 ${mergedFrom.join("、")}）` : ""}</Button>;
+          })}</Space>
         </Space>}
       />}
       <Flex gap={8} wrap align="center" justify="space-between">
@@ -189,7 +193,7 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
       {visible.length ? visible.map((entry) => (
         <Card size="small" key={entry.item.id} className="result-card">
           <Flex justify="space-between" gap={8} wrap align="center">
-            <Space wrap><Tag>{entry.item.id}</Tag><Text strong>{entry.label}</Text>{"issue_type" in entry.item && <Tag color="gold">AI 分类：{issueTypeLabels[entry.item.issue_type as AnalysisIssueType]}</Tag>}<Tag color={entry.review?.status === "accepted" ? "green" : entry.review?.status === "rejected" ? "red" : "orange"}>{entry.review ? reviewStatusLabels[entry.review.status] : "待评审"}</Tag>{entry.review?.issueType && <Tag>人工分类：{issueTypeLabels[entry.review.issueType]}</Tag>}</Space>
+            <Space wrap><Tag>{entry.item.id}</Tag><Text strong>{entry.label}</Text>{"issue_type" in entry.item && <Tag color="gold">AI 分类：{issueTypeLabels[entry.item.issue_type as AnalysisIssueType]}</Tag>}<Tag color={entry.review?.status === "accepted" ? "green" : entry.review?.status === "rejected" ? "red" : "orange"}>{entry.review ? reviewStatusLabels[entry.review.status] : "待评审"}</Tag>{entry.review?.status === "merged" && <Tag color="blue">合并到 {entry.review.mergeInto}（目标保留）</Tag>}{entry.review?.issueType && <Tag>人工分类：{issueTypeLabels[entry.review.issueType]}</Tag>}</Space>
             <Space><Button size="small" onClick={() => void openHistory(entry.item.id)}>查看历史</Button><Button size="small" disabled={Boolean(currentBaseline)} onClick={() => openReview(entry)}>评审</Button></Space>
           </Flex>
           <Paragraph style={{ marginTop: 8, marginBottom: 6 }}>{entry.item.description}</Paragraph>
@@ -253,7 +257,17 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
             })}</>}
           <Text>评审人（选填）</Text><Input value={draft.reviewer} onChange={(event) => updateDraft({ reviewer: event.target.value })} placeholder="需要留痕时填写" />
           {requiredLabel("处理结果")}<Select value={draft.status} onChange={(status: AnalysisReviewStatus) => updateDraft({ status, mergeInto: status === "merged" ? draft.mergeInto : "" })} options={Object.entries(reviewStatusLabels).map(([value, label]) => ({ value, label }))} />
-          {draft.status === "merged" && <>{requiredLabel("合并到")}<Select value={draft.mergeInto || undefined} onChange={(mergeInto) => updateDraft({ mergeInto })} placeholder="选择同类条目" options={entries.filter((entry) => entry.section === selected.section && entry.item.id !== selected.item.id).map((entry) => ({ value: entry.item.id, label: `${entry.item.id} · ${entry.item.description.slice(0, 30)}` }))} /></>}
+          {draft.status === "merged" && <>
+            {requiredLabel("合并到（保留项）")}<Select value={draft.mergeInto || undefined} onChange={(mergeInto) => updateDraft({ mergeInto })} placeholder="选择保留并继续处理的同类条目" options={entries.filter((entry) => entry.section === selected.section && entry.item.id !== selected.item.id).map((entry) => ({ value: entry.item.id, label: `${entry.item.id} · ${entry.item.description.slice(0, 30)}` }))} />
+            <Alert
+              type="info"
+              showIcon
+              message={mergeTarget ? `${selected.item.id} 将合并到 ${mergeTarget.item.id}` : `${selected.item.id} 将不再单独处理`}
+              description={mergeTarget
+                ? `${mergeTarget.item.id} 作为保留项继续处理，承接 ${selected.item.id} 的来源证据，并负责回写一次最终决策。`
+                : "请选择需要保留并继续处理的目标条目；当前条目保存后不再单独进入基线。"}
+            />
+          </>}
           <Text>理由或补充说明（选填）</Text><Input.TextArea value={draft.reason} onChange={(event) => updateDraft({ reason: event.target.value })} rows={2} />
           {selected.section === "open_questions" && <>
             {draft.status === "accepted" ? requiredLabel("问题类型（人工复核，不改写 AI issue_type）") : <Text>问题类型（人工复核，不改写 AI issue_type）</Text>}<Select value={draft.issueType || undefined} onChange={(issueType: AnalysisIssueType) => updateDraft({ issueType })} placeholder="选择缺失、歧义或冲突" options={Object.entries(issueTypeLabels).map(([value, label]) => ({ value, label }))} />
