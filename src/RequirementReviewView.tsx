@@ -1,7 +1,7 @@
 import { DownloadOutlined, FileDoneOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Empty, Flex, Input, Modal, Segmented, Select, Space, Tag, Tooltip, Typography, Upload, type UploadFile } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { renderReviewMarkdown, reviewEntries, visibleReviewEntries, type ReviewEntry, type ReviewView } from "./review-report";
+import { renderReviewMarkdown, reviewEntries, unresolvedDecisionEntries, visibleReviewEntries, type ReviewEntry, type ReviewView } from "./review-report";
 import { issueTypeLabels, locatorLabels } from "./analysis-report";
 import { pdfPageRange, sourceFileUrl, visualEvidence } from "./evidence-preview";
 import type { AnalysisResponse, AnalysisReviewRecord, AnalysisReviewStatus, AnalysisIssueType, RequirementBaselineRecord } from "./types";
@@ -65,7 +65,15 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
   const pending = visibleReviewEntries(entries, "pending");
   const accepted = visibleReviewEntries(entries, "accepted");
   const visible = visibleReviewEntries(entries, view);
+  const unresolvedDecisions = unresolvedDecisionEntries(entries);
   const currentBaseline = baselines.find((item) => item.analysisId === response.analysisId);
+  const baselineBlockedReason = currentBaseline
+    ? `已建立需求基线 v${currentBaseline.version}`
+    : pending.length > 0
+      ? `还有 ${pending.length} 条内容未完成评审`
+      : unresolvedDecisions.length > 0
+        ? `还有 ${unresolvedDecisions.length} 条待确认问题未回写完整决策`
+        : undefined;
   const sources = new Map(response.result.sources.map((source) => [source.id, source]));
   const storedById = new Map(sourceFiles.map((file) => [file.sourceFileId, file]));
 
@@ -148,6 +156,16 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
     <Card size="small" className="requirement-review" title={<Space><FileDoneOutlined />人工评审与需求基线</Space>}>
       <Paragraph type="secondary">AI 原始分析保持不变；这里记录人工去留和业务决策。不同文件规则冲突时默认不设来源优先级，查看双方原文后由产品决策；如决定“PRD 优先”，请将适用范围写入决策和获批 PRD。待评审视图隐藏已接受、驳回和合并的条目。</Paragraph>
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} />}
+      {unresolvedDecisions.length > 0 && <Alert
+        type="warning"
+        showIcon
+        style={{ marginBottom: 12 }}
+        message={`${unresolvedDecisions.length} 条待确认问题尚未回写完整决策`}
+        description={<Space direction="vertical" size={4}>
+          <Text>进入需求基线前，请登记正式评审决策、决策人和回写的 PRD 版本。点击问题编号可直接处理。</Text>
+          <Space size={[8, 4]} wrap>{unresolvedDecisions.map((entry) => <Button key={entry.item.id} type="link" size="small" style={{ paddingInline: 0 }} onClick={() => openReview(entry)}>处理 {entry.item.id}</Button>)}</Space>
+        </Space>}
+      />}
       <Flex gap={8} wrap align="center" justify="space-between">
         <Space wrap>
           <Tag color="orange">待评审 {pending.length}</Tag>
@@ -158,7 +176,7 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
         <Space wrap>
           <Button icon={<DownloadOutlined />} onClick={() => downloadMarkdown(`待评审清单-${response.analysisId}.md`, renderReviewMarkdown(response.result, reviews, "pending"))}>导出待评审清单</Button>
           <Button icon={<DownloadOutlined />} onClick={() => downloadMarkdown(`已接受需求分析-${response.analysisId}.md`, renderReviewMarkdown(response.result, reviews, "accepted"))}>导出已接受报告</Button>
-          <Button type="primary" disabled={Boolean(currentBaseline) || pending.length > 0} onClick={() => setBaselineOpen(true)}>建立需求基线</Button>
+          <Tooltip title={baselineBlockedReason}><span><Button type="primary" disabled={Boolean(baselineBlockedReason)} onClick={() => setBaselineOpen(true)}>建立需求基线</Button></span></Tooltip>
         </Space>
       </Flex>
       <Segmented style={{ marginTop: 14, marginBottom: 12 }} value={view} onChange={(value) => setView(value as ReviewView)} options={[
@@ -235,8 +253,12 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
           <Text>理由或补充说明（选填）</Text><Input.TextArea value={draft.reason} onChange={(event) => updateDraft({ reason: event.target.value })} rows={2} />
           {selected.section === "open_questions" && <>
             <Text>问题类型（人工复核，不改写 AI issue_type）</Text><Select value={draft.issueType || undefined} onChange={(issueType: AnalysisIssueType) => updateDraft({ issueType })} placeholder="选择缺失、歧义或冲突" options={Object.entries(issueTypeLabels).map(([value, label]) => ({ value, label }))} />
-            <Text>正式评审决策（尚无决策可留空）</Text><Input.TextArea value={draft.decision} onChange={(event) => updateDraft({ decision: event.target.value })} rows={2} placeholder="记录产品/开发/测试讨论后的最终规则" />
-            {draft.decision && <><Text>决策人</Text><Input value={draft.decisionBy} onChange={(event) => updateDraft({ decisionBy: event.target.value })} /><Text>回写到哪版 PRD</Text><Input value={draft.prdRevision} onChange={(event) => updateDraft({ prdRevision: event.target.value })} placeholder="例如 v1.1" /></>}
+            {draft.status === "accepted" && <>
+              <Text>正式评审决策（进入基线前填写）</Text><Input.TextArea value={draft.decision} onChange={(event) => updateDraft({ decision: event.target.value })} rows={2} placeholder="记录产品、开发和测试讨论后的最终规则" />
+              <Text>决策人（进入基线前填写）</Text><Input value={draft.decisionBy} onChange={(event) => updateDraft({ decisionBy: event.target.value })} />
+              <Text>回写到哪版 PRD（进入基线前填写）</Text><Input value={draft.prdRevision} onChange={(event) => updateDraft({ prdRevision: event.target.value })} placeholder="例如 v1.1" />
+              <Text type="secondary">尚未形成结论时可先选择“待澄清”；确认问题不成立时选择“驳回”。</Text>
+            </>}
           </>}
         </Space>}
       </Modal>

@@ -20,6 +20,12 @@ export function visibleReviewEntries(entries: ReviewEntry[], view: ReviewView): 
   return entries;
 }
 
+export function unresolvedDecisionEntries(entries: ReviewEntry[]): ReviewEntry[] {
+  return entries.filter((entry) => entry.section === "open_questions"
+    && entry.review?.status === "accepted"
+    && (!entry.review.decision.trim() || !entry.review.decisionBy.trim() || !entry.review.prdRevision.trim()));
+}
+
 export function renderReviewMarkdown(document: RequirementAnalysis, reviews: AnalysisReviewRecord[], view: ReviewView): string {
   const all = reviewEntries(document, reviews);
   const entries = visibleReviewEntries(all, view);

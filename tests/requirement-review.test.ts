@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DomainStore, type AnalysisReviewInput } from "../server/store.js";
 import { createSources, type RequirementAnalysis } from "../server/analysis.js";
-import { renderReviewMarkdown, reviewEntries, visibleReviewEntries } from "../src/review-report.js";
+import { renderReviewMarkdown, reviewEntries, unresolvedDecisionEntries, visibleReviewEntries } from "../src/review-report.js";
 
 const document: RequirementAnalysis = {
   summary: null,
@@ -80,6 +80,24 @@ describe("requirement review and approved baseline", () => {
     } finally {
       store.close();
     }
+  });
+
+  it("lists every accepted open question that still lacks a complete baseline decision", () => {
+    const store = new DomainStore(":memory:");
+    const secondQuestion = { ...document.open_questions[0], id: "OQ-2", description: "退款到账时间是否按自然日计算？" };
+    const expandedDocument: RequirementAnalysis = { ...document, open_questions: [...document.open_questions, secondQuestion] };
+    try {
+      const analysisId = store.saveRequirementAnalysis(expandedDocument, "gpt-5.6-luna", sourceFiles);
+      store.recordAnalysisReview(analysisId, "REQ-1", accepted);
+      store.recordAnalysisReview(analysisId, "OQ-1", { ...accepted, issueType: "ambiguity" });
+      store.recordAnalysisReview(analysisId, "OQ-2", { ...accepted, issueType: "missing" });
+      const entries = reviewEntries(expandedDocument, store.listAnalysisReviews(analysisId));
+      expect(unresolvedDecisionEntries(entries).map(({ item }) => item.id)).toEqual(["OQ-1", "OQ-2"]);
+      expect(() => store.createRequirementBaseline(analysisId, {
+        prdRevision: "v1.0", approvedBy: "产品负责人", previousBaselineId: null,
+        prdFilename: "评审后PRD.md", prdFile: Buffer.from("approved"),
+      })).toThrow("OQ-1、OQ-2");
+    } finally { store.close(); }
   });
 
   it("creates a later baseline from a new analysis without overwriting the previous one", () => {

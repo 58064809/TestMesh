@@ -1105,11 +1105,16 @@ export class DomainStore {
     const byId = new Map(reviews.map((review) => [review.itemId, review]));
     const unfinished = items.filter(({ item }) => !byId.has(item.id) || byId.get(item.id)?.status === "clarify");
     if (unfinished.length) throw new Error(`仍有 ${unfinished.length} 条未完成评审，不能建立基线`);
+    const unresolvedQuestions = items.filter(({ section, item }) => {
+      const review = byId.get(item.id)!;
+      return section === "open_questions" && review.status === "accepted"
+        && (!review.decision || !review.decisionBy || !review.prdRevision);
+    });
+    if (unresolvedQuestions.length) {
+      throw new Error(`以下待确认问题尚未回写完整评审决策：${unresolvedQuestions.map(({ item }) => item.id).join("、")}`);
+    }
     for (const { section, item } of items) {
       const review = byId.get(item.id)!;
-      if (section === "open_questions" && review.status === "accepted" && (!review.decision || !review.decisionBy || !review.prdRevision)) {
-        throw new Error(`待确认问题 ${item.id} 尚未回写评审决策`);
-      }
       if (section === "open_questions" && review.status === "accepted" && review.prdRevision !== input.prdRevision.trim()) {
         throw new Error(`待确认问题 ${item.id} 的决策登记在 PRD ${review.prdRevision}，与上传的获批版本 ${input.prdRevision} 不一致`);
       }
