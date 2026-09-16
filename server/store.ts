@@ -982,11 +982,19 @@ export class DomainStore {
     );
   }
 
-  listRequirementAnalyses(): Array<{ id: string; summary: string; model: string; createdAt: string }> {
-    return this.db.prepare(
-      `SELECT id, summary, model, created_at AS createdAt
+  listRequirementAnalyses(): Array<{ id: string; summary: string; model: string; createdAt: string; protocol: "current" | "incompatible" }> {
+    const rows = this.db.prepare(
+      `SELECT id, summary, model, created_at AS createdAt, document_json AS documentJson
        FROM analyses WHERE document_json IS NOT NULL ORDER BY created_at DESC`,
-    ).all() as Array<{ id: string; summary: string; model: string; createdAt: string }>;
+    ).all() as Array<{ id: string; summary: string; model: string; createdAt: string; documentJson: string }>;
+    return rows.map(({ documentJson, ...row }) => {
+      try {
+        const protocol = RequirementAnalysisSchema.safeParse(JSON.parse(documentJson)).success ? "current" : "incompatible";
+        return { ...row, protocol } as const;
+      } catch {
+        return { ...row, protocol: "incompatible" as const };
+      }
+    });
   }
 
   private reviewSections(document: RequirementAnalysis): Array<{ section: string; item: RequirementAnalysis["actors"][number] }> {
@@ -1043,9 +1051,6 @@ export class DomainStore {
     const items = this.reviewSections(document);
     const current = items.find((entry) => entry.item.id === itemId);
     if (!current) throw new Error(`分析条目 ${itemId} 不存在`);
-    if (!input.reviewer.trim()) throw new Error("请填写评审人");
-    if (input.status === "accepted" && !input.evidenceChecked) throw new Error("接受条目前请核对原始需求来源");
-    if ((input.status === "rejected" || input.status === "merged") && !input.reason.trim()) throw new Error("驳回或合并时请填写理由");
     if (input.status === "merged") {
       const target = items.find((entry) => entry.item.id === input.mergeInto);
       if (!target || target.item.id === itemId || target.section !== current.section) throw new Error("合并目标需为同类的其他分析条目");
@@ -1102,7 +1107,6 @@ export class DomainStore {
     if (unfinished.length) throw new Error(`仍有 ${unfinished.length} 条未完成评审，不能建立基线`);
     for (const { section, item } of items) {
       const review = byId.get(item.id)!;
-      if (review.status === "accepted" && !review.evidenceChecked) throw new Error(`条目 ${item.id} 尚未核对证据`);
       if (section === "open_questions" && review.status === "accepted" && (!review.decision || !review.decisionBy || !review.prdRevision)) {
         throw new Error(`待确认问题 ${item.id} 尚未回写评审决策`);
       }

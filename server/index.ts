@@ -85,9 +85,9 @@ const baselineUpload = multer({
 
 const AnalysisReviewInputSchema = z.object({
   status: z.enum(["accepted", "rejected", "merged", "clarify"]),
-  reviewer: z.string().trim().min(1),
+  reviewer: z.string().default(""),
   reason: z.string().default(""),
-  evidenceChecked: z.boolean(),
+  evidenceChecked: z.boolean().default(false),
   issueType: z.union([z.enum(["missing", "ambiguity", "conflict"]), z.literal("")]).default(""),
   mergeInto: z.string().default(""),
   decision: z.string().default(""),
@@ -225,8 +225,12 @@ app.get("/api/analyses/:id/source-files/:sourceFileId", (request, response) => {
 
 app.put("/api/analyses/:id/reviews/:itemId", (request, response) => {
   try {
-    const input = AnalysisReviewInputSchema.parse(request.body);
-    response.json(store.recordAnalysisReview(request.params.id, request.params.itemId, input));
+    const parsed = AnalysisReviewInputSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: "评审信息不完整或格式不正确" });
+      return;
+    }
+    response.json(store.recordAnalysisReview(request.params.id, request.params.itemId, parsed.data));
   } catch (error) {
     response.status(400).json({ error: error instanceof Error ? error.message : "评审记录无效" });
   }

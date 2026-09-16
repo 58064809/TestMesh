@@ -24,7 +24,7 @@ describe("requirement review and approved baseline", () => {
     try {
       const analysisId = store.saveRequirementAnalysis(document, "gpt-5.6-luna", sourceFiles);
       store.recordAnalysisReview(analysisId, "REQ-1", accepted);
-      store.recordAnalysisReview(analysisId, "OQ-1", { ...accepted, status: "rejected", reason: "不是原文冲突，仅是措辞歧义", evidenceChecked: false });
+      store.recordAnalysisReview(analysisId, "OQ-1", { ...accepted, status: "rejected", reviewer: "", reason: "", evidenceChecked: false });
       const reviews = store.listAnalysisReviews(analysisId);
       const entries = reviewEntries(document, reviews);
       expect(visibleReviewEntries(entries, "pending")).toHaveLength(0);
@@ -42,10 +42,9 @@ describe("requirement review and approved baseline", () => {
     try {
       const analysisId = store.saveRequirementAnalysis(document, "gpt-5.6-luna", sourceFiles);
       expect(store.listAnalysisReviews(analysisId)).toEqual([]);
-      expect(() => store.recordAnalysisReview(analysisId, "REQ-1", { ...accepted, evidenceChecked: false })).toThrow("核对");
-      store.recordAnalysisReview(analysisId, "REQ-1", accepted);
+      store.recordAnalysisReview(analysisId, "REQ-1", { ...accepted, reviewer: "", reason: "", evidenceChecked: false });
       store.recordAnalysisReview(analysisId, "REQ-1", { ...accepted, reviewer: "复核人", reason: "再次核对图片" });
-      expect(store.listAnalysisReviewHistory(analysisId, "REQ-1").map((event) => event.reviewer)).toEqual(["复核人", "测试评审人"]);
+      expect(store.listAnalysisReviewHistory(analysisId, "REQ-1").map((event) => event.reviewer)).toEqual(["复核人", ""]);
       expect(store.listAnalysisReviews(analysisId).find((event) => event.itemId === "REQ-1")?.reviewer).toBe("复核人");
       expect(() => store.createRequirementBaseline(analysisId, {
         prdRevision: "v1.0", approvedBy: "产品负责人", previousBaselineId: null,

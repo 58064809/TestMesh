@@ -1,5 +1,5 @@
 import { DownloadOutlined, FileDoneOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Checkbox, Empty, Flex, Input, Modal, Segmented, Select, Space, Tag, Tooltip, Typography, Upload, type UploadFile } from "antd";
+import { Alert, Button, Card, Empty, Flex, Input, Modal, Segmented, Select, Space, Tag, Tooltip, Typography, Upload, type UploadFile } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { renderReviewMarkdown, reviewEntries, visibleReviewEntries, type ReviewEntry, type ReviewView } from "./review-report";
 import { issueTypeLabels, locatorLabels } from "./analysis-report";
@@ -146,7 +146,7 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
 
   return (
     <Card size="small" className="requirement-review" title={<Space><FileDoneOutlined />人工评审与需求基线</Space>}>
-      <Paragraph type="secondary">AI 原始分析保持不变；这里记录人工去留、原文核对和业务决策。不同文件规则冲突时默认不设来源优先级，查看双方原文后由产品决策；如决定“PRD 优先”，请将适用范围写入决策和获批 PRD。待评审视图隐藏已接受、驳回和合并的条目。</Paragraph>
+      <Paragraph type="secondary">AI 原始分析保持不变；这里记录人工去留和业务决策。不同文件规则冲突时默认不设来源优先级，查看双方原文后由产品决策；如决定“PRD 优先”，请将适用范围写入决策和获批 PRD。待评审视图隐藏已接受、驳回和合并的条目。</Paragraph>
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} />}
       <Flex gap={8} wrap align="center" justify="space-between">
         <Space wrap>
@@ -229,11 +229,10 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
                 </div>}
               </Card>;
             })}</>}
-          <Text>评审人</Text><Input value={draft.reviewer} onChange={(event) => updateDraft({ reviewer: event.target.value })} placeholder="登记评审人姓名" />
+          <Text>评审人（选填）</Text><Input value={draft.reviewer} onChange={(event) => updateDraft({ reviewer: event.target.value })} placeholder="需要留痕时填写" />
           <Text>处理结果</Text><Select value={draft.status} onChange={(status: AnalysisReviewStatus) => updateDraft({ status, mergeInto: status === "merged" ? draft.mergeInto : "" })} options={Object.entries(reviewStatusLabels).map(([value, label]) => ({ value, label }))} />
           {draft.status === "merged" && <><Text>合并到</Text><Select value={draft.mergeInto || undefined} onChange={(mergeInto) => updateDraft({ mergeInto })} placeholder="选择同类条目" options={entries.filter((entry) => entry.section === selected.section && entry.item.id !== selected.item.id).map((entry) => ({ value: entry.item.id, label: `${entry.item.id} · ${entry.item.description.slice(0, 30)}` }))} /></>}
-          <Checkbox checked={draft.evidenceChecked} onChange={(event) => updateDraft({ evidenceChecked: event.target.checked })}>我已核对来源原文与图片定位（接受条目时填写）</Checkbox>
-          <Text>理由或补充说明</Text><Input.TextArea value={draft.reason} onChange={(event) => updateDraft({ reason: event.target.value })} rows={2} />
+          <Text>理由或补充说明（选填）</Text><Input.TextArea value={draft.reason} onChange={(event) => updateDraft({ reason: event.target.value })} rows={2} />
           {selected.section === "open_questions" && <>
             <Text>问题类型（人工复核，不改写 AI issue_type）</Text><Select value={draft.issueType || undefined} onChange={(issueType: AnalysisIssueType) => updateDraft({ issueType })} placeholder="选择缺失、歧义或冲突" options={Object.entries(issueTypeLabels).map(([value, label]) => ({ value, label }))} />
             <Text>正式评审决策（尚无决策可留空）</Text><Input.TextArea value={draft.decision} onChange={(event) => updateDraft({ decision: event.target.value })} rows={2} placeholder="记录产品/开发/测试讨论后的最终规则" />

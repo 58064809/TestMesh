@@ -149,7 +149,7 @@ describe("fixed RequirementAnalysis document", () => {
       ]);
       expect(store.getAnalysisSourceFile(id, "ATT-1").file).toEqual(Buffer.from("pdf"));
       expect(store.listRequirementAnalyses()).toEqual([
-        expect.objectContaining({ id, summary: "订单查询需求", model: "gpt-5.6-luna" }),
+        expect.objectContaining({ id, summary: "订单查询需求", model: "gpt-5.6-luna", protocol: "current" }),
       ]);
       const trace = store.getTestDesignAnalysis(id);
       expect(trace.requirements).toHaveLength(1);

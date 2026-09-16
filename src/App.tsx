@@ -60,7 +60,7 @@ type Message =
   | { id: string; role: "user"; text: string }
   | { id: string; role: "assistant"; analysis: AnalysisResponse };
 
-type SavedAnalysis = { id: string; summary: string; model: string; createdAt: string };
+type SavedAnalysis = { id: string; summary: string; model: string; createdAt: string; protocol: "current" | "incompatible" };
 
 function fileObject(file: UploadFile): File | undefined {
   return file.originFileObj;
@@ -141,6 +141,8 @@ function Workbench() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [savedAnalyses, setSavedAnalyses] = useState<SavedAnalysis[]>([]);
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string>();
+  const [openingAnalysisId, setOpeningAnalysisId] = useState<string>();
+  const [savedAnalysisError, setSavedAnalysisError] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -159,16 +161,25 @@ function Workbench() {
   }, []);
 
   async function openSavedAnalysis(item: SavedAnalysis) {
+    setSelectedAnalysisId(item.id);
+    setMessages([]);
     setError(undefined);
+    setSavedAnalysisError(undefined);
+    if (item.protocol === "incompatible") {
+      setSavedAnalysisError("这份报告生成于需求分析协议升级前，原始结果仍然保留，但不能按当前 Schema 展示。请使用原始资料按新协议重新分析。");
+      return;
+    }
+    setOpeningAnalysisId(item.id);
     try {
       const response = await fetch(`/api/analyses/${encodeURIComponent(item.id)}`);
       const body = (await response.json()) as RequirementAnalysis | { error?: string };
       if (!response.ok) throw new Error("error" in body && body.error ? body.error : `读取报告失败（HTTP ${response.status}）`);
       const analysis: AnalysisResponse = { analysisId: item.id, result: body as RequirementAnalysis, model: item.model, sources: [] };
-      setSelectedAnalysisId(item.id);
       setMessages([{ id: item.id, role: "assistant", analysis }]);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "读取报告失败");
+      setSavedAnalysisError(caught instanceof Error ? caught.message : "读取报告失败");
+    } finally {
+      setOpeningAnalysisId(undefined);
     }
   }
 
@@ -200,6 +211,9 @@ function Workbench() {
     }
 
     const userMessage: Message = { id: crypto.randomUUID(), role: "user", text: prompt.trim() };
+    setSavedAnalysisError(undefined);
+    setOpeningAnalysisId(undefined);
+    setSelectedAnalysisId(undefined);
     setMessages((current) => [...current, userMessage]);
     setLoading(true);
     setError(undefined);
@@ -355,12 +369,20 @@ function Workbench() {
                     <Card size="small" title="已保存的需求分析报告">
                       <Space size={[8, 8]} wrap>
                         {savedAnalyses.map((item) => (
-                          <Button key={item.id} type={selectedAnalysisId === item.id ? "primary" : "default"} onClick={() => void openSavedAnalysis(item)}>
-                            {new Date(item.createdAt).toLocaleString("zh-CN")} · {item.summary.slice(0, 28) || "需求分析"}
+                          <Button key={item.id} loading={openingAnalysisId === item.id} type={selectedAnalysisId === item.id ? "primary" : "default"} onClick={() => void openSavedAnalysis(item)}>
+                            {new Date(item.createdAt).toLocaleString("zh-CN")} · {item.summary.slice(0, 28) || "需求分析"}{item.protocol === "incompatible" ? " · 旧协议" : ""}
                           </Button>
                         ))}
                       </Space>
                     </Card>
+                  )}
+                  {savedAnalysisError && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message="无法打开这份已保存报告"
+                      description={savedAnalysisError}
+                    />
                   )}
                   {messages.length === 0 && (
                     <div className="welcome-state">
