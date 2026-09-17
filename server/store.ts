@@ -1051,24 +1051,27 @@ export class DomainStore {
     const items = this.reviewSections(document);
     const current = items.find((entry) => entry.item.id === itemId);
     if (!current) throw new Error(`分析条目 ${itemId} 不存在`);
-    if (input.status === "merged") {
-      const target = items.find((entry) => entry.item.id === input.mergeInto);
+    const normalizedInput = input.status === "accepted"
+      ? input
+      : { ...input, decision: "", decisionBy: "", prdRevision: "" };
+    if (normalizedInput.status === "merged") {
+      const target = items.find((entry) => entry.item.id === normalizedInput.mergeInto);
       if (!target || target.item.id === itemId || target.section !== current.section) throw new Error("合并目标需为同类的其他分析条目");
-    } else if (input.mergeInto) throw new Error("只有合并条目才能填写目标");
+    } else if (normalizedInput.mergeInto) throw new Error("只有合并条目才能填写目标");
     if (current.section === "open_questions") {
-      if (input.status === "accepted" && !input.issueType) throw new Error("请明确待确认问题是缺失、歧义还是冲突");
-      if (input.decision && (!input.decisionBy.trim() || !input.prdRevision.trim())) throw new Error("评审决策需要决策人和 PRD 修订标识");
-    } else if (input.issueType || input.decision || input.decisionBy || input.prdRevision) {
+      if (normalizedInput.status === "accepted" && !normalizedInput.issueType) throw new Error("请明确待确认问题是缺失、歧义还是冲突");
+      if (normalizedInput.decision && (!normalizedInput.decisionBy.trim() || !normalizedInput.prdRevision.trim())) throw new Error("评审决策需要决策人和 PRD 修订标识");
+    } else if (normalizedInput.issueType || normalizedInput.decision || normalizedInput.decisionBy || normalizedInput.prdRevision) {
       throw new Error("问题类型与会议决策只填写在待确认问题上");
     }
     const record: AnalysisReviewRecord = {
-      ...input, id: randomUUID(), analysisId, itemId, createdAt: new Date().toISOString(),
+      ...normalizedInput, id: randomUUID(), analysisId, itemId, createdAt: new Date().toISOString(),
     };
     this.db.prepare(
       `INSERT INTO analysis_review_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(record.id, analysisId, itemId, input.status, input.reviewer.trim(), input.reason.trim(),
-      Number(input.evidenceChecked), input.issueType, input.mergeInto, input.decision.trim(),
-      input.decisionBy.trim(), input.prdRevision.trim(), record.createdAt);
+    ).run(record.id, analysisId, itemId, normalizedInput.status, normalizedInput.reviewer.trim(), normalizedInput.reason.trim(),
+      Number(normalizedInput.evidenceChecked), normalizedInput.issueType, normalizedInput.mergeInto, normalizedInput.decision.trim(),
+      normalizedInput.decisionBy.trim(), normalizedInput.prdRevision.trim(), record.createdAt);
     return record;
   }
 

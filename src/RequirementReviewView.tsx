@@ -218,6 +218,7 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
 
       <Modal title={`人工评审 · ${selected?.item.id ?? ""}`} open={Boolean(selected)} onCancel={() => setSelected(undefined)} onOk={() => void saveReview()} okText="保存评审" confirmLoading={saving} destroyOnHidden width={920} style={{ maxWidth: "calc(100vw - 24px)" }}>
         {selected && <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          {error && <Alert type="error" showIcon message="评审保存失败" description={error} />}
           <Paragraph>{selected.item.description}</Paragraph>
           {"issue_type" in selected.item && <Tag color="gold">AI 问题分类：{issueTypeLabels[selected.item.issue_type as AnalysisIssueType]}</Tag>}
           {selected.item.source_refs.length > 0 && <><Text strong>关联原文（先核对原文件和图片，再登记接受）</Text>
@@ -256,7 +257,11 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
               </Card>;
             })}</>}
           <Text>评审人（选填）</Text><Input value={draft.reviewer} onChange={(event) => updateDraft({ reviewer: event.target.value })} placeholder="需要留痕时填写" />
-          {requiredLabel("处理结果")}<Select value={draft.status} onChange={(status: AnalysisReviewStatus) => updateDraft({ status, mergeInto: status === "merged" ? draft.mergeInto : "" })} options={Object.entries(reviewStatusLabels).map(([value, label]) => ({ value, label }))} />
+          {requiredLabel("处理结果")}<Select value={draft.status} onChange={(status: AnalysisReviewStatus) => updateDraft({
+            status,
+            mergeInto: status === "merged" ? draft.mergeInto : "",
+            ...(status === "accepted" ? {} : { decision: "", decisionBy: "", prdRevision: "" }),
+          })} options={Object.entries(reviewStatusLabels).map(([value, label]) => ({ value, label }))} />
           {draft.status === "merged" && <>
             {requiredLabel("合并到（保留项）")}<Select value={draft.mergeInto || undefined} onChange={(mergeInto) => updateDraft({ mergeInto })} placeholder="选择保留并继续处理的同类条目" options={entries.filter((entry) => entry.section === selected.section && entry.item.id !== selected.item.id).map((entry) => ({ value: entry.item.id, label: `${entry.item.id} · ${entry.item.description.slice(0, 30)}` }))} />
             <Alert
