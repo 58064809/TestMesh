@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DomainStore, UiTestResultInput, UiTestRunRecord } from "./store.js";
-import { inspectRepository } from "./openhands.js";
+import { inspectRepository } from "./repository.js";
 
 export const PLAYWRIGHT_VERSION = "1.62.1";
 export const PLAYWRIGHT_IMAGE = "mcr.microsoft.com/playwright:v1.62.1-noble";

@@ -12,6 +12,10 @@
 
 ## 当前阶段
 
+- 2026-09-17 用户批准重排 TestMesh 主线：先建设 Harness Foundation，再依次进行 Requirement Analysis、Test Design/TestCase、API Automation、UI Automation，最后调研辅助缺陷定位；APP、性能和安全测试不进入本轮新开发。新主线采用 `H00 → RA01 → TD01 → AT01 → AT02 → FT01`，任务见 `docs/DEVELOPMENT_TASKS.md`。
+- H00 已于 2026-09-17 完成。LangGraph 是唯一 Workflow Runtime；LangChain `createAgent` 提供 Agent Loop，Deep Agents 中间件提供渐进式 Skill 加载。PostgreSQL Checkpoint 中断恢复、原生节点/工具事件、失败位置记录和确定性 Completion Gate 已通过真实验收；旧 P05 Agent 生成和旧 OpenHands 工程入口已直接删除。
+- RA01 已于 2026-09-17 完成。Stage Profile、Source Reader、LangChain/Deep Agents Agent、动态来源 Structured Output Schema、确定性 Completion Gate、PostgreSQL 人工评审与基线恢复均已落地；有效分析、原文件、72 条评审历史和 Baseline v1 已一次性迁入 `testmesh_business`，旧协议分析及 SQLite 需求分析路径已清理。最终真实多模态验收读取 16 页 PDF，五项 Completion Gate 全部通过；隔离候选未写入正式列表。下一阶段为 TD01，开始前先读取其阶段任务，不恢复旧 P05 生成路径。
+
 - P01 已于 2026-09-01 完成，验收记录见 `docs/PHASES/P01.md`。
 - P02 已于 2026-09-01 完成，验收记录见 `docs/PHASES/P02.md`，实现路径见 ADR 0004。
 - P03 已于 2026-09-02 完成，验收记录见 `docs/PHASES/P03.md`。
@@ -34,6 +38,16 @@
 - 2026-09-16 当前 57 条评审结果更新为 51 条接受、3 条合并、3 条驳回；合并关系为 `REQ-5 → REQ-9`、`OQ-4 → OQ-10`、`OQ-5 → OQ-9`。合并来源不再单独处理，目标作为保留项继续回写一次最终决策；页面待处理入口显示“已合并来源”，评审弹窗将目标标成“保留项”并动态说明方向，全部记录也显示具体目标。现有评审数据未改写。
 - 2026-09-17 修复人工评审从“接受”切换到“合并/驳回/待澄清”后的保存失败：此前隐藏的正式决策字段仍随请求提交，服务端会误报缺少决策人和 PRD 版本。页面切换结果时清空这些隐藏字段，服务端再按最终处理结果归一化，弹窗内直接显示保存错误。回归检查 47 项测试、lint、build 通过；未修改现有评审记录，未发模型请求。
 - P04-D 仍等待官方 ZAP 文件下载与安全复核；在满足已批准的恢复条件前，不得绕过 Defender、替换安装包、改用 Docker/Installer 或继续 P04-D 真实运行。用户已明确批准在该等待期间先执行 P05，这是一次已记录的阶段顺序例外，不得据此提前进入 P06。
+
+## H00 实现约束
+
+- 只使用 LangGraph 提供图执行、Checkpoint、Interrupt、恢复和并行；不得再写一套循环、状态机或任务调度器。
+- Stage Profile 固定声明 Context、Knowledge、Skills、Tools、Policy、Schema；未声明的能力不进入该阶段。
+- Skill 采用渐进披露，关键 Skill 的适用/不适用由确定性规则记录，不能只依赖 Agent 自选。
+- Agent 输出是候选 Artifact；只有确定性 Completion Gate 通过后才标记完成。
+- PostgreSQL 是长期业务数据和 Checkpoint 方向；当前环境没有可用 PostgreSQL 时明确阻塞真实持久化验收，不得把内存或 SQLite 静默当成生产替代。
+- Deep Agents 的预览异步子 Agent 和实验性 Interpreter 不进入核心路径。
+- 已确认错误且没有有效业务产物的旧路径直接删除；保留代码只能因为它是后续唯一方案复用的成熟 Runner 或当前阶段尚未替换的唯一入口，不能因为“兼容旧版本”。
 
 ## P01 实现约束
 

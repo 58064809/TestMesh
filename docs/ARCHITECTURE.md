@@ -2,45 +2,67 @@
 
 ## 架构原则
 
-TestMesh 采用“统一工作台 + 薄领域层 + 成熟能力适配”的演进方式。P01–P03 已完成；P04-A 至 P04-C 已完成，P04-D 仍阻塞。P05“测试设计与用例生成”和 P06“质量治理与持续回归”是已批准的规划边界，不构成提前实施授权。
+TestMesh 采用“统一工作台 + 薄领域层 + 成熟 Harness/Agent/测试引擎适配”的演进方式。2026-09-17 起先建设 H00 Harness Foundation，再迁移需求分析、测试设计和 API/UI 自动化。历史 P01–P06 保留为实现与验收记录，不再决定新主线顺序。
 
-## P01 运行结构
+## Harness-first 目标结构
+
+```text
+TestMesh UI / API
+  └─ Task Manifest
+       └─ LangGraph Workflow Runtime
+            ├─ Requirement Analysis Stage Profile
+            ├─ Test Design Stage Profile
+            ├─ API Automation Stage Profile
+            ├─ UI Automation Stage Profile
+            └─ Failure Triage Stage Profile（调研后）
+
+每个 Stage Profile
+  ├─ Context
+  ├─ Knowledge
+  ├─ Skills
+  ├─ Tools
+  ├─ Policy
+  └─ Schema
+       ↓
+Deep Agents / LangChain Agent
+       ↓
+候选 Artifact
+       ↓
+确定性 Completion Gate
+       ↓
+已完成 Artifact / 等待人工输入 / 显式失败
+```
+
+LangGraph 负责图执行、Checkpoint、Interrupt、并行和恢复。LangChain `createAgent` 提供 Agent Loop，Deep Agents 中间件提供渐进式 Skill 加载和受限只读能力。TestMesh 不复制这些基础能力，只提供领域配置和校验。
+
+业务数据与运行状态分开：业务数据库保存 Source、Analysis、Decision、Baseline、TestCase、AutomationArtifact 和 TestRun；LangGraph Checkpoint 保存运行位置和这些对象的 ID。本机 PostgreSQL `testmesh` 数据库使用 `harness_checkpoint` 保存 Checkpoint、`harness_runtime` 保存运行摘要、`testmesh_business` 保存需求分析业务事实。RA01 已一次性迁移有效需求分析数据并删除 SQLite 需求分析路径，不保留双读写。
+
+## RA01 运行结构
 
 ```text
 浏览器
-  └─ Refine + Ant Design 中文工作台
-       ├─ AI Chat
-       ├─ Chat Attachment（本次对话附件）
-       └─ Project Knowledge（最小文件清单）
-             │
-             ▼
-        TestMesh Node 服务
-       ├─ 上传校验与临时存储
-       ├─ PRD 分析提示与结构化 Schema
-       └─ OpenAI Responses API 客户端
-             │
-             ▼
-       单一 OpenAI 多模态模型
+  → Requirement Analysis Task
+  → Requirement Analysis Stage Profile
+  → LangGraph Workflow
+       ├─ Source Reader / Locator
+       ├─ LangChain Agent + Deep Agents Skill Middleware
+       ├─ 固定 RequirementAnalysis Structured Output
+       ├─ Deterministic Completion Gate
+       └─ Human Review Interrupt / Baseline Resume
+  → PostgreSQL 业务事实与 Checkpoint
 ```
 
-## P01 技术决策
+OpenAI 文件与视觉输入由 LangChain 的 OpenAI 适配器送入单一模型；TestMesh 负责来源编号、阶段装配、领域 Schema、证据校验和完成判定，不再维护一条直接调用 Responses API 的需求分析路径。
 
-- 前端使用 React、Refine、Ant Design 和 React Router。
-- 服务端使用 Node.js，负责持有 `OPENAI_API_KEY`、接收附件、调用 Responses API 和校验结构化结果。
-- 文件通过 Responses API `input_file` 直接输入；独立图片使用 `input_image`。
-- P01 使用本地临时目录保存上传内容，仅用于当前分析闭环；不建设向量库或复杂知识库。
-- 服务端返回显式来源能力说明。PDF 可按页引用；纯文本可按段引用；对无法可靠定位的格式，Evidence 必须使用 `定位受限` 并说明原因。
-- API 调用失败直接返回失败信息，不生成本地替代分析。
-
-## 数据流
+## RA01 数据流
 
 1. 用户上传 PRD、图片或支持的文档。
 2. 服务端校验数量、大小和格式，生成稳定来源 ID。
 3. 用户发送分析请求。
-4. 服务端把文本、文件/图片和来源目录一次性发送给 Responses API。
-5. 模型按严格 Schema 返回 Requirement、Risk、Pending Question、Evidence。
-6. 服务端验证每条 Evidence 的来源 ID，拒绝未知来源。
-7. 工作台展示结构化结果与来源定位限制。
+4. Harness 按 Stage Profile 装配来源、只读工具、Skills、Policy 和固定输出 Schema。
+5. LangChain Agent 把文件与图片交给单一多模态模型，返回候选 RequirementAnalysis。
+6. Completion Gate 验证结构、来源 ID、定位、冲突证据和来源优先级依据；失败时停在真实失败点。
+7. 通过的分析写入 PostgreSQL，工作流暂停等待人工评审；冻结 Baseline 后从 Checkpoint 恢复并完成。
 
 ## 安全与成本边界
 
@@ -68,11 +90,11 @@ SQLite（better-sqlite3 12.10.0）
 
 ## 后续演进边界
 
-- P02 已交付领域数据模型与 Schemathesis API 测试闭环。
-- P03 接入 OpenHands 提供工程上下文。
-- P04 通过适配层接入 Playwright、Appium、k6、ZAP。
-- P05 复用 OpenAI Agents SDK 管理“覆盖规划 → 分批生成 → 缺口复核”，底层由单一 Responses API 模型读取原始 PRD 多模态内容与 Requirement/Risk/Evidence；服务端只提供无副作用的草稿收集和确定性覆盖复核领域工具。用户评审批准后，复用 OpenHands 生成 Playwright 测试代码，并交给现有 P04-A Runner 执行；不自研 Agent Loop、工作流运行时或第二套 Runner。
-- P05 必须统一既有 API TestCase 与新通用 TestCase 的领域语义，并建立 TestCase → 自动化代码 → TestRun 的追溯关系，不保留平行 TestCase 模型。
-- P06 增加知识与历史缺陷/用例检索、Failure Triage、Quality Gate、完整回归和 CI。
+- H00 先删除会形成第二条路径的旧 P05/OpenHands 入口，再交付统一 Harness 基础，不调用真实业务模型。
+- RA01 把需求分析、人工评审和基线建成第一个正式 Stage Profile，并原位替换旧调用，不保留版本化兼容入口。
+- TD01 使用 Requirement Baseline 和人工决策重新建设测试设计，不沿用旧 P05 Agent Loop。
+- AT01、AT02 分别完成 API 和 UI 自动化；代码生成是否继续使用 OpenHands，需要在 AT01 前进行单一路径评估。
+- FT01 先调查企业内真实可获得的日志、数据库、接口 Trace、代码和测试报告，再设计辅助缺陷定位。
+- APP、性能和安全测试暂不继续开发，历史能力不删除。
 
 任何提前接入均视为路线变更，必须先获用户批准。

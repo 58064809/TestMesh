@@ -90,7 +90,6 @@ export interface AnalysisReviewRecord {
   status: AnalysisReviewStatus;
   reviewer: string;
   reason: string;
-  evidenceChecked: boolean;
   issueType: AnalysisIssueType | "";
   mergeInto: string;
   decision: string;
@@ -159,17 +158,6 @@ export interface TraceRisk {
   mitigation: string;
 }
 
-export interface TestDesignAnalysis {
-  id: string;
-  summary: string;
-  model: string;
-  createdAt: string;
-  analysisFormat: "legacy" | "requirement-analysis";
-  requirements: Array<TraceRequirement & { acceptanceCriteria: string[]; evidenceIds: string[] }>;
-  risks: Array<TraceRisk & { evidenceIds: string[] }>;
-  evidence: TraceEvidence[];
-}
-
 export interface TestCaseRecord {
   id: string;
   specId: string;
@@ -225,58 +213,6 @@ export interface RepositoryInspection {
   files: string[];
 }
 
-export interface DockerContainerSummary {
-  id: string;
-  name: string;
-  image: string;
-  status: string;
-}
-
-export type EngineeringTaskStatus =
-  | "queued"
-  | "starting"
-  | "running"
-  | "completed"
-  | "failed"
-  | "stopped";
-
-export interface EngineeringEventRecord {
-  id: string;
-  taskId: string;
-  ordinal: number;
-  kind: string;
-  source: string;
-  timestamp: string;
-  payload: unknown;
-  terminalOutput: string;
-}
-
-export interface EngineeringTaskRecord {
-  id: string;
-  repoPath: string;
-  instruction: string;
-  selectedFiles: string[];
-  logContext: string;
-  dockerContainerId: string;
-  dockerContainerName: string;
-  dockerContext: string;
-  status: EngineeringTaskStatus;
-  model: string;
-  agentServerImage: string;
-  clientVersion: string;
-  conversationId: string;
-  finalResponse: string;
-  terminalOutput: string;
-  gitDiff: string;
-  tokenUsage: unknown;
-  cost: number | null;
-  error: string;
-  createdAt: string;
-  startedAt: string | null;
-  completedAt: string | null;
-  events: EngineeringEventRecord[];
-}
-
 export interface UiTestResultRecord {
   id: string;
   title: string;
@@ -312,67 +248,6 @@ export interface UiTestRunRecord {
   results: UiTestResultRecord[];
   artifacts: UiTestArtifactRecord[];
 }
-
-export interface TestDesignCaseRecord {
-  id: string;
-  analysisId: string;
-  title: string;
-  testType: "playwright";
-  objective: string;
-  preconditions: string[];
-  steps: string[];
-  expectedResults: string[];
-  priority: Priority;
-  requirementIds: string[];
-  riskIds: string[];
-  evidenceIds: string[];
-  reviewStatus: "draft" | "approved";
-  automationRepoPath: string;
-  automationFile: string;
-  engineeringTaskId: string | null;
-  engineeringTaskStatus: EngineeringTaskStatus | null;
-  uiRuns: UiTestRunRecord[];
-  createdAt: string;
-}
-
-export interface TestDesignGenerationResponse {
-  model: string;
-  usage: { inputTokens: number; outputTokens: number; totalTokens: number };
-  sourceReviews: Array<{
-    sourceId: string;
-    reviewedText: boolean;
-    reviewedImages: boolean;
-    visualFindings: Array<{ locator: string; description: string; evidenceIds: string[] }>;
-  }>;
-  coverageReview: {
-    requirements: Array<{ requirementId: string; disposition: "covered" | "not_playwright_applicable" }>;
-    acceptanceCriteria: Array<{ requirementId: string; criterionNumber: number; disposition: "covered" | "not_playwright_applicable" }>;
-    risks: Array<{ riskId: string; disposition: "covered" | "not_playwright_applicable" }>;
-  };
-  qualityReview: {
-    approved: boolean;
-    summary: string;
-    findings: Array<{ draftKey: string; title: string; issue: string; recommendation: string }>;
-  };
-  savedCaseCount: number;
-}
-
-export interface TestDesignProgress {
-  phase: "source_review" | "partition_generation" | "partition_review" | "coverage_review" | "fill_generation" | "complete";
-  status: "started" | "streaming" | "completed";
-  message: string;
-  partitionKey?: string;
-  partitionTitle?: string;
-  completedPartitions: number;
-  totalPartitions: number;
-  acceptedCaseCount: number;
-}
-
-export type TestDesignStreamEvent =
-  | { type: "progress"; progress: TestDesignProgress }
-  | { type: "batch_saved"; partitionKey: string; partitionTitle: string; savedCaseCount: number; testCases: TestDesignCaseRecord[] }
-  | ({ type: "complete" } & TestDesignGenerationResponse)
-  | { type: "error"; error: string; savedCaseCount: number };
 
 export interface AndroidTestResultRecord {
   id: string;

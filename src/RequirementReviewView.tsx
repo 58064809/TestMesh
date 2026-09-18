@@ -12,7 +12,7 @@ const reviewStatusLabels: Record<AnalysisReviewStatus, string> = {
 };
 type ReviewDraft = Omit<AnalysisReviewRecord, "id" | "analysisId" | "itemId" | "createdAt">;
 const emptyDraft: ReviewDraft = {
-  status: "accepted", reviewer: "", reason: "", evidenceChecked: false,
+  status: "accepted", reviewer: "", reason: "",
   issueType: "", mergeInto: "", decision: "", decisionBy: "", prdRevision: "",
 };
 
@@ -95,7 +95,7 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
     setPreview(firstVisual && firstPreview ? { sourceId: firstVisual.id, page: firstPreview.pages?.start ?? 1 } : undefined);
     setDraft(entry.review ? {
       status: entry.review.status, reviewer: entry.review.reviewer, reason: entry.review.reason,
-      evidenceChecked: entry.review.evidenceChecked, issueType: entry.review.issueType,
+      issueType: entry.review.issueType,
       mergeInto: entry.review.mergeInto, decision: entry.review.decision,
       decisionBy: entry.review.decisionBy, prdRevision: entry.review.prdRevision,
     } : { ...emptyDraft });
@@ -310,7 +310,6 @@ export default function RequirementReviewView({ response, sourceFiles }: { respo
             <Space wrap><Tag>{reviewStatusLabels[event.status]}</Tag><Text>{event.reviewer}</Text><Text type="secondary">{new Date(event.createdAt).toLocaleString("zh-CN")}</Text></Space>
             {event.reason && <Paragraph>理由：{event.reason}</Paragraph>}
             {event.decision && <Paragraph>决策：{event.decision} · {event.decisionBy} · PRD {event.prdRevision}</Paragraph>}
-            <Text type="secondary">原文核对：{event.evidenceChecked ? "已登记核对" : "未登记核对"}</Text>
           </Card>)}
         </Space> : <Empty description="尚无评审记录" />)}
       </Modal>

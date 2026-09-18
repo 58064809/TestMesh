@@ -7,11 +7,10 @@ import {
   validateRequirementAnalysis,
   type RequirementAnalysis,
 } from "../server/analysis.js";
-import { DomainStore } from "../server/store.js";
-import { generateTestCases } from "../server/test-design.js";
+import { toJsonSchema } from "@langchain/core/utils/json_schema";
 import { renderAnalysisMarkdown } from "../src/analysis-report.js";
-import { zodTextFormat } from "openai/helpers/zod";
 import { ModelRequirementAnalysisSchema } from "../server/analysis.js";
+import { createModelRequirementAnalysisSchema } from "../server/requirement-analysis/schema.js";
 
 const emptyDocument: RequirementAnalysis = {
   summary: null,
@@ -62,13 +61,51 @@ describe("fixed RequirementAnalysis document", () => {
     })).toThrow();
   });
 
-  it("sends a strict ten-field JSON Schema to the existing OpenAI helper", () => {
-    const format = zodTextFormat(ModelRequirementAnalysisSchema, "requirement_analysis");
-    expect(format.type).toBe("json_schema");
-    expect(format.strict).toBe(true);
-    expect(Object.keys(format.schema.properties ?? {})).toHaveLength(10);
-    expect(format.schema.required).toHaveLength(10);
-    expect(format.schema.additionalProperties).toBe(false);
+  it("converts the fixed document to the ten-field Schema used by LangChain structured output", () => {
+    const schema = toJsonSchema(ModelRequirementAnalysisSchema);
+    expect(Object.keys(schema.properties ?? {})).toHaveLength(10);
+    expect(schema.required).toHaveLength(10);
+    expect(schema.additionalProperties).toBe(false);
+  });
+
+  it("constrains locator types and PDF page numbers from the current task sources", () => {
+    const pdf = createSources(
+      [{ originalname: "flow.pdf", mimetype: "application/pdf", buffer: Buffer.from("pdf") }],
+      [],
+    )[0];
+    const screenshot = createSources(
+      [{ originalname: "screen.png", mimetype: "image/png", buffer: Buffer.from("png") }],
+      [],
+    )[0];
+    const pdfSchema = createModelRequirementAnalysisSchema([pdf]);
+    const imageSchema = createModelRequirementAnalysisSchema([screenshot]);
+    const base = {
+      id: "SRC-1",
+      description: "流程图",
+      origin: "explicit" as const,
+      source_refs: [],
+      confidence: 0.9,
+      source_file_id: "ATT-1",
+      locator_type: "image" as const,
+      excerpt: "",
+    };
+
+    expect(pdfSchema.safeParse({
+      ...emptyDocument,
+      sources: [{ ...base, locator: "流程图" }],
+    }).success).toBe(false);
+    expect(pdfSchema.safeParse({
+      ...emptyDocument,
+      sources: [{ ...base, locator: "第 3 页流程图" }],
+    }).success).toBe(true);
+    expect(imageSchema.safeParse({
+      ...emptyDocument,
+      sources: [{ ...base, locator: "整张图片" }],
+    }).success).toBe(true);
+    expect(pdfSchema.safeParse({
+      ...emptyDocument,
+      sources: [{ ...base, source_file_id: "UNKNOWN", locator: "第 3 页" }],
+    }).success).toBe(false);
   });
 
   it("binds source file names to uploaded files and refuses invented references", () => {
@@ -136,48 +173,6 @@ describe("fixed RequirementAnalysis document", () => {
       issue_type: "missing" as const, source_refs: [], confidence: 0.85 };
     expect(() => validateRequirementAnalysis({ ...document, open_questions: [ambiguity, missing] }, files)).not.toThrow();
     expect(() => validateRequirementAnalysis({ ...document, open_questions: [{ ...ambiguity, source_refs: [] }] }, files)).toThrow("缺少原文来源");
-  });
-
-  it("stores the canonical JSON and derives trace indexes without analysis risks", () => {
-    const store = new DomainStore(":memory:");
-    try {
-      const document = documentWithSource();
-      const id = store.saveRequirementAnalysis(document, "gpt-5.6-luna", files);
-      expect(store.getRequirementAnalysis(id)).toEqual(document);
-      expect(store.listAnalysisSourceFiles(id)).toEqual([
-        expect.objectContaining({ sourceFileId: "ATT-1", filename: "prd.pdf", provenance: "at_analysis" }),
-      ]);
-      expect(store.getAnalysisSourceFile(id, "ATT-1").file).toEqual(Buffer.from("pdf"));
-      expect(store.listRequirementAnalyses()).toEqual([
-        expect.objectContaining({ id, summary: "订单查询需求", model: "gpt-5.6-luna", protocol: "current" }),
-      ]);
-      const trace = store.getTestDesignAnalysis(id);
-      expect(trace.requirements).toHaveLength(1);
-      expect(trace.requirements[0].evidenceIds).toHaveLength(1);
-      expect(trace.risks).toEqual([]);
-      expect(trace.requirements[0].priority).toBe("unspecified");
-    } finally {
-      store.close();
-    }
-  });
-
-  it("keeps the old analysis format untouched and stops new documents before P05 requests", async () => {
-    const store = new DomainStore(":memory:");
-    try {
-      const oldId = store.saveAnalysis({
-        summary: "旧分析", requirements: [], risks: [], pendingQuestions: [],
-        evidence: [{ id: "EV-1", sourceId: "ATT-1", sourceName: "prd.pdf", locatorType: "page", locator: "1", excerpt: "旧原文", note: "" }],
-      }, "gpt-5.6-luna");
-      expect(store.getRequirementAnalysis(oldId)).toBeNull();
-      expect(store.listRequirementAnalyses()).toEqual([]);
-      expect(store.getTestDesignAnalysis(oldId).analysisFormat).toBe("legacy");
-      const newId = store.saveRequirementAnalysis(documentWithSource(), "gpt-5.6-luna", files);
-      const newTrace = store.getTestDesignAnalysis(newId);
-      expect(newTrace.analysisFormat).toBe("requirement-analysis");
-      await expect(generateTestCases(newTrace, [], "not-a-real-key")).rejects.toThrow("尚未适配");
-    } finally {
-      store.close();
-    }
   });
 
   it("renders Markdown solely from the structured document and shows true references", () => {

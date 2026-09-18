@@ -4,7 +4,7 @@ import { connect } from "node:net";
 import path from "node:path";
 import { XMLParser } from "fast-xml-parser";
 import type { AndroidTestResultInput, AndroidTestRunRecord, DomainStore } from "./store.js";
-import { inspectRepository } from "./openhands.js";
+import { inspectRepository } from "./repository.js";
 
 export const APPIUM_VERSION = "3.7.0";
 export const UIAUTOMATOR2_VERSION = "8.5.2";

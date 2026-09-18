@@ -4,12 +4,10 @@ import { createElement } from "react";
 import App from "../src/App.js";
 
 vi.mock("../src/ApiTesting.js", () => ({ default: () => null }));
-vi.mock("../src/EngineeringTasks.js", () => ({ default: () => null }));
 vi.mock("../src/UiTesting.js", () => ({ default: () => null }));
 vi.mock("../src/AppTesting.js", () => ({ default: () => null }));
 vi.mock("../src/PerformanceTesting.js", () => ({ default: () => null }));
 vi.mock("../src/SecurityTesting.js", () => ({ default: () => null }));
-vi.mock("../src/TestDesign.js", () => ({ default: () => null }));
 vi.mock("../src/RequirementAnalysisView.js", () => ({ default: () => null }));
 
 describe("workbench first render", () => {

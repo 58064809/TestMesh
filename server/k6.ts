@@ -6,7 +6,7 @@ import type {
   PerformanceTestRunRecord,
   PerformanceThresholdInput,
 } from "./store.js";
-import { inspectRepository } from "./openhands.js";
+import { inspectRepository } from "./repository.js";
 
 export const K6_VERSION = "2.2.0";
 export const K6_PATH = "D:\\TestHome\\k6\\2.2.0\\k6.exe";

@@ -1,8 +1,8 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
-import { createHash, randomUUID } from "node:crypto";
-import { RequirementAnalysisSchema, type AnalysisResult, type RequirementAnalysis, type SourceFile } from "./analysis.js";
+import { randomUUID } from "node:crypto";
+import type { AnalysisResult } from "./analysis.js";
 
 export interface TraceRequirement {
   id: string;
@@ -31,76 +31,6 @@ export interface TraceRisk {
   description: string;
   severity: string;
   mitigation: string;
-}
-
-export interface TestDesignAnalysis {
-  id: string;
-  summary: string;
-  model: string;
-  createdAt: string;
-  analysisFormat: "legacy" | "requirement-analysis";
-  requirements: Array<TraceRequirement & { acceptanceCriteria: string[]; evidenceIds: string[] }>;
-  risks: Array<TraceRisk & { evidenceIds: string[] }>;
-  evidence: TraceEvidence[];
-}
-
-export type AnalysisReviewStatus = "accepted" | "rejected" | "merged" | "clarify";
-export type AnalysisIssueType = "missing" | "ambiguity" | "conflict";
-
-export interface AnalysisReviewInput {
-  status: AnalysisReviewStatus;
-  reviewer: string;
-  reason: string;
-  evidenceChecked: boolean;
-  issueType: AnalysisIssueType | "";
-  mergeInto: string;
-  decision: string;
-  decisionBy: string;
-  prdRevision: string;
-}
-
-export interface AnalysisReviewRecord extends AnalysisReviewInput {
-  id: string;
-  analysisId: string;
-  itemId: string;
-  createdAt: string;
-}
-
-export interface RequirementBaselineRecord {
-  id: string;
-  analysisId: string;
-  previousBaselineId: string | null;
-  version: number;
-  prdRevision: string;
-  prdFilename: string;
-  prdSha256: string;
-  approvedBy: string;
-  approvedAt: string;
-}
-
-export interface GeneratedTestCaseInput {
-  title: string;
-  objective: string;
-  preconditions: string[];
-  steps: string[];
-  expectedResults: string[];
-  priority: "must" | "should" | "could";
-  requirementIds: string[];
-  riskIds: string[];
-  evidenceIds: string[];
-}
-
-export interface TestDesignCaseRecord extends GeneratedTestCaseInput {
-  id: string;
-  analysisId: string;
-  testType: "playwright";
-  reviewStatus: "draft" | "approved";
-  automationRepoPath: string;
-  automationFile: string;
-  engineeringTaskId: string | null;
-  engineeringTaskStatus: EngineeringTaskStatus | null;
-  uiRuns: UiTestRunRecord[];
-  createdAt: string;
 }
 
 export interface TestCaseRecord {
@@ -148,51 +78,6 @@ export interface TestRunRecord {
   exitCode: number | null;
   runnerOutput: string;
   items: Array<TestRunItemInput & { id: string }>;
-}
-
-export type EngineeringTaskStatus =
-  | "queued"
-  | "starting"
-  | "running"
-  | "completed"
-  | "failed"
-  | "stopped";
-
-export interface EngineeringEventRecord {
-  id: string;
-  taskId: string;
-  ordinal: number;
-  kind: string;
-  source: string;
-  timestamp: string;
-  payload: unknown;
-  terminalOutput: string;
-}
-
-export interface EngineeringTaskRecord {
-  id: string;
-  repoPath: string;
-  instruction: string;
-  selectedFiles: string[];
-  logContext: string;
-  dockerContainerId: string;
-  dockerContainerName: string;
-  dockerContext: string;
-  status: EngineeringTaskStatus;
-  model: string;
-  agentServerImage: string;
-  clientVersion: string;
-  conversationId: string;
-  finalResponse: string;
-  terminalOutput: string;
-  gitDiff: string;
-  tokenUsage: unknown;
-  cost: number | null;
-  error: string;
-  createdAt: string;
-  startedAt: string | null;
-  completedAt: string | null;
-  events: EngineeringEventRecord[];
 }
 
 export interface UiTestResultInput {
@@ -353,48 +238,7 @@ CREATE TABLE IF NOT EXISTS analyses (
   id TEXT PRIMARY KEY,
   summary TEXT NOT NULL,
   model TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  document_json TEXT
-);
-CREATE TABLE IF NOT EXISTS analysis_review_events (
-  id TEXT PRIMARY KEY,
-  analysis_id TEXT NOT NULL REFERENCES analyses(id) ON DELETE CASCADE,
-  item_id TEXT NOT NULL,
-  status TEXT NOT NULL,
-  reviewer TEXT NOT NULL,
-  reason TEXT NOT NULL,
-  evidence_checked INTEGER NOT NULL,
-  issue_type TEXT NOT NULL,
-  merge_into TEXT NOT NULL,
-  decision TEXT NOT NULL,
-  decision_by TEXT NOT NULL,
-  prd_revision TEXT NOT NULL,
   created_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS analysis_source_files (
-  analysis_id TEXT NOT NULL REFERENCES analyses(id) ON DELETE CASCADE,
-  source_file_id TEXT NOT NULL,
-  filename TEXT NOT NULL,
-  mime_type TEXT NOT NULL,
-  sha256 TEXT NOT NULL,
-  provenance TEXT NOT NULL,
-  file BLOB NOT NULL,
-  stored_at TEXT NOT NULL,
-  PRIMARY KEY (analysis_id, source_file_id)
-);
-CREATE INDEX IF NOT EXISTS idx_analysis_review_events ON analysis_review_events (analysis_id, item_id);
-CREATE TABLE IF NOT EXISTS requirement_baselines (
-  id TEXT PRIMARY KEY,
-  analysis_id TEXT NOT NULL REFERENCES analyses(id) ON DELETE RESTRICT,
-  previous_baseline_id TEXT REFERENCES requirement_baselines(id) ON DELETE RESTRICT,
-  version INTEGER NOT NULL,
-  prd_revision TEXT NOT NULL,
-  prd_filename TEXT NOT NULL,
-  prd_sha256 TEXT NOT NULL,
-  prd_file BLOB NOT NULL,
-  approved_by TEXT NOT NULL,
-  approved_at TEXT NOT NULL,
-  snapshot_json TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS requirements (
   id TEXT PRIMARY KEY,
@@ -445,25 +289,11 @@ CREATE TABLE IF NOT EXISTS openapi_specs (
 );
 CREATE TABLE IF NOT EXISTS test_cases (
   id TEXT PRIMARY KEY,
-  source TEXT NOT NULL DEFAULT 'api',
-  analysis_id TEXT REFERENCES analyses(id) ON DELETE CASCADE,
-  spec_id TEXT REFERENCES openapi_specs(id) ON DELETE CASCADE,
-  operation_id TEXT NOT NULL DEFAULT '',
-  method TEXT NOT NULL DEFAULT '',
-  path TEXT NOT NULL DEFAULT '',
-  summary TEXT NOT NULL DEFAULT '',
-  title TEXT NOT NULL DEFAULT '',
-  test_type TEXT NOT NULL DEFAULT 'api',
-  objective TEXT NOT NULL DEFAULT '',
-  preconditions TEXT NOT NULL DEFAULT '[]',
-  steps TEXT NOT NULL DEFAULT '[]',
-  expected_results TEXT NOT NULL DEFAULT '[]',
-  priority TEXT NOT NULL DEFAULT 'should',
-  review_status TEXT NOT NULL DEFAULT 'approved',
-  automation_repo_path TEXT NOT NULL DEFAULT '',
-  automation_file TEXT NOT NULL DEFAULT '',
-  engineering_task_id TEXT REFERENCES engineering_tasks(id) ON DELETE SET NULL,
-  created_at TEXT NOT NULL DEFAULT '',
+  spec_id TEXT NOT NULL REFERENCES openapi_specs(id) ON DELETE CASCADE,
+  operation_id TEXT NOT NULL,
+  method TEXT NOT NULL,
+  path TEXT NOT NULL,
+  summary TEXT NOT NULL,
   UNIQUE(spec_id, method, path)
 );
 CREATE TABLE IF NOT EXISTS test_case_requirements (
@@ -475,11 +305,6 @@ CREATE TABLE IF NOT EXISTS test_case_evidence (
   test_case_id TEXT NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
   evidence_id TEXT NOT NULL REFERENCES evidence(id) ON DELETE CASCADE,
   PRIMARY KEY (test_case_id, evidence_id)
-);
-CREATE TABLE IF NOT EXISTS test_case_risks (
-  test_case_id TEXT NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
-  risk_id TEXT NOT NULL REFERENCES risks(id) ON DELETE CASCADE,
-  PRIMARY KEY (test_case_id, risk_id)
 );
 CREATE TABLE IF NOT EXISTS test_runs (
   id TEXT PRIMARY KEY,
@@ -507,41 +332,6 @@ CREATE TABLE IF NOT EXISTS test_run_items (
   response_text TEXT NOT NULL,
   reproduction TEXT NOT NULL,
   detail TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS engineering_tasks (
-  id TEXT PRIMARY KEY,
-  repo_path TEXT NOT NULL,
-  instruction TEXT NOT NULL,
-  selected_files TEXT NOT NULL,
-  log_context TEXT NOT NULL,
-  docker_container_id TEXT NOT NULL,
-  docker_container_name TEXT NOT NULL,
-  docker_context TEXT NOT NULL,
-  status TEXT NOT NULL,
-  model TEXT NOT NULL,
-  agent_server_image TEXT NOT NULL,
-  client_version TEXT NOT NULL,
-  conversation_id TEXT NOT NULL DEFAULT '',
-  final_response TEXT NOT NULL DEFAULT '',
-  terminal_output TEXT NOT NULL DEFAULT '',
-  git_diff TEXT NOT NULL DEFAULT '',
-  token_usage TEXT NOT NULL DEFAULT '{}',
-  cost REAL,
-  error TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL,
-  started_at TEXT,
-  completed_at TEXT
-);
-CREATE TABLE IF NOT EXISTS engineering_task_events (
-  id TEXT PRIMARY KEY,
-  task_id TEXT NOT NULL REFERENCES engineering_tasks(id) ON DELETE CASCADE,
-  ordinal INTEGER NOT NULL,
-  kind TEXT NOT NULL,
-  source TEXT NOT NULL,
-  timestamp TEXT NOT NULL,
-  payload TEXT NOT NULL,
-  terminal_output TEXT NOT NULL,
-  UNIQUE(task_id, ordinal)
 );
 CREATE TABLE IF NOT EXISTS ui_test_runs (
   id TEXT PRIMARY KEY,
@@ -575,11 +365,6 @@ CREATE TABLE IF NOT EXISTS ui_test_artifacts (
   name TEXT NOT NULL,
   kind TEXT NOT NULL,
   path TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS test_case_ui_runs (
-  test_case_id TEXT NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
-  run_id TEXT NOT NULL REFERENCES ui_test_runs(id) ON DELETE CASCADE,
-  PRIMARY KEY (test_case_id, run_id)
 );
 CREATE TABLE IF NOT EXISTS android_test_runs (
   id TEXT PRIMARY KEY,
@@ -703,16 +488,20 @@ export class DomainStore {
     this.db = new Database(databasePath);
     this.db.pragma("journal_mode = WAL");
     this.db.exec(schema);
-    const analysisColumns = this.db.pragma("table_info(analyses)") as Array<{ name: string }>;
-    if (!analysisColumns.some((column) => column.name === "document_json")) {
-      this.db.exec("ALTER TABLE analyses ADD COLUMN document_json TEXT");
-    }
-    this.migrateLegacyTestCases();
+    this.removeDeprecatedAgentData();
   }
 
-  private migrateLegacyTestCases(): void {
+  private removeDeprecatedAgentData(): void {
     const columns = this.db.pragma("table_info(test_cases)") as Array<{ name: string }>;
-    if (columns.some((column) => column.name === "source")) return;
+    if (!columns.some((column) => column.name === "source")) {
+      this.db.exec(`
+        DROP TABLE IF EXISTS test_case_risks;
+        DROP TABLE IF EXISTS test_case_ui_runs;
+        DROP TABLE IF EXISTS engineering_task_events;
+        DROP TABLE IF EXISTS engineering_tasks;
+      `);
+      return;
+    }
 
     this.db.pragma("foreign_keys = OFF");
     try {
@@ -726,50 +515,32 @@ export class DomainStore {
         ALTER TABLE test_cases RENAME TO test_cases_legacy;
         CREATE TABLE test_cases (
           id TEXT PRIMARY KEY,
-          source TEXT NOT NULL DEFAULT 'api',
-          analysis_id TEXT REFERENCES analyses(id) ON DELETE CASCADE,
-          spec_id TEXT REFERENCES openapi_specs(id) ON DELETE CASCADE,
-          operation_id TEXT NOT NULL DEFAULT '',
-          method TEXT NOT NULL DEFAULT '',
-          path TEXT NOT NULL DEFAULT '',
-          summary TEXT NOT NULL DEFAULT '',
-          title TEXT NOT NULL DEFAULT '',
-          test_type TEXT NOT NULL DEFAULT 'api',
-          objective TEXT NOT NULL DEFAULT '',
-          preconditions TEXT NOT NULL DEFAULT '[]',
-          steps TEXT NOT NULL DEFAULT '[]',
-          expected_results TEXT NOT NULL DEFAULT '[]',
-          priority TEXT NOT NULL DEFAULT 'should',
-          review_status TEXT NOT NULL DEFAULT 'approved',
-          automation_repo_path TEXT NOT NULL DEFAULT '',
-          automation_file TEXT NOT NULL DEFAULT '',
-          engineering_task_id TEXT REFERENCES engineering_tasks(id) ON DELETE SET NULL,
-          created_at TEXT NOT NULL DEFAULT '',
+          spec_id TEXT NOT NULL REFERENCES openapi_specs(id) ON DELETE CASCADE,
+          operation_id TEXT NOT NULL,
+          method TEXT NOT NULL,
+          path TEXT NOT NULL,
+          summary TEXT NOT NULL,
           UNIQUE(spec_id, method, path)
         );
-        INSERT INTO test_cases
-          (id, source, spec_id, operation_id, method, path, summary, title, test_type,
-           objective, review_status, created_at)
-        SELECT id, 'api', spec_id, operation_id, method, path, summary, summary, 'api',
-               summary, 'approved', ''
-        FROM test_cases_legacy;
+        INSERT INTO test_cases (id, spec_id, operation_id, method, path, summary)
+        SELECT id, spec_id, operation_id, method, path, summary
+        FROM test_cases_legacy WHERE source = 'api' AND spec_id IS NOT NULL;
         CREATE TABLE test_case_requirements (
           test_case_id TEXT NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
           requirement_id TEXT NOT NULL REFERENCES requirements(id) ON DELETE CASCADE,
           PRIMARY KEY (test_case_id, requirement_id)
         );
-        INSERT INTO test_case_requirements SELECT * FROM test_case_requirements_legacy;
+        INSERT INTO test_case_requirements
+        SELECT legacy.* FROM test_case_requirements_legacy legacy
+        JOIN test_cases current_case ON current_case.id = legacy.test_case_id;
         CREATE TABLE test_case_evidence (
           test_case_id TEXT NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
           evidence_id TEXT NOT NULL REFERENCES evidence(id) ON DELETE CASCADE,
           PRIMARY KEY (test_case_id, evidence_id)
         );
-        INSERT INTO test_case_evidence SELECT * FROM test_case_evidence_legacy;
-        CREATE TABLE test_case_risks (
-          test_case_id TEXT NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
-          risk_id TEXT NOT NULL REFERENCES risks(id) ON DELETE CASCADE,
-          PRIMARY KEY (test_case_id, risk_id)
-        );
+        INSERT INTO test_case_evidence
+        SELECT legacy.* FROM test_case_evidence_legacy legacy
+        JOIN test_cases current_case ON current_case.id = legacy.test_case_id;
         CREATE TABLE test_run_items (
           id TEXT PRIMARY KEY,
           run_id TEXT NOT NULL REFERENCES test_runs(id) ON DELETE CASCADE,
@@ -784,16 +555,18 @@ export class DomainStore {
           reproduction TEXT NOT NULL,
           detail TEXT NOT NULL
         );
-        INSERT INTO test_run_items SELECT * FROM test_run_items_legacy;
-        CREATE TABLE test_case_ui_runs (
-          test_case_id TEXT NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
-          run_id TEXT NOT NULL REFERENCES ui_test_runs(id) ON DELETE CASCADE,
-          PRIMARY KEY (test_case_id, run_id)
-        );
+        INSERT INTO test_run_items
+        SELECT id, run_id,
+               CASE WHEN test_case_id IN (SELECT id FROM test_cases) THEN test_case_id ELSE NULL END,
+               operation, status, duration_ms, failure_type, checks, request_text,
+               response_text, reproduction, detail
+        FROM test_run_items_legacy;
         DROP TABLE test_case_requirements_legacy;
         DROP TABLE test_case_evidence_legacy;
         DROP TABLE test_run_items_legacy;
         DROP TABLE test_cases_legacy;
+        DROP TABLE IF EXISTS engineering_task_events;
+        DROP TABLE IF EXISTS engineering_tasks;
         COMMIT;
       `);
     } catch (error) {
@@ -803,7 +576,7 @@ export class DomainStore {
       this.db.pragma("foreign_keys = ON");
     }
     const violations = this.db.pragma("foreign_key_check") as unknown[];
-    if (violations.length > 0) throw new Error("TestCase 数据迁移后外键校验失败");
+    if (violations.length > 0) throw new Error("废弃 Agent 数据清理后外键校验失败");
   }
 
   close(): void {
@@ -886,280 +659,17 @@ export class DomainStore {
     return analysisId;
   }
 
-  saveRequirementAnalysis(document: RequirementAnalysis, model: string, files: SourceFile[]): string {
-    const parsed = RequirementAnalysisSchema.parse(document);
-    const analysisId = randomUUID();
-    const save = this.db.transaction(() => {
-      this.db.prepare(
-        "INSERT INTO analyses (id, summary, model, created_at, document_json) VALUES (?, ?, ?, ?, ?)",
-      ).run(analysisId, parsed.summary?.description ?? "", model, new Date().toISOString(), JSON.stringify(parsed));
 
-      const insertFile = this.db.prepare(
-        `INSERT INTO analysis_source_files VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      );
-      for (const file of files) {
-        insertFile.run(analysisId, file.id, file.name, file.mimeType,
-          createHash("sha256").update(file.buffer).digest("hex"), "at_analysis", file.buffer,
-          new Date().toISOString());
-      }
 
-      // These rows are trace indexes derived from the canonical document, not
-      // a second editable analysis result. Historic Risk rows remain untouched.
-      const evidenceIds = new Map<string, string>();
-      const insertEvidence = this.db.prepare("INSERT INTO evidence VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-      for (const source of parsed.sources) {
-        const id = randomUUID();
-        evidenceIds.set(source.id, id);
-        insertEvidence.run(
-          id, analysisId, source.id, source.source_file_id, source.source_file_name,
-          source.locator_type, source.locator, source.excerpt, source.description,
-        );
-      }
 
-      const insertRequirement = this.db.prepare("INSERT INTO requirements VALUES (?, ?, ?, ?, ?, ?, ?)");
-      const linkRequirementEvidence = this.db.prepare("INSERT INTO requirement_evidence VALUES (?, ?)");
-      for (const item of parsed.requirements) {
-        const id = randomUUID();
-        insertRequirement.run(
-          id, analysisId, item.id, item.description, item.description, "unspecified",
-          JSON.stringify(item.acceptance_criteria),
-        );
-        for (const ref of item.source_refs) {
-          const evidenceId = evidenceIds.get(ref);
-          if (evidenceId) linkRequirementEvidence.run(id, evidenceId);
-        }
-      }
-    });
-    save();
-    return analysisId;
-  }
 
-  getRequirementAnalysis(analysisId: string): RequirementAnalysis | null {
-    const row = this.db.prepare("SELECT document_json AS documentJson FROM analyses WHERE id = ?")
-      .get(analysisId) as { documentJson: string | null } | undefined;
-    if (!row) throw new Error(`分析结果 ${analysisId} 不存在`);
-    if (!row.documentJson) return null;
-    const parsed = RequirementAnalysisSchema.safeParse(JSON.parse(row.documentJson));
-    if (!parsed.success) {
-      throw new Error("这份已保存分析不符合当前需求分析协议；原记录保持不变，请使用原始资料按新协议重新分析");
-    }
-    return parsed.data;
-  }
 
-  listAnalysisSourceFiles(analysisId: string): Array<{ sourceFileId: string; filename: string; mimeType: string; sha256: string; provenance: string; storedAt: string }> {
-    const document = this.getRequirementAnalysis(analysisId);
-    if (!document) throw new Error("旧协议分析没有新版原文件目录");
-    return this.db.prepare(
-      `SELECT source_file_id AS sourceFileId, filename, mime_type AS mimeType,
-              sha256, provenance, stored_at AS storedAt
-       FROM analysis_source_files WHERE analysis_id = ? ORDER BY rowid`,
-    ).all(analysisId) as Array<{ sourceFileId: string; filename: string; mimeType: string; sha256: string; provenance: string; storedAt: string }>;
-  }
 
-  getAnalysisSourceFile(analysisId: string, sourceFileId: string): { filename: string; mimeType: string; file: Buffer; sha256: string; provenance: string } {
-    const row = this.db.prepare(
-      `SELECT filename, mime_type AS mimeType, file, sha256, provenance
-       FROM analysis_source_files WHERE analysis_id = ? AND source_file_id = ?`,
-    ).get(analysisId, sourceFileId) as { filename: string; mimeType: string; file: Buffer; sha256: string; provenance: string } | undefined;
-    if (!row) throw new Error("原始来源文件未留存；当前仅可查看来源摘录与定位");
-    return row;
-  }
 
-  backfillAnalysisSourceFile(analysisId: string, file: SourceFile): void {
-    const document = this.getRequirementAnalysis(analysisId);
-    if (!document) throw new Error("旧协议分析不能补录原文件");
-    const referenced = document.sources.filter((source) => source.source_file_id === file.id);
-    if (!referenced.length || referenced.some((source) => source.source_file_name !== file.name)) {
-      throw new Error("补录原文件的来源 ID 或文件名与分析记录不一致");
-    }
-    if (this.db.prepare("SELECT 1 FROM analysis_source_files WHERE analysis_id = ? AND source_file_id = ?").get(analysisId, file.id)) {
-      throw new Error("该来源原文件已保存，不能覆盖");
-    }
-    this.db.prepare("INSERT INTO analysis_source_files VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
-      analysisId, file.id, file.name, file.mimeType,
-      createHash("sha256").update(file.buffer).digest("hex"), "backfilled_after_analysis",
-      file.buffer, new Date().toISOString(),
-    );
-  }
 
-  listRequirementAnalyses(): Array<{ id: string; summary: string; model: string; createdAt: string; protocol: "current" | "incompatible" }> {
-    const rows = this.db.prepare(
-      `SELECT id, summary, model, created_at AS createdAt, document_json AS documentJson
-       FROM analyses WHERE document_json IS NOT NULL ORDER BY created_at DESC`,
-    ).all() as Array<{ id: string; summary: string; model: string; createdAt: string; documentJson: string }>;
-    return rows.map(({ documentJson, ...row }) => {
-      try {
-        const protocol = RequirementAnalysisSchema.safeParse(JSON.parse(documentJson)).success ? "current" : "incompatible";
-        return { ...row, protocol } as const;
-      } catch {
-        return { ...row, protocol: "incompatible" as const };
-      }
-    });
-  }
 
-  private reviewSections(document: RequirementAnalysis): Array<{ section: string; item: RequirementAnalysis["actors"][number] }> {
-    const sections = ["requirements", "actors", "business_rules", "flows", "states", "constraints", "exceptions", "open_questions"] as const;
-    return [
-      ...(document.summary ? [{ section: "summary", item: document.summary }] : []),
-      ...sections.flatMap((section) => document[section].map((item) => ({ section, item }))),
-    ];
-  }
 
-  listAnalysisReviews(analysisId: string): AnalysisReviewRecord[] {
-    const document = this.getRequirementAnalysis(analysisId);
-    if (!document) throw new Error("旧协议分析不能进入新版人工评审");
-    return this.db.prepare(
-      `SELECT e.id, e.analysis_id AS analysisId, e.item_id AS itemId, e.status,
-              e.reviewer, e.reason, e.evidence_checked AS evidenceChecked,
-              e.issue_type AS issueType, e.merge_into AS mergeInto, e.decision,
-              e.decision_by AS decisionBy, e.prd_revision AS prdRevision,
-              e.created_at AS createdAt
-       FROM analysis_review_events e
-       WHERE e.analysis_id = ? AND e.rowid IN (
-         SELECT MAX(rowid) FROM analysis_review_events WHERE analysis_id = ? GROUP BY item_id
-       ) ORDER BY e.rowid`,
-    ).all(analysisId, analysisId).map((row) => {
-      const record = row as Omit<AnalysisReviewRecord, "evidenceChecked"> & { evidenceChecked: number };
-      return { ...record, evidenceChecked: Boolean(record.evidenceChecked) };
-    });
-  }
 
-  listAnalysisReviewHistory(analysisId: string, itemId: string): AnalysisReviewRecord[] {
-    const document = this.getRequirementAnalysis(analysisId);
-    if (!document || !this.reviewSections(document).some(({ item }) => item.id === itemId)) {
-      throw new Error("分析条目不存在，不能读取评审历史");
-    }
-    return this.db.prepare(
-      `SELECT id, analysis_id AS analysisId, item_id AS itemId, status,
-              reviewer, reason, evidence_checked AS evidenceChecked,
-              issue_type AS issueType, merge_into AS mergeInto, decision,
-              decision_by AS decisionBy, prd_revision AS prdRevision,
-              created_at AS createdAt
-       FROM analysis_review_events WHERE analysis_id = ? AND item_id = ? ORDER BY rowid DESC`,
-    ).all(analysisId, itemId).map((row) => {
-      const record = row as Omit<AnalysisReviewRecord, "evidenceChecked"> & { evidenceChecked: number };
-      return { ...record, evidenceChecked: Boolean(record.evidenceChecked) };
-    });
-  }
-
-  recordAnalysisReview(analysisId: string, itemId: string, input: AnalysisReviewInput): AnalysisReviewRecord {
-    const document = this.getRequirementAnalysis(analysisId);
-    if (!document) throw new Error("旧协议分析不能进入新版人工评审");
-    if (this.db.prepare("SELECT 1 FROM requirement_baselines WHERE analysis_id = ?").get(analysisId)) {
-      throw new Error("此分析已建立基线，评审记录已冻结；变更请重新分析新 PRD");
-    }
-    const items = this.reviewSections(document);
-    const current = items.find((entry) => entry.item.id === itemId);
-    if (!current) throw new Error(`分析条目 ${itemId} 不存在`);
-    const normalizedInput = input.status === "accepted"
-      ? input
-      : { ...input, decision: "", decisionBy: "", prdRevision: "" };
-    if (normalizedInput.status === "merged") {
-      const target = items.find((entry) => entry.item.id === normalizedInput.mergeInto);
-      if (!target || target.item.id === itemId || target.section !== current.section) throw new Error("合并目标需为同类的其他分析条目");
-    } else if (normalizedInput.mergeInto) throw new Error("只有合并条目才能填写目标");
-    if (current.section === "open_questions") {
-      if (normalizedInput.status === "accepted" && !normalizedInput.issueType) throw new Error("请明确待确认问题是缺失、歧义还是冲突");
-      if (normalizedInput.decision && (!normalizedInput.decisionBy.trim() || !normalizedInput.prdRevision.trim())) throw new Error("评审决策需要决策人和 PRD 修订标识");
-    } else if (normalizedInput.issueType || normalizedInput.decision || normalizedInput.decisionBy || normalizedInput.prdRevision) {
-      throw new Error("问题类型与会议决策只填写在待确认问题上");
-    }
-    const record: AnalysisReviewRecord = {
-      ...normalizedInput, id: randomUUID(), analysisId, itemId, createdAt: new Date().toISOString(),
-    };
-    this.db.prepare(
-      `INSERT INTO analysis_review_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(record.id, analysisId, itemId, normalizedInput.status, normalizedInput.reviewer.trim(), normalizedInput.reason.trim(),
-      Number(normalizedInput.evidenceChecked), normalizedInput.issueType, normalizedInput.mergeInto, normalizedInput.decision.trim(),
-      normalizedInput.decisionBy.trim(), normalizedInput.prdRevision.trim(), record.createdAt);
-    return record;
-  }
-
-  listRequirementBaselines(): RequirementBaselineRecord[] {
-    return this.db.prepare(
-      `SELECT id, analysis_id AS analysisId, previous_baseline_id AS previousBaselineId,
-              version, prd_revision AS prdRevision, prd_filename AS prdFilename,
-              prd_sha256 AS prdSha256, approved_by AS approvedBy, approved_at AS approvedAt
-       FROM requirement_baselines ORDER BY rowid DESC`,
-    ).all() as RequirementBaselineRecord[];
-  }
-
-  createRequirementBaseline(
-    analysisId: string,
-    input: { prdRevision: string; approvedBy: string; previousBaselineId: string | null; prdFilename: string; prdFile: Buffer },
-  ): RequirementBaselineRecord {
-    const document = this.getRequirementAnalysis(analysisId);
-    if (!document) throw new Error("旧协议分析不能建立新版需求基线");
-    if (!input.prdRevision.trim() || !input.approvedBy.trim() || !input.prdFile.length) {
-      throw new Error("建立基线需要 PRD 修订标识、批准人和评审后的 PRD 文件");
-    }
-    if (this.db.prepare("SELECT 1 FROM requirement_baselines WHERE analysis_id = ?").get(analysisId)) {
-      throw new Error("此分析已建立基线；需求变化请重新分析新 PRD，不能覆盖旧基线");
-    }
-    const previous = input.previousBaselineId
-      ? this.db.prepare("SELECT version FROM requirement_baselines WHERE id = ?").get(input.previousBaselineId) as { version: number } | undefined
-      : null;
-    if (input.previousBaselineId && !previous) throw new Error("前一需求基线不存在");
-    if (input.previousBaselineId && this.db.prepare("SELECT 1 FROM requirement_baselines WHERE previous_baseline_id = ?").get(input.previousBaselineId)) {
-      throw new Error("前一需求基线已有新版本，不能在单一路径中创建并行分支");
-    }
-    const items = this.reviewSections(document);
-    const reviews = this.listAnalysisReviews(analysisId);
-    const byId = new Map(reviews.map((review) => [review.itemId, review]));
-    const unfinished = items.filter(({ item }) => !byId.has(item.id) || byId.get(item.id)?.status === "clarify");
-    if (unfinished.length) throw new Error(`仍有 ${unfinished.length} 条未完成评审，不能建立基线`);
-    const unresolvedQuestions = items.filter(({ section, item }) => {
-      const review = byId.get(item.id)!;
-      return section === "open_questions" && review.status === "accepted"
-        && (!review.decision || !review.decisionBy || !review.prdRevision);
-    });
-    if (unresolvedQuestions.length) {
-      throw new Error(`以下待确认问题尚未回写完整评审决策：${unresolvedQuestions.map(({ item }) => item.id).join("、")}`);
-    }
-    for (const { section, item } of items) {
-      const review = byId.get(item.id)!;
-      if (section === "open_questions" && review.status === "accepted" && review.prdRevision !== input.prdRevision.trim()) {
-        throw new Error(`待确认问题 ${item.id} 的决策登记在 PRD ${review.prdRevision}，与上传的获批版本 ${input.prdRevision} 不一致`);
-      }
-      if (review.status === "merged" && byId.get(review.mergeInto)?.status !== "accepted") {
-        throw new Error(`合并目标 ${review.mergeInto} 尚未接受`);
-      }
-    }
-    const accepted = items.filter(({ item }) => byId.get(item.id)?.status === "accepted").map(({ section, item }) => {
-      const merged = items.filter(({ section: otherSection, item: otherItem }) =>
-        otherSection === section && byId.get(otherItem.id)?.status === "merged" && byId.get(otherItem.id)?.mergeInto === item.id);
-      return {
-        section, item: { ...item, source_refs: [...new Set([...item.source_refs, ...merged.flatMap(({ item: mergedItem }) => mergedItem.source_refs)])] },
-        mergedFrom: merged.map(({ item: mergedItem }) => mergedItem.id),
-        review: byId.get(item.id),
-      };
-    });
-    const record: RequirementBaselineRecord = {
-      id: randomUUID(), analysisId, previousBaselineId: input.previousBaselineId,
-      version: (previous?.version ?? 0) + 1, prdRevision: input.prdRevision.trim(),
-      prdFilename: input.prdFilename, prdSha256: createHash("sha256").update(input.prdFile).digest("hex"),
-      approvedBy: input.approvedBy.trim(), approvedAt: new Date().toISOString(),
-    };
-    const snapshot = JSON.stringify({ accepted, reviews, sourceRefs: document.sources });
-    this.db.prepare(
-      `INSERT INTO requirement_baselines VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(record.id, analysisId, record.previousBaselineId, record.version, record.prdRevision,
-      record.prdFilename, record.prdSha256, input.prdFile, record.approvedBy, record.approvedAt, snapshot);
-    return record;
-  }
-
-  getRequirementBaseline(id: string): { record: RequirementBaselineRecord; snapshot: unknown; file: Buffer } {
-    const row = this.db.prepare(
-      `SELECT id, analysis_id AS analysisId, previous_baseline_id AS previousBaselineId,
-              version, prd_revision AS prdRevision, prd_filename AS prdFilename,
-              prd_sha256 AS prdSha256, prd_file AS file, approved_by AS approvedBy,
-              approved_at AS approvedAt, snapshot_json AS snapshotJson
-       FROM requirement_baselines WHERE id = ?`,
-    ).get(id) as (RequirementBaselineRecord & { file: Buffer; snapshotJson: string }) | undefined;
-    if (!row) throw new Error(`需求基线 ${id} 不存在`);
-    const { file, snapshotJson, ...record } = row;
-    return { record, file, snapshot: JSON.parse(snapshotJson) as unknown };
-  }
 
   listTraceSources(): { requirements: TraceRequirement[]; risks: TraceRisk[]; evidence: TraceEvidence[] } {
     const requirements = this.db
@@ -1184,173 +694,6 @@ export class DomainStore {
     return { requirements, risks, evidence };
   }
 
-  listTestDesignAnalyses(): TestDesignAnalysis[] {
-    const ids = this.db
-      .prepare("SELECT id FROM analyses ORDER BY created_at DESC")
-      .all() as Array<{ id: string }>;
-    return ids.map(({ id }) => this.getTestDesignAnalysis(id));
-  }
-
-  getTestDesignAnalysis(analysisId: string): TestDesignAnalysis {
-    const analysis = this.db.prepare(
-      `SELECT id, summary, model, created_at AS createdAt, document_json AS documentJson FROM analyses WHERE id = ?`,
-    ).get(analysisId) as (Omit<TestDesignAnalysis, "requirements" | "risks" | "evidence" | "analysisFormat"> & { documentJson: string | null }) | undefined;
-    if (!analysis) throw new Error(`分析结果 ${analysisId} 不存在`);
-
-    const requirements = this.db.prepare(
-      `SELECT id, analysis_id AS analysisId, external_id AS externalId, title, description,
-              priority, acceptance_criteria AS acceptanceCriteria
-       FROM requirements WHERE analysis_id = ? ORDER BY rowid`,
-    ).all(analysisId) as Array<Omit<TestDesignAnalysis["requirements"][number], "acceptanceCriteria" | "evidenceIds"> & {
-      acceptanceCriteria: string;
-    }>;
-    const risks = this.db.prepare(
-      `SELECT id, analysis_id AS analysisId, external_id AS externalId, title, description,
-              severity, mitigation FROM risks WHERE analysis_id = ? ORDER BY rowid`,
-    ).all(analysisId) as Array<Omit<TestDesignAnalysis["risks"][number], "evidenceIds">>;
-    const evidence = this.db.prepare(
-      `SELECT id, analysis_id AS analysisId, external_id AS externalId, source_name AS sourceName,
-              locator_type AS locatorType, locator, excerpt
-       FROM evidence WHERE analysis_id = ? ORDER BY rowid`,
-    ).all(analysisId) as TraceEvidence[];
-    const requirementEvidence = this.db.prepare(
-      "SELECT evidence_id AS id FROM requirement_evidence WHERE requirement_id = ?",
-    );
-    const riskEvidence = this.db.prepare(
-      "SELECT evidence_id AS id FROM risk_evidence WHERE risk_id = ?",
-    );
-    return {
-      id: analysis.id,
-      summary: analysis.summary,
-      model: analysis.model,
-      createdAt: analysis.createdAt,
-      analysisFormat: analysis.documentJson ? "requirement-analysis" : "legacy",
-      requirements: requirements.map((item) => ({
-        ...item,
-        acceptanceCriteria: JSON.parse(item.acceptanceCriteria) as string[],
-        evidenceIds: (requirementEvidence.all(item.id) as Array<{ id: string }>).map((row) => row.id),
-      })),
-      risks: risks.map((item) => ({
-        ...item,
-        evidenceIds: (riskEvidence.all(item.id) as Array<{ id: string }>).map((row) => row.id),
-      })),
-      evidence,
-    };
-  }
-
-  saveGeneratedTestCases(analysisId: string, cases: GeneratedTestCaseInput[]): TestDesignCaseRecord[] {
-    const analysis = this.getTestDesignAnalysis(analysisId);
-    const allowedRequirements = new Set(analysis.requirements.map((item) => item.id));
-    const allowedRisks = new Set(analysis.risks.map((item) => item.id));
-    const allowedEvidence = new Set(analysis.evidence.map((item) => item.id));
-    if (cases.length === 0) throw new Error("模型没有返回可保存的测试用例");
-    for (const item of cases) {
-      if (item.requirementIds.length + item.riskIds.length + item.evidenceIds.length < 1) {
-        throw new Error(`测试用例“${item.title}”没有任何需求分析、PRD 或 RAG 证据`);
-      }
-      if (item.requirementIds.some((id) => !allowedRequirements.has(id))) throw new Error(`测试用例“${item.title}”引用了其他分析的 Requirement`);
-      if (item.riskIds.some((id) => !allowedRisks.has(id))) throw new Error(`测试用例“${item.title}”引用了其他分析的 Risk`);
-      if (item.evidenceIds.some((id) => !allowedEvidence.has(id))) throw new Error(`测试用例“${item.title}”引用了其他分析的 Evidence`);
-    }
-
-    const ids: string[] = [];
-    const save = this.db.transaction(() => {
-      const insertCase = this.db.prepare(
-        `INSERT INTO test_cases
-         (id, source, analysis_id, title, summary, test_type, objective, preconditions, steps,
-          expected_results, priority, review_status, created_at)
-         VALUES (?, 'generated', ?, ?, ?, 'playwright', ?, ?, ?, ?, ?, 'draft', ?)`,
-      );
-      const linkRequirement = this.db.prepare("INSERT INTO test_case_requirements VALUES (?, ?)");
-      const linkRisk = this.db.prepare("INSERT INTO test_case_risks VALUES (?, ?)");
-      const linkEvidence = this.db.prepare("INSERT INTO test_case_evidence VALUES (?, ?)");
-      for (const item of cases) {
-        const id = randomUUID();
-        ids.push(id);
-        insertCase.run(
-          id,
-          analysisId,
-          item.title,
-          item.title,
-          item.objective,
-          JSON.stringify(item.preconditions),
-          JSON.stringify(item.steps),
-          JSON.stringify(item.expectedResults),
-          item.priority,
-          new Date().toISOString(),
-        );
-        for (const requirementId of item.requirementIds) linkRequirement.run(id, requirementId);
-        for (const riskId of item.riskIds) linkRisk.run(id, riskId);
-        for (const evidenceId of item.evidenceIds) linkEvidence.run(id, evidenceId);
-      }
-    });
-    save();
-    return ids.map((id) => this.getTestDesignCase(id));
-  }
-
-  listTestDesignCases(): TestDesignCaseRecord[] {
-    const ids = this.db.prepare(
-      "SELECT id FROM test_cases WHERE source = 'generated' ORDER BY created_at DESC",
-    ).all() as Array<{ id: string }>;
-    return ids.map(({ id }) => this.getTestDesignCase(id));
-  }
-
-  getTestDesignCase(id: string): TestDesignCaseRecord {
-    const row = this.db.prepare(
-      `SELECT tc.id, tc.analysis_id AS analysisId, tc.title, tc.test_type AS testType,
-              tc.objective, tc.preconditions, tc.steps, tc.expected_results AS expectedResults,
-              tc.priority, tc.review_status AS reviewStatus,
-              tc.automation_repo_path AS automationRepoPath, tc.automation_file AS automationFile,
-              tc.engineering_task_id AS engineeringTaskId, et.status AS engineeringTaskStatus,
-              tc.created_at AS createdAt
-       FROM test_cases tc LEFT JOIN engineering_tasks et ON et.id = tc.engineering_task_id
-       WHERE tc.id = ? AND tc.source = 'generated'`,
-    ).get(id) as (Omit<TestDesignCaseRecord, "preconditions" | "steps" | "expectedResults" | "requirementIds" | "riskIds" | "evidenceIds" | "uiRuns"> & {
-      preconditions: string;
-      steps: string;
-      expectedResults: string;
-    }) | undefined;
-    if (!row) throw new Error(`测试用例 ${id} 不存在`);
-    const linkedIds = (table: string, column: string): string[] =>
-      (this.db.prepare(`SELECT ${column} AS id FROM ${table} WHERE test_case_id = ?`).all(id) as Array<{ id: string }>).map((item) => item.id);
-    const runIds = this.db.prepare(
-      "SELECT run_id AS id FROM test_case_ui_runs WHERE test_case_id = ? ORDER BY rowid DESC",
-    ).all(id) as Array<{ id: string }>;
-    return {
-      ...row,
-      preconditions: JSON.parse(row.preconditions) as string[],
-      steps: JSON.parse(row.steps) as string[],
-      expectedResults: JSON.parse(row.expectedResults) as string[],
-      requirementIds: linkedIds("test_case_requirements", "requirement_id"),
-      riskIds: linkedIds("test_case_risks", "risk_id"),
-      evidenceIds: linkedIds("test_case_evidence", "evidence_id"),
-      uiRuns: runIds.map(({ id: runId }) => this.getUiTestRun(runId)),
-    };
-  }
-
-  approveTestDesignCase(id: string): TestDesignCaseRecord {
-    this.getTestDesignCase(id);
-    this.db.prepare("UPDATE test_cases SET review_status = 'approved' WHERE id = ?").run(id);
-    return this.getTestDesignCase(id);
-  }
-
-  linkTestCaseAutomation(id: string, repoPath: string, automationFile: string, taskId: string): TestDesignCaseRecord {
-    const testCase = this.getTestDesignCase(id);
-    if (testCase.reviewStatus !== "approved") throw new Error("测试用例草稿尚未批准，不能生成自动化代码");
-    this.getEngineeringTask(taskId);
-    this.db.prepare(
-      `UPDATE test_cases SET automation_repo_path = ?, automation_file = ?, engineering_task_id = ? WHERE id = ?`,
-    ).run(repoPath, automationFile, taskId, id);
-    return this.getTestDesignCase(id);
-  }
-
-  linkTestCaseUiRun(id: string, runId: string): TestDesignCaseRecord {
-    this.getTestDesignCase(id);
-    this.getUiTestRun(runId);
-    this.db.prepare("INSERT INTO test_case_ui_runs VALUES (?, ?)").run(id, runId);
-    return this.getTestDesignCase(id);
-  }
-
   createOpenApiSpec(input: {
     name: string;
     version: string;
@@ -1369,10 +712,7 @@ export class DomainStore {
         new Date().toISOString(),
       );
       const insert = this.db.prepare(
-        `INSERT INTO test_cases
-         (id, source, spec_id, operation_id, method, path, summary, title, test_type,
-          objective, review_status, created_at)
-         VALUES (?, 'api', ?, ?, ?, ?, ?, ?, 'api', ?, 'approved', ?)`,
+        "INSERT INTO test_cases (id, spec_id, operation_id, method, path, summary) VALUES (?, ?, ?, ?, ?, ?)",
       );
       for (const operation of input.operations) {
         insert.run(
@@ -1382,9 +722,6 @@ export class DomainStore {
           operation.method,
           operation.path,
           operation.summary,
-          operation.summary,
-          operation.summary,
-          new Date().toISOString(),
         );
       }
     });
@@ -1551,146 +888,6 @@ export class DomainStore {
     return {
       ...row,
       items: items.map((item) => ({ ...item, checks: JSON.parse(item.checks) as string[] })),
-    };
-  }
-
-  createEngineeringTask(input: {
-    repoPath: string;
-    instruction: string;
-    selectedFiles: string[];
-    logContext: string;
-    dockerContainerId: string;
-    dockerContainerName: string;
-    dockerContext: string;
-    model: string;
-    agentServerImage: string;
-    clientVersion: string;
-  }): EngineeringTaskRecord {
-    const id = randomUUID();
-    this.db.prepare(
-      `INSERT INTO engineering_tasks
-       (id, repo_path, instruction, selected_files, log_context, docker_container_id,
-        docker_container_name, docker_context, status, model, agent_server_image,
-        client_version, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
-    ).run(
-      id,
-      input.repoPath,
-      input.instruction,
-      JSON.stringify(input.selectedFiles),
-      input.logContext,
-      input.dockerContainerId,
-      input.dockerContainerName,
-      input.dockerContext,
-      input.model,
-      input.agentServerImage,
-      input.clientVersion,
-      new Date().toISOString(),
-    );
-    return this.getEngineeringTask(id);
-  }
-
-  markEngineeringTaskStarted(id: string): void {
-    this.db.prepare(
-      "UPDATE engineering_tasks SET status = 'starting', started_at = ? WHERE id = ?",
-    ).run(new Date().toISOString(), id);
-  }
-
-  markEngineeringTaskRunning(id: string, conversationId: string): void {
-    this.db.prepare(
-      "UPDATE engineering_tasks SET status = 'running', conversation_id = ? WHERE id = ?",
-    ).run(conversationId, id);
-  }
-
-  addEngineeringEvent(input: {
-    taskId: string;
-    ordinal: number;
-    kind: string;
-    source: string;
-    timestamp: string;
-    payload: unknown;
-    terminalOutput: string;
-  }): void {
-    this.db.prepare(
-      `INSERT INTO engineering_task_events
-       (id, task_id, ordinal, kind, source, timestamp, payload, terminal_output)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      randomUUID(),
-      input.taskId,
-      input.ordinal,
-      input.kind,
-      input.source,
-      input.timestamp,
-      JSON.stringify(input.payload),
-      input.terminalOutput,
-    );
-  }
-
-  finishEngineeringTask(input: {
-    id: string;
-    status: "completed" | "failed" | "stopped";
-    finalResponse: string;
-    terminalOutput: string;
-    gitDiff: string;
-    tokenUsage: unknown;
-    cost: number | null;
-    error: string;
-  }): EngineeringTaskRecord {
-    this.db.prepare(
-      `UPDATE engineering_tasks
-       SET status = ?, final_response = ?, terminal_output = ?, git_diff = ?, token_usage = ?,
-           cost = ?, error = ?, completed_at = ?
-       WHERE id = ?`,
-    ).run(
-      input.status,
-      input.finalResponse,
-      input.terminalOutput,
-      input.gitDiff,
-      JSON.stringify(input.tokenUsage),
-      input.cost,
-      input.error,
-      new Date().toISOString(),
-      input.id,
-    );
-    return this.getEngineeringTask(input.id);
-  }
-
-  listEngineeringTasks(): EngineeringTaskRecord[] {
-    const ids = this.db
-      .prepare("SELECT id FROM engineering_tasks ORDER BY created_at DESC LIMIT 20")
-      .all() as Array<{ id: string }>;
-    return ids.map(({ id }) => this.getEngineeringTask(id));
-  }
-
-  getEngineeringTask(id: string): EngineeringTaskRecord {
-    const row = this.db.prepare(
-      `SELECT id, repo_path AS repoPath, instruction, selected_files AS selectedFiles,
-              log_context AS logContext, docker_container_id AS dockerContainerId,
-              docker_container_name AS dockerContainerName, docker_context AS dockerContext,
-              status, model, agent_server_image AS agentServerImage,
-              client_version AS clientVersion, conversation_id AS conversationId,
-              final_response AS finalResponse, terminal_output AS terminalOutput,
-              git_diff AS gitDiff, token_usage AS tokenUsage, cost, error,
-              created_at AS createdAt, started_at AS startedAt, completed_at AS completedAt
-       FROM engineering_tasks WHERE id = ?`,
-    ).get(id) as
-      | (Omit<EngineeringTaskRecord, "selectedFiles" | "tokenUsage" | "events"> & {
-          selectedFiles: string;
-          tokenUsage: string;
-        })
-      | undefined;
-    if (!row) throw new Error(`工程任务 ${id} 不存在`);
-    const events = this.db.prepare(
-      `SELECT id, task_id AS taskId, ordinal, kind, source, timestamp, payload,
-              terminal_output AS terminalOutput
-       FROM engineering_task_events WHERE task_id = ? ORDER BY ordinal`,
-    ).all(id) as Array<Omit<EngineeringEventRecord, "payload"> & { payload: string }>;
-    return {
-      ...row,
-      selectedFiles: JSON.parse(row.selectedFiles) as string[],
-      tokenUsage: JSON.parse(row.tokenUsage) as unknown,
-      events: events.map((event) => ({ ...event, payload: JSON.parse(event.payload) as unknown })),
     };
   }
 

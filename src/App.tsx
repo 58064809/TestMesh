@@ -2,13 +2,11 @@ import {
   AndroidOutlined,
   ApiOutlined,
   BulbOutlined,
-  CodeOutlined,
   CloudUploadOutlined,
   DatabaseOutlined,
   DesktopOutlined,
   FileSearchOutlined,
   FolderOpenOutlined,
-  ExperimentOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   MessageOutlined,
@@ -40,12 +38,10 @@ import TextArea from "antd/es/input/TextArea";
 import { useEffect, useMemo, useState } from "react";
 import type { AnalysisResponse, RequirementAnalysis } from "./types";
 import ApiTesting from "./ApiTesting";
-import EngineeringTasks from "./EngineeringTasks";
 import UiTesting from "./UiTesting";
 import AppTesting from "./AppTesting";
 import PerformanceTesting from "./PerformanceTesting";
 import SecurityTesting from "./SecurityTesting";
-import TestDesign from "./TestDesign";
 import RequirementAnalysisView from "./RequirementAnalysisView";
 
 const { Header, Sider, Content } = Layout;
@@ -134,7 +130,7 @@ function UploadPanel({
 function Workbench() {
   const { message: toast } = AntdApp.useApp();
   const [collapsed, setCollapsed] = useState(false);
-  const [activePage, setActivePage] = useState<"chat" | "api" | "engineering" | "ui" | "app" | "performance" | "security" | "design">("chat");
+  const [activePage, setActivePage] = useState<"chat" | "api" | "ui" | "app" | "performance" | "security">("chat");
   const [prompt, setPrompt] = useState("帮我分析这个需求");
   const [attachments, setAttachments] = useState<UploadFile[]>([]);
   const [knowledge, setKnowledge] = useState<UploadFile[]>([]);
@@ -276,14 +272,12 @@ function Workbench() {
             mode="inline"
             selectedKeys={[activePage]}
             onClick={({ key }) => {
-              if (key === "chat" || key === "api" || key === "engineering" || key === "ui" || key === "app" || key === "performance" || key === "security" || key === "design") setActivePage(key);
+              if (key === "chat" || key === "api" || key === "ui" || key === "app" || key === "performance" || key === "security") setActivePage(key);
             }}
             items={[
               { key: "overview", icon: <BulbOutlined />, label: "工作台概览", disabled: true },
               { key: "chat", icon: <MessageOutlined />, label: "AI 需求分析" },
-              { key: "design", icon: <ExperimentOutlined />, label: "测试设计" },
               { key: "api", icon: <ApiOutlined />, label: "API 测试" },
-              { key: "engineering", icon: <CodeOutlined />, label: "工程任务" },
               { key: "ui", icon: <DesktopOutlined />, label: "UI 测试" },
               { key: "app", icon: <AndroidOutlined />, label: "APP 测试" },
               { key: "performance", icon: <ThunderboltOutlined />, label: "性能测试" },
@@ -295,12 +289,12 @@ function Workbench() {
             <div className="phase-card">
               <Flex justify="space-between" align="center">
                 <Text className="phase-label">当前阶段</Text>
-                <Tag color="processing" bordered={false}>
-                  进行中
+                <Tag color="success" bordered={false}>
+                  已完成
                 </Tag>
               </Flex>
-              <Text className="phase-title">P01 · 需求分析</Text>
-              <Text className="phase-copy">P05 测试设计暂停，待需求分析评审</Text>
+              <Text className="phase-title">RA01 · 需求分析</Text>
+              <Text className="phase-copy">真实多模态验收通过，下一阶段为 TD01 测试设计</Text>
             </div>
           )}
         </Sider>
@@ -316,16 +310,14 @@ function Workbench() {
                 />
                 <div>
                   <Title level={4}>
-                    {activePage === "chat" ? "AI 需求分析" : activePage === "api" ? "API 测试" : activePage === "engineering" ? "工程任务" : activePage === "ui" ? "UI 测试" : activePage === "app" ? "APP 测试" : activePage === "performance" ? "性能测试" : activePage === "security" ? "安全测试" : "测试设计与用例生成"}
+                    {activePage === "chat" ? "AI 需求分析" : activePage === "api" ? "API 测试" : activePage === "ui" ? "UI 测试" : activePage === "app" ? "APP 测试" : activePage === "performance" ? "性能测试" : "安全测试"}
                   </Title>
                   <Text type="secondary">
                     {activePage === "chat"
                       ? subtitle
                       : activePage === "api"
                         ? "导入 OpenAPI，关联需求与证据并运行 Schemathesis"
-                        : activePage === "engineering"
-                          ? "选择仓库和工程上下文，明确授权后交给 OpenHands"
-                          : activePage === "ui"
+                        : activePage === "ui"
                             ? "在一次性 Docker 容器中运行所选 Playwright 测试"
                             : activePage === "app"
                               ? "连接本机已启动的 Android Emulator，运行所选 WebdriverIO 测试"
@@ -340,20 +332,16 @@ function Workbench() {
               <Space>
                 <Tag color="blue">
                   {activePage === "chat"
-                    ? "Responses API"
+                    ? "LangGraph Harness"
                     : activePage === "api"
                       ? "Schemathesis 4.24.3"
-                      : activePage === "engineering"
-                        ? "OpenHands 1.39.0"
-                        : activePage === "ui"
+                      : activePage === "ui"
                           ? "Playwright 1.62.1"
                           : activePage === "app"
                             ? "Appium 3.7.0"
                             : activePage === "performance"
                               ? "k6 2.2.0"
-                              : activePage === "security"
-                                ? "ZAP 2.17.0"
-                                : "Responses API + OpenHands"}
+                              : "ZAP 2.17.0"}
                 </Tag>
                 <Avatar className="user-avatar">U</Avatar>
               </Space>
@@ -523,7 +511,7 @@ function Workbench() {
                   <Space direction="vertical" size={8}>
                     <Space>
                       <SafetyCertificateOutlined />
-                      <Text strong>P01 边界</Text>
+                      <Text strong>RA01 边界</Text>
                     </Space>
                     <Text type="secondary">只做需求分析；不执行 UI、API、APP、性能或安全测试。</Text>
                   </Space>
@@ -532,18 +520,14 @@ function Workbench() {
               </div>
             ) : activePage === "api" ? (
               <ApiTesting />
-            ) : activePage === "engineering" ? (
-              <EngineeringTasks />
             ) : activePage === "ui" ? (
               <UiTesting />
             ) : activePage === "app" ? (
               <AppTesting />
             ) : activePage === "performance" ? (
               <PerformanceTesting />
-            ) : activePage === "security" ? (
-              <SecurityTesting />
             ) : (
-              <TestDesign />
+              <SecurityTesting />
             )}
           </Content>
         </Layout>
