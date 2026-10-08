@@ -11,6 +11,21 @@ import { toJsonSchema } from "@langchain/core/utils/json_schema";
 import { renderAnalysisMarkdown } from "../src/analysis-report.js";
 import { ModelRequirementAnalysisSchema } from "../server/analysis.js";
 import { createModelRequirementAnalysisSchema } from "../server/requirement-analysis/schema.js";
+import { parseAnalysisSources } from "../server/document-parsing/parse-sources.js";
+import type { DocumentParser } from "../server/document-parsing/docling.js";
+import { canonicalizeModelRequirementSources } from "../server/requirement-analysis/validation.js";
+
+const parser: DocumentParser = {
+  async parse(input) {
+    return {
+      parser: "docling",
+      markdown: `# ${input.filename}`,
+      schemaVersion: "1.9.0",
+      processingTimeSeconds: 0.1,
+      elements: [{ ref: "#/texts/0", kind: "text", text: `Docling:${input.filename}`, pageNumbers: [1] }],
+    };
+  },
+};
 
 const emptyDocument: RequirementAnalysis = {
   summary: null,
@@ -28,7 +43,19 @@ const emptyDocument: RequirementAnalysis = {
 const files = createSources(
   [{ originalname: "prd.pdf", mimetype: "application/pdf", buffer: Buffer.from("pdf") }],
   [],
-);
+).map((source) => ({
+  ...source,
+  parser: "docling" as const,
+  capability: "page" as const,
+  capabilityNote: "Docling page provenance",
+  parsed: {
+    parser: "docling" as const,
+    markdown: "用户可以查看订单",
+    schemaVersion: "1.9.0",
+    processingTimeSeconds: 0,
+    elements: [{ ref: "#/texts/0", kind: "text" as const, text: "用户可以查看订单", pageNumbers: [2] }],
+  },
+}));
 
 function documentWithSource(): RequirementAnalysis {
   const source = {
@@ -68,15 +95,15 @@ describe("fixed RequirementAnalysis document", () => {
     expect(schema.additionalProperties).toBe(false);
   });
 
-  it("constrains locator types and PDF page numbers from the current task sources", () => {
-    const pdf = createSources(
+  it("constrains locator types and page numbers from Docling provenance", async () => {
+    const pdf = (await parseAnalysisSources(createSources(
       [{ originalname: "flow.pdf", mimetype: "application/pdf", buffer: Buffer.from("pdf") }],
       [],
-    )[0];
-    const screenshot = createSources(
+    ), parser))[0];
+    const screenshot = (await parseAnalysisSources(createSources(
       [{ originalname: "screen.png", mimetype: "image/png", buffer: Buffer.from("png") }],
       [],
-    )[0];
+    ), parser))[0];
     const pdfSchema = createModelRequirementAnalysisSchema([pdf]);
     const imageSchema = createModelRequirementAnalysisSchema([screenshot]);
     const base = {
@@ -96,15 +123,15 @@ describe("fixed RequirementAnalysis document", () => {
     }).success).toBe(false);
     expect(pdfSchema.safeParse({
       ...emptyDocument,
-      sources: [{ ...base, locator: "第 3 页流程图" }],
+      sources: [{ ...base, locator: "第 3 页 · #/pictures/0" }],
     }).success).toBe(true);
     expect(imageSchema.safeParse({
       ...emptyDocument,
-      sources: [{ ...base, locator: "整张图片" }],
+      sources: [{ ...base, locator: "第 1 页 · #/texts/0" }],
     }).success).toBe(true);
     expect(pdfSchema.safeParse({
       ...emptyDocument,
-      sources: [{ ...base, source_file_id: "UNKNOWN", locator: "第 3 页" }],
+      sources: [{ ...base, source_file_id: "UNKNOWN", locator: "第 3 页 · #/pictures/0" }],
     }).success).toBe(false);
   });
 
@@ -118,32 +145,59 @@ describe("fixed RequirementAnalysis document", () => {
     expect(() => validateRequirementAnalysis({ ...attached, requirements: [{ ...attached.requirements[0], source_refs: ["fake"] }] }, files)).toThrow("不存在的原文来源");
   });
 
-  it("accepts PDF-embedded image references only when their page can be located", () => {
+  it("replaces model-written excerpts with the exact Docling element selected by page and ref", () => {
+    const modelDocument = documentWithSource();
+    const modelSource = {
+      ...modelDocument.sources[0],
+      locator: "第 2 页 · #/texts/0",
+      excerpt: "模型改写的句子",
+    };
+    const sourceWithoutName = Object.fromEntries(Object.entries(modelSource).filter(([key]) => key !== "source_file_name"));
+    const canonical = canonicalizeModelRequirementSources({
+      ...modelDocument,
+      sources: [sourceWithoutName as Omit<typeof modelSource, "source_file_name">],
+    }, files);
+    expect(canonical.sources[0].excerpt).toBe("用户可以查看订单");
+    expect(canonical.sources[0].locator).toBe("第 2 页 · #/texts/0");
+  });
+
+  it("checks source-priority claims only when multiple source files can conflict", () => {
     const document = documentWithSource();
-    const imageSource = { ...document.sources[0], locator_type: "image" as const, locator: "第 3 页 · 架构图", excerpt: "", description: "架构图显示用户层、AI 服务层和业务系统对接层" };
+    document.summary = {
+      ...document.summary!,
+      description: "截图优先于需求文档",
+    };
+    expect(() => validateRequirementAnalysis(document, files)).not.toThrow();
+    expect(() => validateRequirementAnalysis(document, [
+      ...files,
+      { ...files[0], id: "ATT-2", name: "screen.pdf" },
+    ])).toThrow("来源优先级");
+  });
+
+  it("accepts Docling image references only when their page exists in provenance", () => {
+    const document = documentWithSource();
+    const imageSource = { ...document.sources[0], locator_type: "image" as const, locator: "第 2 页 · 架构图", excerpt: "", description: "架构图显示用户层、AI 服务层和业务系统对接层" };
     expect(() => validateRequirementAnalysis({ ...document, sources: [imageSource] }, files)).not.toThrow();
     expect(() => validateRequirementAnalysis({ ...document, sources: [{ ...imageSource, locator: "架构图" }] }, files)).toThrow("没有可核对的页码");
     expect(() => validateRequirementAnalysis({ ...document, sources: [{ ...imageSource, locator_type: "paragraph" }] }, files)).toThrow("与文件定位能力");
   });
 
-  it("passes text, PDF pages and a standalone diagram through one multimodal request with source markers", () => {
-    const mixed = createSources(
+  it("passes text, PDF, image and Office content only through Docling structured output", async () => {
+    const mixed = await parseAnalysisSources(createSources(
       [
         { originalname: "需求.md", mimetype: "text/markdown", buffer: Buffer.from("下单后显示订单状态") },
         { originalname: "流程.pdf", mimetype: "application/pdf", buffer: Buffer.from("pdf") },
         { originalname: "状态图.png", mimetype: "image/png", buffer: Buffer.from("image") },
       ],
       [{ originalname: "补充.docx", mimetype: "application/octet-stream", buffer: Buffer.from("docx") }],
-    );
+    ), parser);
     const input = buildSourceInput("分析需求", mixed);
     expect(input[1]).toEqual(expect.objectContaining({ type: "input_text", text: expect.stringContaining("ATT-1 段落 1") }));
-    expect(input[2]).toEqual(expect.objectContaining({ type: "input_text", text: expect.stringContaining("来源 ATT-2（流程.pdf）") }));
-    expect(input[3]).toEqual(expect.objectContaining({ type: "input_file", filename: "流程.pdf", detail: "high", file_data: expect.stringMatching(/^data:application\/pdf;base64,/) }));
-    expect(input[4]).toEqual(expect.objectContaining({ type: "input_text", text: expect.stringContaining("来源 ATT-3（状态图.png）") }));
-    expect(input[5]).toEqual(expect.objectContaining({ type: "input_image", detail: "high", image_url: expect.stringMatching(/^data:image\/png;base64,/) }));
-    expect(input[6]).toEqual(expect.objectContaining({ type: "input_text", text: expect.stringContaining("来源 KNOW-1（补充.docx）") }));
-    expect(input[7]).toEqual(expect.objectContaining({ type: "input_file", filename: "补充.docx", file_data: expect.stringMatching(/^data:application\/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,/) }));
-    expect("detail" in input[7]).toBe(false);
+    expect(input[2]).toEqual(expect.objectContaining({ type: "input_text", text: expect.stringContaining("Docling:流程.pdf") }));
+    expect(input[3]).toEqual(expect.objectContaining({ type: "input_text", text: expect.stringContaining("Docling:状态图.png") }));
+    expect(input[4]).toEqual(expect.objectContaining({ type: "input_text", text: expect.stringContaining("Docling:补充.docx") }));
+    expect(JSON.stringify(input)).not.toContain("base64");
+    expect(input).toHaveLength(5);
   });
 
   it("retains both sides of a multi-file conflict without assigning source priority", () => {

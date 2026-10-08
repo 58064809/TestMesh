@@ -19,9 +19,11 @@ export {
   createSources,
   extensionOf,
   formatTextWithParagraphs,
+  formattedSourceContent,
   isAcceptedFilename,
   locationCapability,
   normalizeUploadFilename,
+  requiresDocumentParser,
 } from "./requirement-analysis/sources.js";
 export type {
   LocationCapability,

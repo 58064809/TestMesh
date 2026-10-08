@@ -1,9 +1,16 @@
-import { AIMessage } from "@langchain/core/messages";
+import { AIMessage, ToolMessage } from "@langchain/core/messages";
 import { fakeModel } from "@langchain/core/testing";
-import { describe, expect, it } from "vitest";
-import { runRequirementAnalysisAgent } from "../server/requirement-analysis/agent.js";
+import { getHarnessProfile } from "deepagents";
+import { describe, expect, it, vi } from "vitest";
+import { createOpenAIRequirementAnalysisModel, runRequirementAnalysisAgent } from "../server/requirement-analysis/agent.js";
 import { selectRequirementAnalysisSkills } from "../server/requirement-analysis/skill-selection.js";
 import { createSources } from "../server/requirement-analysis/sources.js";
+
+function openAIModel() {
+  const model = fakeModel();
+  vi.spyOn(model, "getName").mockReturnValue("ChatOpenAI");
+  return model;
+}
 
 const sources = createSources([{
   originalname: "member.md",
@@ -51,6 +58,47 @@ function analysisDocument(sourceFileId = "ATT-1") {
 }
 
 describe("RA01 requirement analysis Agent", () => {
+  it("applies the official profile to the actual ChatOpenAI provider without a modelName alias", () => {
+    const model = createOpenAIRequirementAnalysisModel("constructor-only-no-api-call");
+    expect(model.getName()).toBe("ChatOpenAI");
+    const profile = getHarnessProfile("openai");
+    expect(profile?.excludedTools.has("delete")).toBe(true);
+    expect(profile?.excludedTools.has("execute")).toBe(true);
+    expect(profile?.generalPurposeSubagent?.enabled).toBe(false);
+  });
+  it("uses the official harness to load a skill progressively with only read tools", async () => {
+    const model = openAIModel()
+      .respondWithTools([{ name: "read_file", args: { path: "/skills/requirement-extraction/SKILL.md" } }])
+      .respond(new AIMessage(JSON.stringify(analysisDocument())));
+    const bind = vi.spyOn(model, "bindTools");
+    await runRequirementAnalysisAgent({ message: "分析需求", sources, model });
+    const tools = bind.mock.calls[0][0].map((value) => "name" in value ? value.name : value.function?.name);
+    expect(tools.sort()).toEqual(["locate_source", "read_file", "read_source", "validate_reference"]);
+    const firstPrompt = JSON.stringify(model.calls[0].messages);
+    expect(firstPrompt).toContain("requirement-extraction");
+    const loaded = model.calls[1].messages.find((message) => message instanceof ToolMessage);
+    expect(JSON.stringify(loaded?.content)).toContain("name: requirement-extraction");
+    expect(firstPrompt).not.toContain("name: requirement-extraction");
+  });
+
+  it("denies reading source code outside the selected skill directories", async () => {
+    const model = openAIModel()
+      .respondWithTools([{ name: "read_file", args: { path: "/agent.ts" } }])
+      .respond(new AIMessage(JSON.stringify(analysisDocument())));
+    await runRequirementAnalysisAgent({ message: "分析需求", sources, model });
+    const reply = model.calls[1].messages.find((message) => message instanceof ToolMessage);
+    expect(String(reply?.content)).toMatch(/denied|not permitted|not allowed/i);
+    expect(String(reply?.content)).not.toContain("registerHarnessProfile");
+  });
+
+  it("rejects unsupported business conclusions through the official afterAgent hook", async () => {
+    const candidate = analysisDocument();
+    candidate.summary.source_refs = [];
+    const model = openAIModel().respond(new AIMessage(JSON.stringify(candidate)));
+    await expect(runRequirementAnalysisAgent({ message: "分析需求", sources, model })).rejects.toThrow("缺少原文来源");
+    expect(model.callCount).toBe(1);
+  });
+
   it("records deterministic skill activation without loading unrelated skills", () => {
     const decisions = selectRequirementAnalysisSkills(sources);
     expect(decisions.filter((decision) => decision.applicable).map((decision) => decision.skill_id))
@@ -67,7 +115,7 @@ describe("RA01 requirement analysis Agent", () => {
   });
 
   it("returns only schema-valid and source-valid structured analysis", async () => {
-    const model = fakeModel()
+    const model = openAIModel()
       .respond(new AIMessage(JSON.stringify(analysisDocument())));
 
     const result = await runRequirementAnalysisAgent({

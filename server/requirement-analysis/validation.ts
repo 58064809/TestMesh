@@ -4,12 +4,35 @@ import {
   type ModelRequirementAnalysis,
   type RequirementAnalysis,
 } from "./schema.js";
-import { validateSourceLocator, type SourceFile } from "./sources.js";
+import { validateSourceQuote, type SourceFile } from "./sources.js";
 import type { z } from "zod";
 
 export class RequirementAnalysisValidationError extends Error {}
 
 type AnalysisItem = z.infer<typeof AnalysisItemSchema>;
+
+export function canonicalizeModelRequirementSources(
+  result: ModelRequirementAnalysis,
+  files: SourceFile[],
+): ModelRequirementAnalysis {
+  const fileById = new Map(files.map((file) => [file.id, file]));
+  return {
+    ...result,
+    sources: result.sources.map((source) => {
+      const file = fileById.get(source.source_file_id);
+      if (!file?.parsed || file.parser !== "docling") return source;
+      const elementRef = source.locator.match(/#\/(?:texts|tables|pictures|key_value_items)\/\d+/)?.[0];
+      if (!elementRef) throw new Error(`来源引用 ${source.id} 缺少 Docling 元素编号`);
+      const element = file.parsed.elements.find((candidate) => candidate.ref === elementRef);
+      if (!element) throw new Error(`来源引用 ${source.id} 使用了不存在的 Docling 元素 ${elementRef}`);
+      if (element.pageNumbers.length === 0) {
+        throw new Error(`来源引用 ${source.id} 的元素 ${elementRef} 没有 Docling 页码`);
+      }
+      const pages = element.pageNumbers.join("、");
+      return { ...source, locator: `第 ${pages} 页 · ${elementRef}`, excerpt: element.text };
+    }),
+  };
+}
 
 function analysisEntries(result: RequirementAnalysis): Array<{
   section: string;
@@ -46,7 +69,7 @@ export function validateRequirementAnalysis(result: RequirementAnalysis, files: 
   validateRequirementReferences(result);
   validateRequirementSourceLocations(result, files);
   validateRequirementIssues(result);
-  validateSourcePriorityClaims(result);
+  if (files.length > 1) validateSourcePriorityClaims(result);
 }
 
 export function validateRequirementReferences(result: RequirementAnalysis): void {
@@ -77,7 +100,7 @@ export function validateRequirementSourceLocations(
     const file = fileById.get(source.source_file_id);
     if (!file) throw new Error(`来源引用 ${source.id} 引用了未知文件`);
     if (source.source_file_name !== file.name) throw new Error(`来源引用 ${source.id} 的文件名不一致`);
-    validateSourceLocator(file, source.locator_type, source.locator);
+    validateSourceQuote(file, source.locator_type, source.locator, source.excerpt);
   }
 }
 

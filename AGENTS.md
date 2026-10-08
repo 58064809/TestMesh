@@ -10,7 +10,7 @@
 4. **禁止过度开发**：只实现当前阶段验收闭环所需内容；不为未来阶段提前抽象、引入基础设施或顺手重构。
 5. **Roadmap 连续性**：阶段规划必须持久化在 `docs/ROADMAP.md` 和 `docs/PHASES/`。完成当前阶段后，只能进入已规划的下一阶段；调整顺序或插入路线必须先获用户批准。
 
-## 当前阶段
+## 历史阶段记录（当前执行规则见下方）
 
 - 2026-09-17 用户批准重排 TestMesh 主线：先建设 Harness Foundation，再依次进行 Requirement Analysis、Test Design/TestCase、API Automation、UI Automation，最后调研辅助缺陷定位；APP、性能和安全测试不进入本轮新开发。新主线采用 `H00 → RA01 → TD01 → AT01 → AT02 → FT01`，任务见 `docs/DEVELOPMENT_TASKS.md`。
 - H00 已于 2026-09-17 完成。LangGraph 是唯一 Workflow Runtime；LangChain `createAgent` 提供 Agent Loop，Deep Agents 中间件提供渐进式 Skill 加载。PostgreSQL Checkpoint 中断恢复、原生节点/工具事件、失败位置记录和确定性 Completion Gate 已通过真实验收；旧 P05 Agent 生成和旧 OpenHands 工程入口已直接删除。
@@ -39,15 +39,49 @@
 - 2026-09-17 修复人工评审从“接受”切换到“合并/驳回/待澄清”后的保存失败：此前隐藏的正式决策字段仍随请求提交，服务端会误报缺少决策人和 PRD 版本。页面切换结果时清空这些隐藏字段，服务端再按最终处理结果归一化，弹窗内直接显示保存错误。回归检查 47 项测试、lint、build 通过；未修改现有评审记录，未发模型请求。
 - P04-D 仍等待官方 ZAP 文件下载与安全复核；在满足已批准的恢复条件前，不得绕过 Defender、替换安装包、改用 Docker/Installer 或继续 P04-D 真实运行。用户已明确批准在该等待期间先执行 P05，这是一次已记录的阶段顺序例外，不得据此提前进入 P06。
 
-## H00 实现约束
+## 当前 Harness 规则（2026-10-05，优先于上方历史记录）
 
-- 只使用 LangGraph 提供图执行、Checkpoint、Interrupt、恢复和并行；不得再写一套循环、状态机或任务调度器。
-- Stage Profile 固定声明 Context、Knowledge、Skills、Tools、Policy、Schema；未声明的能力不进入该阶段。
-- Skill 采用渐进披露，关键 Skill 的适用/不适用由确定性规则记录，不能只依赖 Agent 自选。
-- Agent 输出是候选 Artifact；只有确定性 Completion Gate 通过后才标记完成。
-- PostgreSQL 是长期业务数据和 Checkpoint 方向；当前环境没有可用 PostgreSQL 时明确阻塞真实持久化验收，不得把内存或 SQLite 静默当成生产替代。
-- Deep Agents 的预览异步子 Agent 和实验性 Interpreter 不进入核心路径。
-- 已确认错误且没有有效业务产物的旧路径直接删除；保留代码只能因为它是后续唯一方案复用的成熟 Runner 或当前阶段尚未替换的唯一入口，不能因为“兼容旧版本”。
+- 用户明确要求迁移到成熟 Harness，并删除旧 Harness；本次授权包含技术替换和阶段插入，不需要再次确认选型。
+- HM01 已完成代码迁移、51 项测试、lint/build、正式 PostgreSQL 持久化与迁移验收及本机启动验证。下一阶段为 TD01，尚未开始。唯一 Agent Harness 是 Deep Agents 官方 `createDeepAgent`；不能再用 `createAgent` 拼装一套 TestMesh Harness。
+- 工具排除、子 Agent 禁用使用 Deep Agents 官方 `registerHarnessProfile`；技能加载、文件权限、结构化输出使用其原生配置。不要创建自己的 StageProfile、TaskManifest、ArtifactEnvelope 或 Capability Assembler 框架。
+- 需求证据有效性属于业务规则，通过官方 `afterAgent` 中间件执行；不要恢复通用 Completion Gate/Report 引擎。结构化协议、人工业务决策和不可覆盖的需求基线继续保留。
+- 人工评审使用 LangGraph 官方 Functional API `entrypoint/interrupt/Command` 和 `PostgresSaver`。状态、错误和恢复点由框架保存；不维护独立 HarnessRunStore、追踪表或自定义状态机。
+- Agent 检查点由官方框架保存消息和工具结果；评审检查点只使用分析 ID、基线记录。原文件和评审历史继续保存在原 PostgreSQL 业务表。
+- 默认新检查点 Schema 为 `deepagents_checkpoint`。旧业务库通过 `npm run migrate:deepagents` 离线迁移评审恢复点；成功后删除旧 `harness_checkpoint/harness_runtime`，不保留旧运行路径或双读写。
+- 现阶段不开放子 Agent、Shell、写文件、删除文件、Interpreter 或 RAG。技能按业务信号选择，并由官方技能中间件渐进加载。
+- 框架能力缺口必须明确报告，不能自行补造治理平台。无 PostgreSQL 时不能以内存/SQLite替代生产验收；MemorySaver 仅用于单元测试。
+
+## 当前文档解析规则（2026-10-06）
+
+- 用户批准在 TD01 前插入 DI01，并要求每项成熟能力先调研再选型，不受初始推荐表限制。
+- 复杂文档唯一入口是 Docling Serve v1；PDF、Office、电子表格与图片不得再直接交给模型解析。
+- TestMesh 只保留上传、原文件字节与 SHA-256、来源 ID、Docling provenance 映射、原文引用和页面展示。
+- 不实现 OCR、表格恢复、阅读顺序、版面算法或通用文档平台；不并行维护 PaddleOCR、MinerU、Unstructured、Tika 或 OpenAI 文件解析路径。
+- Docling 不可用、部分成功、输出为空或契约不匹配时立即失败，不得静默降级。
+- DI01 已于 2026-10-06 完成真实 Docling 服务与中文图片/PDF、DOCX、PPTX、XLSX 验收；默认 OCR 语言由已验收的 PP-OCRv6 中文模型决定，不显式发送 `ocr_lang`。旧版 DOC/PPT/XLS 因 LibreOffice 尚未安装而不在白名单。状态见 `docs/PHASES/DI01.md`。
+
+## 当前需求语言质量规则（2026-10-07）
+
+- 用户批准在 DI01 后插入 RQ01，并继续遵循“先调研、后选型、成熟能力积木化接入”。
+- RQ01 唯一候选路径为 QVscribe WebAPI；TestMesh 只提交已提取需求、保存并展示外部评分/问题/触发文本/版本，以及记录人工处置。
+- 不自研模糊词词典、句法检测或质量评分；不以通用大模型自评或 LanguageTool 冒充完整需求质量能力；不并行维护 IBM RQA。
+- 当前阻塞在 QVscribe API 租户、接口契约、认证和中文支持验证。条件满足前不得写 mock 适配器、数据库或页面，也不得删除现有需求分析能力。状态见 `docs/PHASES/RQ01.md`。
+
+## 当前产品方向规则（2026-10-08）
+
+- TestMesh 的终极目标是 Agent / AI 应用质量保障体系；推荐表只是调研候选，不是逐项建设清单。
+- 项目只能有一个 AI 需求分析入口，目标是发现缺失、歧义、冲突及不可验证内容并回链原文。文档解析、语言质量等成熟能力必须隐藏在该闭环内部，不能扩展成平行需求分析产品。
+- FR01 形式化验证和 BR01 业务规则独立路径已撤回；不得恢复其页面、API、存储或运行时。TLA+、DMN 等只有在具体 Agent 质量场景和真实样本证明必要时才可重新调研。
+- 新能力必须先定义 Agent / AI 应用质量问题、评估对象、输入证据和验收结果，再调研成熟组件。没有真实端到端验收，不得进入产品导航。
+- TestMesh 只保留业务 ID 映射、统一入口、企业配置、人工决策和证据回链；不得自研成熟的 Harness、Runner、Trace/Eval、测试管理或规则执行能力。详见 `docs/PRODUCT_DIRECTION.md`。
+
+## 当前 Agent 质量底座规则（2026-10-08）
+
+- AQ01 已以真实 16 页中文 PRD 完成 Phoenix 20.19.0 技术尖峰；Phoenix 是 Dataset、Experiment、Trace、Evaluator 和比较的唯一成熟平台，不得再建 TestMesh Trace/Eval 表、调度器或页面。
+- TestMesh 只在 Trace 中附加 task/source 等业务 ID，并维护人工审批与准入语义。OpenTelemetry/OpenInference 必须覆盖现有 Deep Agents Agent、模型和工具调用，不复制 Agent 逻辑。
+- Phoenix 仅绑定本机，默认关闭遥测、Agent Assistant、MCP、Web 访问和服务端 Bash。不得把企业需求样本发送到 Phoenix Cloud。
+- `evaluation/ai-after-sales-prd-rubric.json` 是 `pending-human-approval` 的候选 rubric；人工确认前不能称为金标准或用于正式准入。
+- AQ01 复现实验使用 `npm run aq01:spike -- <PRD绝对路径>`。解析缓存只按 SHA-256 保存于忽略版本控制的 `data/aq01-parse-cache`，不是第二套 Dataset 存储。
 
 ## P01 实现约束
 

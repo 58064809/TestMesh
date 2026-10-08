@@ -6,24 +6,34 @@
   "description": "Reuse-first AI testing workbench",
   "scripts": {
     "dev": "tsx watch server/index.ts",
-    "build": "npm run build:client && npm run build:server",
+    "build": "tsc -p tsconfig.app.json --noEmit && vite build && node scripts/clean-server-build.mjs && tsc -p tsconfig.server.json && node scripts/copy-agent-skills.mjs",
     "build:client": "tsc -p tsconfig.app.json --noEmit && vite build",
-    "build:server": "tsc -p tsconfig.server.json",
+    "build:server": "node scripts/clean-server-build.mjs && tsc -p tsconfig.server.json && node scripts/copy-agent-skills.mjs",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
-    "test:harness:postgres": "tsx tests/harness-postgres.integration.ts",
     "test:ra:postgres": "tsx tests/requirement-analysis-postgres.integration.ts",
-    "start": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1"
+    "start": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1",
+    "start:stack": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-stack.ps1",
+    "start:docling": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-docling.ps1",
+    "start:phoenix": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-phoenix.ps1",
+    "aq01:spike": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-aq01-spike.ps1",
+    "migrate:deepagents": "tsx scripts/migrate-deepagents.ts"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.4",
+    "@arizeai/openinference-core": "^2.8.0",
+    "@arizeai/openinference-instrumentation-langchain": "^4.1.4",
+    "@arizeai/openinference-instrumentation-openai": "^4.4.0",
+    "@arizeai/phoenix-client": "^7.16.0",
+    "@arizeai/phoenix-otel": "^2.2.0",
     "@langchain/core": "^1.2.11",
     "@langchain/langgraph": "^1.4.15",
     "@langchain/langgraph-checkpoint-postgres": "^1.0.5",
     "@langchain/openai": "^1.5.13",
+    "@opentelemetry/api": "^1.9.0",
     "@refinedev/core": "^5.0.12",
     "antd": "^5.29.3",
     "better-sqlite3": "^12.10.0",

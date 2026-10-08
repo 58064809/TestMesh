@@ -25,20 +25,25 @@ import {
 import { K6_VERSION, runK6Test } from "./k6.js";
 import { ZAP_VERSION, runZapBaseline } from "./zap.js";
 import { DomainStore, defaultDatabasePath } from "./store.js";
-import { createHarnessPostgresResources } from "./harness/postgres.js";
+import { createAnalysisPostgresResources } from "./requirement-analysis/postgres.js";
 import {
-  RequirementAnalysisCompletionError,
-  RequirementAnalysisRuntime,
-} from "./requirement-analysis/runtime.js";
+  RequirementAnalysisService,
+} from "./requirement-analysis/service.js";
+import { createDoclingClientFromEnvironment } from "./document-parsing/docling.js";
+import { parseAnalysisSources } from "./document-parsing/parse-sources.js";
 import { z } from "zod";
+import { initializePhoenixTracing, resolvePhoenixTraceUrl } from "./observability/phoenix.js";
+
+initializePhoenixTracing();
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
 const isProduction = process.env.NODE_ENV === "production";
 const store = new DomainStore(defaultDatabasePath());
-const harnessResources = await createHarnessPostgresResources();
-const requirementAnalysisStore = harnessResources.requirementAnalysisStore;
-const requirementAnalysisRuntime = new RequirementAnalysisRuntime(harnessResources);
+const analysisResources = await createAnalysisPostgresResources();
+const requirementAnalysisStore = analysisResources.requirementAnalysisStore;
+const requirementAnalysisService = new RequirementAnalysisService(analysisResources);
+const documentParser = createDoclingClientFromEnvironment();
 
 app.use(express.json({ limit: "256kb" }));
 
@@ -106,6 +111,10 @@ app.get("/api/health", (_request, response) => {
     k6Version: K6_VERSION,
     zapVersion: ZAP_VERSION,
     openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
+    documentParser: "Docling Serve v1",
+    doclingServeUrl: process.env.DOCLING_SERVE_URL ?? "http://127.0.0.1:5001",
+    phoenixEnabled: process.env.PHOENIX_ENABLED === "true",
+    phoenixEndpoint: process.env.PHOENIX_ENDPOINT ?? "http://127.0.0.1:6006",
   });
 });
 
@@ -137,8 +146,9 @@ app.post(
         return;
       }
 
-      const sources = createSources(attachments, knowledge);
-      const analysis = await requirementAnalysisRuntime.start({
+      const uploadedSources = createSources(attachments, knowledge);
+      const sources = await parseAnalysisSources(uploadedSources, documentParser);
+      const analysis = await requirementAnalysisService.start({
         message,
         sources,
         apiKey,
@@ -167,7 +177,15 @@ app.get("/api/p02/trace-sources", (_request, response) => {
 
 app.get("/api/analyses", (_request, response) => {
   void requirementAnalysisStore.listAnalyses()
-    .then((records) => response.json(records.map((record) => ({ ...record, protocol: "current" }))))
+    .then(async (records) => response.json(await Promise.all(records.map(async (record) => ({
+      ...record,
+      protocol: "current",
+      traceUrl: record.traceProvider === "phoenix" && record.traceId ? await resolvePhoenixTraceUrl({
+        provider: "phoenix",
+        projectName: record.traceProjectName,
+        traceId: record.traceId,
+      }) : "",
+    })))))
     .catch((error) => response.status(500).json({ error: error instanceof Error ? error.message : "无法读取分析列表" }));
 });
 
@@ -239,7 +257,7 @@ app.post("/api/analyses/:id/baselines", baselineUpload.single("reviewedPrd"), as
   try {
     const file = request.file;
     if (!file) throw new Error("请上传评审后的 PRD 文件");
-    const record = await requirementAnalysisRuntime.createBaselineAndResume(String(request.params.id), {
+    const record = await requirementAnalysisService.createBaselineAndResume(String(request.params.id), {
       prdRevision: String(request.body.prdRevision ?? ""),
       approvedBy: String(request.body.approvedBy ?? ""),
       previousBaselineId: request.body.previousBaselineId ? String(request.body.previousBaselineId) : null,
@@ -526,12 +544,11 @@ const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => 
     message.startsWith("不支持的文件格式") ||
     message.startsWith("OpenAPI 只支持");
   const isAnalysisValidation = error instanceof RequirementAnalysisValidationError;
-  const isCompletionFailure = error instanceof RequirementAnalysisCompletionError;
-  const status = isUploadError ? 400 : isAnalysisValidation || isCompletionFailure ? 422 : 502;
+  const status = isUploadError ? 400 : isAnalysisValidation ? 422 : 502;
   response.status(status).json({
     error: isUploadError
       ? message
-      : isAnalysisValidation || isCompletionFailure
+      : isAnalysisValidation
         ? `需求分析结构、来源或完成条件校验失败：${message}`
         : `需求分析运行失败：${message}`,
   });

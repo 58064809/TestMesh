@@ -1,5 +1,48 @@
 # TestMesh Roadmap
 
+## 2026-10-08 产品方向纠偏
+
+用户明确：推荐表只是调研候选，不是逐项建设清单；TestMesh 的终极目标是 **Agent / AI 应用质量保障体系**。需求分析只能有一个入口，目的是发现缺失、歧义和冲突并回链原文。
+
+独立 FR01 形式化验证和 BR01 业务规则路径已撤回，产品页面、API、存储、运行时和测试全部删除；调研文档只作历史证据。后续任何成熟能力必须先对应具体 Agent 质量问题和真实验收样本，再决定是否接入，不能按推荐表直接开发。产品边界见 `docs/PRODUCT_DIRECTION.md`。
+
+当前主线回到：稳定唯一 AI 需求分析 → Agent / AI 应用评估资产与执行闭环 → Trace/Eval → 回归比较与准入。AQ01 已用真实 16 页中文 PRD 完成 Phoenix 技术尖峰：版本化 Dataset、Experiment、33 节点 Trace 和 4 项确定性评测全部贯通；候选 rubric 仍待人工批准，详见 `docs/PHASES/AQ01.md`。
+
+---
+
+## 2026-10-07 业务规则执行更新（历史，后续已撤回）
+
+该探索曾采用 Apache KIE DMN 10.2.0，后因偏离 Agent / AI 应用质量保障主线而于 2026-10-08 撤回。详见 `docs/PHASES/BR01.md`。
+
+---
+
+## 2026-10-07 当前执行更新
+
+用户批准在 DI01 后按成熟能力清单继续执行 **RQ01 — 需求语言质量**。调研后选择 QVscribe WebAPI 为唯一候选路径；IBM RQA 因仅支持英文/ASCII且已进入 Sustained Support 不采用，LanguageTool 因不具备完整需求工程质量语义不采用。
+
+RQ01 当前阻塞在 QVscribe 商业 API 准入：公开资料没有端点契约、认证、测试租户或中文支持声明。取得厂商 API 文档/租户并完成中文样本验证前，不写适配器、不做 mock、不用自研规则或通用模型评分替代。详见 `docs/PHASES/RQ01.md`。
+
+---
+
+## 2026-10-06 当前执行更新
+
+用户批准按“成熟能力积木化集成”清单逐项推进，并要求不限于原表候选、先调研再选型。插入 **DI01 — 文档解析、OCR、表格与版面**，现已完成；下一阶段为 TD01。
+
+DI01 调研 Docling、PaddleOCR、MinerU、Unstructured 和 Apache Tika 后，选择 Docling Serve v1 作为唯一复杂文档解析入口。TestMesh 只保留上传、文件哈希、来源 ID、原文引用与结果展示；不自研 OCR、表格、阅读顺序或版面算法，不保留备用解析器。详见 `docs/PHASES/DI01.md`。
+
+---
+
+## 2026-10-05 当前执行更新
+
+用户要求删除自研 Harness，迁移到成熟框架。插入 **HM01 — Deep Agents 官方 Harness 迁移**（现已完成），下一阶段为 TD01；不恢复下方历史 Stage Profile/自研 Gate/运行记录方案。
+
+唯一入口改为 Deep Agents `createDeepAgent`；能力限制使用官方 Harness Profile，需求校验使用领域中间件，评审恢复使用 LangGraph Functional API + PostgresSaver。删除旧 `server/harness`、通用协议/装配/完成引擎、自研 Trace/RunStore 和旧评审状态图。
+
+实施、选型依据和验收范围见 `docs/PHASES/HM01.md`。RA01 业务报告、原文件、评审历史和基线保留；HM01 完成后下一阶段仍为 TD01。
+
+---
+
+
 ## 状态定义
 
 - `进行中`：唯一允许实施代码的阶段。
@@ -16,6 +59,11 @@
 | --- | --- | --- | --- |
 | H00 | Harness Foundation：运行时、装配协议、Checkpoint、完成判定 | 已完成 | 已进入 RA01 |
 | RA01 | 基于 Harness 的多模态需求分析、人工评审和需求基线 | 已完成 | 已具备进入 TD01 的条件 |
+| DI01 | Docling 文档解析、OCR、表格与版面统一入口 | 已完成（真实中文图片/PDF、DOCX、PPTX、XLSX 验收） | 已具备进入 TD01 的条件 |
+| RQ01 | QVscribe 需求语言质量分析结果接入与人工处置 | 阻塞（等待 API 租户、接口文档和中文支持验证） | 准入条件满足后实施；不得降级为自研规则 |
+| FR01 | TLA+ / TLC 形式化需求验证探索 | 已撤回 | 仅保留调研记录，不是产品路径 |
+| BR01 | Apache KIE DMN 业务规则探索 | 已撤回 | 仅保留调研记录，不是产品路径 |
+| AQ01 | 以当前需求分析 Agent 验证 Dataset、Trace、Eval、Experiment 与版本比较闭环 | 技术尖峰已通过（候选 rubric 待人工批准） | 扩充并人工确认数据集后定义正式准入阈值 |
 | TD01 | 基于 Baseline 的测试设计、风险、测试点和 TestCase | 已规划 | TD01 验收通过后进入 AT01 |
 | AT01 | Approved TestCase 到 API 自动化与真实 Runner 证据 | 已规划 | AT01 验收通过后进入 AT02 |
 | AT02 | Approved TestCase 到 UI 自动化与 Playwright 证据 | 已规划 | AT02 验收通过后进入 FT01 |

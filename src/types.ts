@@ -82,6 +82,7 @@ export interface RequirementAnalysis {
 }
 
 export type AnalysisReviewStatus = "accepted" | "rejected" | "merged" | "clarify";
+export const PENDING_PRD_REVISION = "待建立的新版本";
 
 export interface AnalysisReviewRecord {
   id: string;
@@ -127,6 +128,12 @@ export interface AnalysisResponse {
     capability: LocatorType;
     capabilityNote: string;
   }>;
+  observability?: {
+    provider: "phoenix";
+    projectName: string;
+    traceId: string;
+    traceUrl: string;
+  };
 }
 
 export interface TraceRequirement {

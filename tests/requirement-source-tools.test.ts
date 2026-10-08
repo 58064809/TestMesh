@@ -3,24 +3,40 @@ import {
   buildRequirementSourceContent,
   createRequirementSourceTools,
   createSources,
+  validateSourceQuote,
 } from "../server/requirement-analysis/sources.js";
+import { parseAnalysisSources } from "../server/document-parsing/parse-sources.js";
+import type { DocumentParser } from "../server/document-parsing/docling.js";
 
-const sources = createSources([
+const sourceParser: DocumentParser = {
+  async parse(input) {
+    return {
+      parser: "docling", markdown: "", schemaVersion: "1.9.0", processingTimeSeconds: 0,
+      elements: [{
+        ref: input.filename.endsWith(".pdf") ? "#/pictures/0" : "#/texts/0",
+        kind: input.filename.endsWith(".pdf") ? "picture" : "text",
+        text: input.filename.endsWith(".pdf") ? "状态迁移图" : "图片 OCR 文本",
+        pageNumbers: [2],
+      }],
+    };
+  },
+};
+
+const sources = await parseAnalysisSources(createSources([
   { originalname: "prd.md", mimetype: "text/markdown", buffer: Buffer.from("第一段\n\n第二段") },
   { originalname: "flow.png", mimetype: "image/png", buffer: Buffer.from("image-bytes") },
   { originalname: "state.pdf", mimetype: "application/pdf", buffer: Buffer.from("pdf-bytes") },
-], []);
+], []), sourceParser);
 
 describe("RA01 controlled requirement source reader", () => {
-  it("builds one scoped multimodal context with stable source markers", () => {
+  it("builds one scoped Docling context with stable source markers", () => {
     const blocks = buildRequirementSourceContent("分析完整需求", sources);
     expect(blocks[0]).toMatchObject({ type: "text" });
     expect(JSON.stringify(blocks)).toContain("ATT-1");
     expect(JSON.stringify(blocks)).toContain("【ATT-1 段落 2】");
-    expect(blocks).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: "image", mimeType: "image/png", metadata: expect.objectContaining({ sourceFileId: "ATT-2" }) }),
-      expect.objectContaining({ type: "file", mimeType: "application/pdf", metadata: expect.objectContaining({ sourceFileId: "ATT-3", filename: "state.pdf", detail: "high" }) }),
-    ]));
+    expect(JSON.stringify(blocks)).toContain("图片 OCR 文本");
+    expect(JSON.stringify(blocks)).toContain("状态迁移图");
+    expect(JSON.stringify(blocks)).not.toContain(Buffer.from("image-bytes").toString("base64"));
   });
 
   it("exposes only read, locate and reference validation tools without returning binary bytes", async () => {
@@ -35,7 +51,8 @@ describe("RA01 controlled requirement source reader", () => {
     const textResult = String(await readSource?.invoke({ source_file_id: "ATT-1" }));
     const imageResult = String(await readSource?.invoke({ source_file_id: "ATT-2" }));
     expect(textResult).toContain("【ATT-1 段落 1】");
-    expect(imageResult).toContain('"multimodal_context":true');
+    expect(imageResult).toContain('"parser":"docling"');
+    expect(imageResult).toContain('"multimodal_context":false');
     expect(imageResult).not.toContain(Buffer.from("image-bytes").toString("base64"));
   });
 
@@ -51,11 +68,16 @@ describe("RA01 controlled requirement source reader", () => {
       source_file_id: "ATT-3",
       locator_type: "image",
       locator: "流程图",
-    })).rejects.toThrow("PDF 图片定位没有可核对的页码");
+    })).rejects.toThrow("Docling 图片定位没有可核对的页码");
     await expect(validate?.invoke({
       source_file_id: "NOT-FOUND",
       locator_type: "page",
       locator: "第 1 页",
     })).rejects.toThrow("当前任务不存在来源文件");
+  });
+
+  it("accepts only verbatim Docling excerpts at the declared page", async () => {
+    expect(() => validateSourceQuote(sources[2], "page", "第 2 页", "状态迁移图")).not.toThrow();
+    expect(() => validateSourceQuote(sources[2], "page", "第 2 页", "这是模型改写后的内容")).toThrow("逐字原文");
   });
 });

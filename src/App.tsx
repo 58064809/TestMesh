@@ -35,7 +35,7 @@ import {
   type UploadFile,
 } from "antd";
 import TextArea from "antd/es/input/TextArea";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AnalysisResponse, RequirementAnalysis } from "./types";
 import ApiTesting from "./ApiTesting";
 import UiTesting from "./UiTesting";
@@ -50,24 +50,37 @@ const { Dragger } = Upload;
 
 const MAX_FILES = 6;
 const MAX_FILE_MB = 8;
-const ACCEPT = ".pdf,.txt,.md,.json,.html,.xml,.png,.jpg,.jpeg,.webp,.gif,.doc,.docx,.rtf,.odt,.ppt,.pptx";
+const ACCEPT = ".pdf,.txt,.md,.json,.xml,.html,.htm,.png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp,.docx,.odt,.pptx,.xlsx,.ods,.csv";
 
 type Message =
   | { id: string; role: "user"; text: string }
   | { id: string; role: "assistant"; analysis: AnalysisResponse };
 
-type SavedAnalysis = { id: string; summary: string; model: string; createdAt: string; protocol: "current" | "incompatible" };
+type SavedAnalysis = {
+  id: string;
+  summary: string;
+  model: string;
+  createdAt: string;
+  protocol: "current" | "incompatible";
+  status: "candidate" | "reviewing" | "baselined";
+  traceProvider: string;
+  traceProjectName: string;
+  traceId: string;
+  traceUrl: string;
+};
 
 function fileObject(file: UploadFile): File | undefined {
   return file.originFileObj;
 }
 
-function hasOfficeLocationLimit(files: UploadFile[]): boolean {
-  return files.some((file) => /\.(docx?|rtf|odt|pptx?)$/i.test(file.name));
-}
+const analysisStatusLabels: Record<SavedAnalysis["status"], { label: string; color: string }> = {
+  candidate: { label: "待评审", color: "orange" },
+  reviewing: { label: "评审中", color: "blue" },
+  baselined: { label: "已基线", color: "green" },
+};
 
-function AnalysisView({ response }: { response: AnalysisResponse }) {
-  return <RequirementAnalysisView response={response} />;
+function AnalysisView({ response, onReviewSaved }: { response: AnalysisResponse; onReviewSaved: () => Promise<void> }) {
+  return <RequirementAnalysisView response={response} onReviewSaved={onReviewSaved} />;
 }
 
 function UploadPanel({
@@ -121,7 +134,7 @@ function UploadPanel({
         </p>
         <p className="ant-upload-text">拖入或选择文件</p>
         <p className="ant-upload-hint">单个不超过 {MAX_FILE_MB} MB</p>
-        <p className="ant-upload-hint">PDF 看正文和页面图片；PNG/JPG/WEBP/静态 GIF 看视觉内容；Word、Markdown 等非 PDF 文档只看文本。</p>
+        <p className="ant-upload-hint">PDF、Office、表格和图片由 Docling 统一解析 OCR、表格、阅读顺序与版面定位。</p>
       </Dragger>
     </Card>
   );
@@ -143,9 +156,14 @@ function Workbench() {
   const [error, setError] = useState<string>();
 
   const totalFiles = attachments.length + knowledge.length;
-  const officeWarning = hasOfficeLocationLimit([...attachments, ...knowledge]);
   const remaining = Math.max(0, MAX_FILES - totalFiles);
   const lastResponse = [...messages].reverse().find((item) => item.role === "assistant");
+
+  const refreshSavedAnalyses = useCallback(async () => {
+    const response = await fetch("/api/analyses");
+    if (!response.ok) throw new Error(`刷新已保存报告失败（HTTP ${response.status}）`);
+    setSavedAnalyses((await response.json()) as SavedAnalysis[]);
+  }, []);
 
   useEffect(() => {
     void fetch("/api/analyses")
@@ -170,7 +188,18 @@ function Workbench() {
       const response = await fetch(`/api/analyses/${encodeURIComponent(item.id)}`);
       const body = (await response.json()) as RequirementAnalysis | { error?: string };
       if (!response.ok) throw new Error("error" in body && body.error ? body.error : `读取报告失败（HTTP ${response.status}）`);
-      const analysis: AnalysisResponse = { analysisId: item.id, result: body as RequirementAnalysis, model: item.model, sources: [] };
+      const analysis: AnalysisResponse = {
+        analysisId: item.id,
+        result: body as RequirementAnalysis,
+        model: item.model,
+        sources: [],
+        observability: item.traceProvider === "phoenix" && item.traceId ? {
+          provider: "phoenix",
+          projectName: item.traceProjectName,
+          traceId: item.traceId,
+          traceUrl: item.traceUrl,
+        } : undefined,
+      };
       setMessages([{ id: item.id, role: "assistant", analysis }]);
     } catch (caught) {
       setSavedAnalysisError(caught instanceof Error ? caught.message : "读取报告失败");
@@ -226,12 +255,7 @@ function Workbench() {
         { id: crypto.randomUUID(), role: "assistant", analysis },
       ]);
       setSelectedAnalysisId(analysis.analysisId);
-      void fetch("/api/analyses")
-        .then(async (response) => {
-          if (!response.ok) throw new Error(`刷新已保存报告失败（HTTP ${response.status}）`);
-          setSavedAnalyses((await response.json()) as SavedAnalysis[]);
-        })
-        .catch((caught) => setError(caught instanceof Error ? caught.message : "刷新已保存报告失败"));
+      void refreshSavedAnalyses().catch((caught) => setError(caught instanceof Error ? caught.message : "刷新已保存报告失败"));
       toast.success("需求分析完成");
     } catch (caught) {
       const detail = caught instanceof Error ? caught.message : "未知错误";
@@ -293,8 +317,8 @@ function Workbench() {
                   已完成
                 </Tag>
               </Flex>
-              <Text className="phase-title">RA01 · 需求分析</Text>
-              <Text className="phase-copy">真实多模态验收通过，下一阶段为 TD01 测试设计</Text>
+              <Text className="phase-title">RA01 · AI 需求分析</Text>
+              <Text className="phase-copy">单一需求分析入口：发现缺失、歧义与冲突，并提供可核对的原文证据</Text>
             </div>
           )}
         </Sider>
@@ -358,7 +382,7 @@ function Workbench() {
                       <Space size={[8, 8]} wrap>
                         {savedAnalyses.map((item) => (
                           <Button key={item.id} loading={openingAnalysisId === item.id} type={selectedAnalysisId === item.id ? "primary" : "default"} onClick={() => void openSavedAnalysis(item)}>
-                            {new Date(item.createdAt).toLocaleString("zh-CN")} · {item.summary.slice(0, 28) || "需求分析"}{item.protocol === "incompatible" ? " · 旧协议" : ""}
+                            <Space size={6}>{new Date(item.createdAt).toLocaleString("zh-CN")} · {item.summary.slice(0, 28) || "需求分析"}{item.protocol === "incompatible" && <Tag>旧协议</Tag>}<Tag color={analysisStatusLabels[item.status]?.color}>{analysisStatusLabels[item.status]?.label ?? "状态未知"}</Tag></Space>
                           </Button>
                         ))}
                       </Space>
@@ -400,7 +424,7 @@ function Workbench() {
                       <div className="message-row assistant-message" key={item.id}>
                         <Avatar className="ai-avatar">AI</Avatar>
                         <div className="assistant-bubble">
-                          <AnalysisView response={item.analysis} />
+                          <AnalysisView response={item.analysis} onReviewSaved={refreshSavedAnalyses} />
                         </div>
                       </div>
                     ),
@@ -498,14 +522,12 @@ function Workbench() {
                   remaining={remaining}
                 />
 
-                {officeWarning && (
-                  <Alert
-                    type="warning"
-                    showIcon
-                    message="Office 文件定位受限"
-                    description="OpenAI 文件输入只从 DOC/DOCX/RTF/ODT/PPT/PPTX 抽取文本，嵌入图片不会进入模型。请转为 PDF 或把图片单独上传。"
-                  />
-                )}
+                <Alert
+                  type="info"
+                  showIcon
+                  message="统一文档解析"
+                  description="PDF、Office、表格和图片统一由 Docling 解析 OCR、表格与版面；TestMesh 只保留上传、文件哈希和原文引用。解析失败时不会切换到其他解析器。"
+                />
 
                 <Card size="small" className="boundary-card">
                   <Space direction="vertical" size={8}>

@@ -3,10 +3,10 @@ import { fileURLToPath } from "node:url";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { HumanMessage, isAIMessage } from "@langchain/core/messages";
 import { ChatOpenAI } from "@langchain/openai";
-import { providerStrategy } from "langchain";
-import { assembleStage } from "../harness/assembler.js";
-import { RequirementAnalysisStageProfile } from "../harness/profiles/requirement-analysis.js";
-import { createStageAgentHarness } from "../harness/stage-agent.js";
+import { createMiddleware, MiddlewareError, providerStrategy } from "langchain";
+import { traceAgent } from "@arizeai/phoenix-otel";
+import { CompositeBackend, createDeepAgent, FilesystemBackend, registerHarnessProfile, StateBackend } from "deepagents";
+import type { BaseCheckpointSaver } from "@langchain/langgraph";
 import { MAX_OUTPUT_TOKENS, MODEL } from "./config.js";
 import { REQUIREMENT_ANALYSIS_INSTRUCTIONS } from "./prompt.js";
 import {
@@ -24,24 +24,29 @@ import {
 import {
   RequirementAnalysisValidationError,
   attachRequirementSources,
+  canonicalizeModelRequirementSources,
   validateRequirementAnalysis,
 } from "./validation.js";
+import { currentPhoenixTraceReference, type PhoenixTraceReference } from "../observability/phoenix.js";
 
-const SKILL_ROOT = fileURLToPath(new URL("../harness/skill-catalog", import.meta.url));
-const SKILL_SOURCES = new Map([
-  ["requirement-extraction", "/skills/requirement-extraction/"],
-  ["business-rule-analysis", "/skills/business-rule-analysis/"],
-  ["flow-analysis", "/skills/flow-analysis/"],
-  ["state-analysis", "/skills/state-analysis/"],
-  ["ambiguity-detection", "/skills/ambiguity-detection/"],
-  ["source-conflict-analysis", "/skills/source-conflict-analysis/"],
-]);
+const SKILL_ROOT = fileURLToPath(new URL("./skills/", import.meta.url));
+// Official Deep Agents profile; no TestMesh profile schema or capability assembler.
+// This ChatOpenAI version exposes `model`, whereas Deep Agents 1.13.5 looks
+// for `modelName`/`model_name`. Use its documented provider-level profile so
+// the restrictions also apply to the actual production model instance.
+registerHarnessProfile("openai", {
+  generalPurposeSubagent: { enabled: false },
+  excludedTools: ["ls", "glob", "grep", "write_file", "edit_file", "delete", "execute", "task", "write_todos", "eval"],
+  // This bounded analysis must retain the complete original material.
+  excludedMiddleware: ["SummarizationMiddleware"],
+});
 
 export interface RequirementAnalysisAgentResult {
   taskId: string;
   result: RequirementAnalysis;
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
   skillActivations: SkillActivationDecision[];
+  observability?: PhoenixTraceReference;
 }
 
 export function createOpenAIRequirementAnalysisModel(apiKey: string): ChatOpenAI {
@@ -55,53 +60,66 @@ export function createOpenAIRequirementAnalysisModel(apiKey: string): ChatOpenAI
   });
 }
 
-export async function runRequirementAnalysisAgent(input: {
+async function runRequirementAnalysisAgentImpl(input: {
   taskId?: string;
   message: string;
   sources: SourceFile[];
   model: BaseChatModel;
   requestedBy?: string;
+  checkpointer?: BaseCheckpointSaver;
 }): Promise<RequirementAnalysisAgentResult> {
   if (input.sources.length === 0) throw new Error("至少需要上传一个 PRD、文档或图片来源");
   if (input.sources.length > MAX_FILES) throw new Error(`单次最多上传 ${MAX_FILES} 个文件`);
 
   const taskId = input.taskId ?? randomUUID();
+  const observability = currentPhoenixTraceReference();
   const skillActivations = selectRequirementAnalysisSkills(input.sources);
   const sourceTools = createRequirementSourceTools(input.sources);
-  const assembled = assembleStage({
-    task_id: taskId,
-    stage: "requirement_analysis",
-    stage_profile_version: RequirementAnalysisStageProfile.version,
-    input_refs: input.sources.map((source) => ({
-      slot: "current_sources",
-      kind: "source" as const,
-      id: source.id,
-      required: true,
-    })),
-    requested_by: input.requestedBy?.trim() || "local-user",
-    created_at: new Date().toISOString(),
-  }, RequirementAnalysisStageProfile, {
-    knowledge: new Set(),
-    skills: new Set(
-      skillActivations.filter((decision) => decision.applicable).map((decision) => decision.skill_id),
-    ),
-    tools: new Set(["read_file", ...sourceTools.map((sourceTool) => sourceTool.name)]),
-  });
-  const tools = new Map(sourceTools.map((sourceTool) => [sourceTool.name, sourceTool]));
-  const agent = createStageAgentHarness({
-    assembled,
+  const skills = skillActivations.filter((item) => item.applicable)
+    .map((item) => `/skills/${item.skill_id}/`);
+  const agent = createDeepAgent({
+    name: "requirement_analysis",
     model: input.model,
-    skillRoot: SKILL_ROOT,
-    skillSources: SKILL_SOURCES,
-    tools,
-    instructions: REQUIREMENT_ANALYSIS_INSTRUCTIONS,
+    backend: new CompositeBackend(new StateBackend(), {
+      "/skills/": new FilesystemBackend({ rootDir: SKILL_ROOT, virtualMode: true }),
+    }),
+    skills,
+    permissions: [
+      { operations: ["read"], paths: skills.map((skill) => `${skill}**`) },
+      { operations: ["read", "write"], paths: ["/**"], mode: "deny" },
+    ],
+    tools: sourceTools,
+    systemPrompt: REQUIREMENT_ANALYSIS_INSTRUCTIONS,
     responseFormat: providerStrategy(createModelRequirementAnalysisSchema(input.sources)),
+    checkpointer: input.checkpointer,
+    middleware: [createMiddleware({
+      name: "RequirementEvidenceValidation",
+      afterAgent: (state) => {
+        try {
+          const candidate = ModelRequirementAnalysisSchema.parse(
+            (state as typeof state & { structuredResponse?: unknown }).structuredResponse,
+          );
+          validateRequirementAnalysis(
+            attachRequirementSources(canonicalizeModelRequirementSources(candidate, input.sources), input.sources),
+            input.sources,
+          );
+        } catch (error) {
+          throw new RequirementAnalysisValidationError(error instanceof Error ? error.message : "需求证据校验失败");
+        }
+      },
+    })],
   });
 
   const response = await agent.invoke({
     messages: [new HumanMessage({
       contentBlocks: buildRequirementSourceContent(input.message, input.sources),
     })],
+  }, { configurable: { thread_id: `${taskId}:analysis` }, metadata: { requested_by: input.requestedBy ?? "local-user" } }).catch((error: unknown) => {
+    let cause = error;
+    while (cause instanceof MiddlewareError && cause.cause) cause = cause.cause;
+    // Keep the existing HTTP 422 contract for invalid business evidence.
+    if (cause instanceof RequirementAnalysisValidationError) throw cause;
+    throw error;
   });
   const structuredResponse = (response as typeof response & { structuredResponse?: unknown })
     .structuredResponse;
@@ -112,7 +130,7 @@ export async function runRequirementAnalysisAgent(input: {
 
   let result: RequirementAnalysis;
   try {
-    result = attachRequirementSources(parsed.data, input.sources);
+    result = attachRequirementSources(canonicalizeModelRequirementSources(parsed.data, input.sources), input.sources);
     validateRequirementAnalysis(result, input.sources);
   } catch (error) {
     throw new RequirementAnalysisValidationError(
@@ -129,5 +147,21 @@ export async function runRequirementAnalysisAgent(input: {
     };
   }, { inputTokens: 0, outputTokens: 0, totalTokens: 0 });
 
-  return { taskId, result, usage, skillActivations };
+  return { taskId, result, usage, skillActivations, observability };
 }
+
+export const runRequirementAnalysisAgent = traceAgent(runRequirementAnalysisAgentImpl, {
+  name: "testmesh.requirement_analysis",
+  processInput: (input: Parameters<typeof runRequirementAnalysisAgentImpl>[0]) => ({
+    "testmesh.task.id": input.taskId ?? "generated",
+    "testmesh.requested_by": input.requestedBy ?? "local-user",
+    "testmesh.source.count": input.sources.length,
+    "testmesh.source.ids": input.sources.map((source) => source.id),
+  }),
+  processOutput: (output) => ({
+    "testmesh.task.id": output.taskId,
+    "testmesh.requirement.count": output.result.requirements.length,
+    "testmesh.open_question.count": output.result.open_questions.length,
+    "llm.token_count.total": output.usage.totalTokens,
+  }),
+});

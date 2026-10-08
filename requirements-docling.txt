@@ -1,0 +1,3 @@
+docling-serve==1.33.0
+onnxruntime==1.30.0
+easyocr==1.7.2

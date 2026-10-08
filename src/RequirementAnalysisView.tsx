@@ -1,4 +1,4 @@
-import { CheckCircleOutlined, DownloadOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, DownloadOutlined, FundProjectionScreenOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Flex, Space, Tag, Tooltip, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { analysisSections, issueTypeLabels, locatorLabels, originLabels, renderAnalysisMarkdown } from "./analysis-report";
@@ -55,7 +55,7 @@ function ItemCard({ item, response }: { item: AnalysisItem; response: AnalysisRe
   );
 }
 
-export default function RequirementAnalysisView({ response }: { response: AnalysisResponse }) {
+export default function RequirementAnalysisView({ response, onReviewSaved }: { response: AnalysisResponse; onReviewSaved?: () => Promise<void> | void }) {
   const { result } = response;
   const [storedFiles, setStoredFiles] = useState<{ analysisId: string; files: StoredSourceFile[] }>();
   const [storedError, setStoredError] = useState<{ analysisId: string; message: string }>();
@@ -77,11 +77,22 @@ export default function RequirementAnalysisView({ response }: { response: Analys
     <div className="analysis-result analysis-report">
       <Flex justify="space-between" align="center" gap={12} wrap>
         <Space><CheckCircleOutlined className="success-icon" /><Text strong>需求分析报告</Text><Tag color="blue">{response.model}</Tag></Space>
-        <Button icon={<DownloadOutlined />} onClick={() => downloadMarkdown(response)}>导出 Markdown</Button>
+        <Space wrap>
+          {response.observability && <Button
+            icon={<FundProjectionScreenOutlined />}
+            href={response.observability.traceUrl}
+            target="_blank"
+          >查看 Phoenix 运行轨迹</Button>}
+          <Button icon={<DownloadOutlined />} onClick={() => downloadMarkdown(response)}>导出 Markdown</Button>
+        </Space>
       </Flex>
-      <Text type="secondary">{response.usage ? `本次 ${response.usage.totalTokens.toLocaleString()} tokens · ` : ""}报告与导出均由同一份结构化数据生成</Text>
+      <Text type="secondary">
+        {response.usage ? `本次 ${response.usage.totalTokens.toLocaleString()} tokens · ` : ""}
+        {response.observability ? `Trace ${response.observability.traceId} · ` : ""}
+        报告与导出均由同一份结构化数据生成
+      </Text>
       {sourceFileError && <Alert type="warning" message={sourceFileError} showIcon />}
-      <RequirementReviewView response={response} sourceFiles={sourceFiles} />
+      <RequirementReviewView response={response} sourceFiles={sourceFiles} onReviewSaved={onReviewSaved} />
       <section><Typography.Title level={5}>需求概述</Typography.Title>
         {result.summary ? <ItemCard item={result.summary} response={response} /> : <Text type="secondary">暂无可确认的概述</Text>}
       </section>

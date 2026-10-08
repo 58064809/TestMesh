@@ -33,6 +33,26 @@ $env:HTTP_PROXY = $proxyEndpoint
 $env:NODE_USE_ENV_PROXY = "1"
 $env:OPENAI_API_KEY = $apiKey
 $env:NODE_ENV = "production"
+if (-not $env:PHOENIX_ENABLED) {
+  $env:PHOENIX_ENABLED = "true"
+}
+if (-not $env:PHOENIX_ENDPOINT) {
+  $env:PHOENIX_ENDPOINT = "http://127.0.0.1:6006"
+}
+
+# Codex or an existing terminal may predate database installation. Read saved
+# local connection settings without printing credentials or replacing overrides.
+foreach ($name in @("PGHOST", "PGPORT", "PGUSER", "PGDATABASE", "PG_LOCAL_PASSWORD", "TESTMESH_CHECKPOINT_SCHEMA", "TESTMESH_BUSINESS_SCHEMA")) {
+  if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name, "Process"))) {
+    $value = [Environment]::GetEnvironmentVariable($name, "User")
+    if ([string]::IsNullOrWhiteSpace($value)) {
+      $value = [Environment]::GetEnvironmentVariable($name, "Machine")
+    }
+    if (-not [string]::IsNullOrWhiteSpace($value)) {
+      [Environment]::SetEnvironmentVariable($name, $value, "Process")
+    }
+  }
+}
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot

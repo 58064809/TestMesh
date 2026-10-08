@@ -22,6 +22,9 @@ describe("P01 source handling", () => {
     expect(isAcceptedFilename("prd.pdf")).toBe(true);
     expect(isAcceptedFilename("flow.PNG")).toBe(true);
     expect(isAcceptedFilename("requirements.docx")).toBe(true);
+    expect(isAcceptedFilename("requirements.doc")).toBe(false);
+    expect(isAcceptedFilename("requirements.ppt")).toBe(false);
+    expect(isAcceptedFilename("requirements.xls")).toBe(false);
     expect(isAcceptedFilename("runner.zip")).toBe(false);
   });
 
@@ -42,7 +45,7 @@ describe("P01 source handling", () => {
     );
 
     expect(sources.map(({ id, scope, capability }) => ({ id, scope, capability }))).toEqual([
-      { id: "ATT-1", scope: "attachment", capability: "page" },
+      { id: "ATT-1", scope: "attachment", capability: "limited" },
       { id: "KNOW-1", scope: "knowledge", capability: "paragraph" },
     ]);
     expect(formatTextWithParagraphs(sources[1])).toContain("【KNOW-1 段落 2】");
@@ -102,7 +105,7 @@ describe("P01 source handling", () => {
     expect(result.evidence[0].sourceName).toBe("真实需求.pdf");
   });
 
-  it("requires limited locators for office documents", () => {
+  it("does not claim Office locators before the mature parser has run", () => {
     const sources = createSources(
       [{ originalname: "prd.docx", mimetype: "application/octet-stream", buffer: Buffer.from("doc") }],
       [],

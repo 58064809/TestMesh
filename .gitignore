@@ -6,6 +6,7 @@ dist/
 uploads/
 data/
 tmp/
+integrations/**/target/
 .schemathesis/
 *.log
 .DS_Store

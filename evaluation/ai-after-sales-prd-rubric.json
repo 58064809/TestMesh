@@ -1,0 +1,17 @@
+{
+  "name": "AI 售后系统 PRD 需求问题验收",
+  "version": "candidate-v1",
+  "status": "pending-human-approval",
+  "sourceFilename": "《AI售后系统产品方案 + PRD文档》.pdf",
+  "sourceSha256": "b3ddde603ab879a3755df173044f9d9f6975d734987fad703dfc0208439795e0",
+  "minimumOpenQuestions": 8,
+  "requiredIssueTypes": ["missing", "ambiguity"],
+  "requiredTopicGroups": [
+    ["退款", "退货"],
+    ["物流", "快递"],
+    ["发票", "开票"],
+    ["售后", "转人工", "人工客服"]
+  ],
+  "maximumAgentLatencyMs": 600000,
+  "maximumTotalTokens": 300000
+}

@@ -5,6 +5,7 @@ import type { SourceFile } from "./sources.js";
 
 export type AnalysisReviewStatus = "accepted" | "rejected" | "merged" | "clarify";
 export type AnalysisIssueType = "missing" | "ambiguity" | "conflict";
+export const PENDING_PRD_REVISION = "待建立的新版本";
 
 export interface AnalysisReviewInput {
   status: AnalysisReviewStatus;
@@ -32,6 +33,9 @@ export interface RequirementAnalysisRecord {
   model: string;
   status: "candidate" | "reviewing" | "baselined";
   createdAt: string;
+  traceProvider: string;
+  traceProjectName: string;
+  traceId: string;
 }
 
 export interface RequirementBaselineRecord {
@@ -72,6 +76,9 @@ export class RequirementAnalysisPostgresStore {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
+    await this.pool.query(`ALTER TABLE ${this.schema}.requirement_analyses ADD COLUMN IF NOT EXISTS trace_provider TEXT NOT NULL DEFAULT ''`);
+    await this.pool.query(`ALTER TABLE ${this.schema}.requirement_analyses ADD COLUMN IF NOT EXISTS trace_project_name TEXT NOT NULL DEFAULT ''`);
+    await this.pool.query(`ALTER TABLE ${this.schema}.requirement_analyses ADD COLUMN IF NOT EXISTS trace_id TEXT NOT NULL DEFAULT ''`);
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS ${this.schema}.analysis_source_files (
         analysis_id TEXT NOT NULL REFERENCES ${this.schema}.requirement_analyses(id) ON DELETE CASCADE,
@@ -130,6 +137,7 @@ export class RequirementAnalysisPostgresStore {
     document: RequirementAnalysis;
     model: string;
     sources: SourceFile[];
+    trace?: { provider: "phoenix"; projectName: string; traceId: string };
   }): Promise<RequirementAnalysisRecord> {
     const document = RequirementAnalysisSchema.parse(input.document);
     const sourceIds = new Set(input.sources.map((source) => source.id));
@@ -145,10 +153,14 @@ export class RequirementAnalysisPostgresStore {
       await client.query("BEGIN");
       const inserted = await client.query(
         `INSERT INTO ${this.schema}.requirement_analyses
-          (id, task_id, artifact_id, summary, model, status, document_json)
-         VALUES ($1, $2, $3, $4, $5, 'candidate', $6)
+          (id, task_id, artifact_id, summary, model, status, document_json,
+           trace_provider, trace_project_name, trace_id)
+         VALUES ($1, $2, $3, $4, $5, 'candidate', $6, $7, $8, $9)
          RETURNING *`,
-        [id, input.taskId, input.artifactId, document.summary?.description ?? "", input.model, document],
+        [
+          id, input.taskId, input.artifactId, document.summary?.description ?? "", input.model, document,
+          input.trace?.provider ?? "", input.trace?.projectName ?? "", input.trace?.traceId ?? "",
+        ],
       );
       for (const source of input.sources) {
         await client.query(
@@ -387,6 +399,7 @@ export class RequirementAnalysisPostgresStore {
       for (const { section, item } of items) {
         const review = byId.get(item.id)!;
         if (section === "open_questions" && review.status === "accepted"
+          && review.prdRevision !== PENDING_PRD_REVISION
           && review.prdRevision !== input.prdRevision.trim()) {
           throw new Error(`待确认问题 ${item.id} 的决策登记在 PRD ${review.prdRevision}，与上传的获批版本 ${input.prdRevision.trim()} 不一致`);
         }
@@ -411,7 +424,9 @@ export class RequirementAnalysisPostgresStore {
               ])],
             },
             mergedFrom: merged.map(({ item: mergedItem }) => mergedItem.id),
-            review: byId.get(item.id),
+            review: byId.get(item.id)?.prdRevision === PENDING_PRD_REVISION
+              ? { ...byId.get(item.id)!, prdRevision: input.prdRevision.trim() }
+              : byId.get(item.id),
           };
         });
       const record = {
@@ -433,7 +448,13 @@ export class RequirementAnalysisPostgresStore {
         [
           record.id, analysisId, record.previousBaselineId, record.version,
           record.prdRevision, record.prdFilename, record.prdSha256, input.prdFile,
-          record.approvedBy, { accepted, reviews, sourceRefs: document.sources },
+          record.approvedBy, {
+            accepted,
+            reviews: reviews.map((review) => review.prdRevision === PENDING_PRD_REVISION
+              ? { ...review, prdRevision: input.prdRevision.trim() }
+              : review),
+            sourceRefs: document.sources,
+          },
         ],
       );
       await client.query(
@@ -502,6 +523,9 @@ export class RequirementAnalysisPostgresStore {
       model: String(row.model),
       status: row.status as RequirementAnalysisRecord["status"],
       createdAt: this.iso(row.created_at),
+      traceProvider: String(row.trace_provider ?? ""),
+      traceProjectName: String(row.trace_project_name ?? ""),
+      traceId: String(row.trace_id ?? ""),
     };
   }
 

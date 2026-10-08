@@ -3,7 +3,7 @@ import type { AnalysisIssueType, AnalysisItem, AnalysisReviewRecord, Requirement
 
 const reviewLabels = { accepted: "已接受", rejected: "已驳回", merged: "已合并", clarify: "待澄清" } as const;
 
-export type ReviewView = "pending" | "accepted" | "all";
+export type ReviewView = "issues" | "pending" | "accepted" | "all";
 export type ReviewEntry = { section: string; label: string; item: AnalysisItem; review?: AnalysisReviewRecord };
 
 export function reviewEntries(document: RequirementAnalysis, reviews: AnalysisReviewRecord[]): ReviewEntry[] {
@@ -15,6 +15,7 @@ export function reviewEntries(document: RequirementAnalysis, reviews: AnalysisRe
 }
 
 export function visibleReviewEntries(entries: ReviewEntry[], view: ReviewView): ReviewEntry[] {
+  if (view === "issues") return entries.filter((entry) => entry.section === "open_questions");
   if (view === "pending") return entries.filter((entry) => !entry.review || entry.review.status === "clarify");
   if (view === "accepted") return entries.filter((entry) => entry.review?.status === "accepted");
   return entries;
@@ -34,7 +35,7 @@ export function renderReviewMarkdown(document: RequirementAnalysis, reviews: Ana
   const all = reviewEntries(document, reviews);
   const entries = visibleReviewEntries(all, view);
   const sources = new Map(document.sources.map((source) => [source.id, source]));
-  const title = view === "pending" ? "待评审清单" : view === "accepted" ? "已接受需求分析报告" : "完整评审记录";
+  const title = view === "issues" ? "需求问题验收清单" : view === "pending" ? "待评审清单" : view === "accepted" ? "已接受需求分析报告" : "完整评审记录";
   const lines = [`# ${title}`, "", `共 ${entries.length} 条。`, ""];
   for (const entry of entries) {
     const merged = view === "accepted" ? mergedSourceEntries(all, entry.item.id) : [];

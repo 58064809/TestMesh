@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PDF_PAGE_LOCATOR_PATTERN, type SourceFile } from "./sources.js";
+import type { SourceFile } from "./sources.js";
 
 export const AnalysisItemSchema = z.object({
   id: z.string().min(1),
@@ -16,9 +16,11 @@ export const OpenQuestionSchema = AnalysisItemSchema.extend({
 export const ModelSourceSchema = AnalysisItemSchema.extend({
   source_file_id: z.string().min(1),
   locator_type: z.enum(["page", "paragraph", "image", "limited"]),
-  locator: z.string(),
-  excerpt: z.string(),
+  locator: z.string().describe("Docling 返回的真实页码或元素定位，不得推测"),
+  excerpt: z.string().describe("从该定位下单个 Docling 元素逐字复制的原文；不得改写、拼接或使用省略号"),
 }).strict();
+
+const DOCLING_ELEMENT_LOCATOR_PATTERN = /(?:第\s*)?\d+\s*页.*#\/(?:texts|tables|pictures|key_value_items)\/\d+/;
 
 const modelSourceFields = {
   ...AnalysisItemSchema.shape,
@@ -35,8 +37,8 @@ export function createModelRequirementAnalysisSchema(sources: readonly SourceFil
     };
     if (source.capability === "page") {
       const locator = z.string().regex(
-        PDF_PAGE_LOCATOR_PATTERN,
-        "PDF 页码或图片定位需要包含可核对页码，例如“第 3 页”",
+        DOCLING_ELEMENT_LOCATOR_PATTERN,
+        "Docling 定位必须同时包含真实页码和元素编号，例如“第 3 页 · #/texts/12”",
       );
       variants.push(
         z.object({ ...base, locator_type: z.literal("page"), locator }).strict(),
