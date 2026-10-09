@@ -6,6 +6,7 @@ import {
   DatabaseOutlined,
   DesktopOutlined,
   FileSearchOutlined,
+  ExperimentOutlined,
   FolderOpenOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -43,6 +44,7 @@ import AppTesting from "./AppTesting";
 import PerformanceTesting from "./PerformanceTesting";
 import SecurityTesting from "./SecurityTesting";
 import RequirementAnalysisView from "./RequirementAnalysisView";
+import AiQuality from "./AiQuality";
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -143,7 +145,7 @@ function UploadPanel({
 function Workbench() {
   const { message: toast } = AntdApp.useApp();
   const [collapsed, setCollapsed] = useState(false);
-  const [activePage, setActivePage] = useState<"chat" | "api" | "ui" | "app" | "performance" | "security">("chat");
+  const [activePage, setActivePage] = useState<"chat" | "quality" | "api" | "ui" | "app" | "performance" | "security">("chat");
   const [prompt, setPrompt] = useState("帮我分析这个需求");
   const [attachments, setAttachments] = useState<UploadFile[]>([]);
   const [knowledge, setKnowledge] = useState<UploadFile[]>([]);
@@ -296,11 +298,12 @@ function Workbench() {
             mode="inline"
             selectedKeys={[activePage]}
             onClick={({ key }) => {
-              if (key === "chat" || key === "api" || key === "ui" || key === "app" || key === "performance" || key === "security") setActivePage(key);
+              if (key === "chat" || key === "quality" || key === "api" || key === "ui" || key === "app" || key === "performance" || key === "security") setActivePage(key);
             }}
             items={[
               { key: "overview", icon: <BulbOutlined />, label: "工作台概览", disabled: true },
               { key: "chat", icon: <MessageOutlined />, label: "AI 需求分析" },
+              { key: "quality", icon: <ExperimentOutlined />, label: "AI 质量评估" },
               { key: "api", icon: <ApiOutlined />, label: "API 测试" },
               { key: "ui", icon: <DesktopOutlined />, label: "UI 测试" },
               { key: "app", icon: <AndroidOutlined />, label: "APP 测试" },
@@ -334,11 +337,13 @@ function Workbench() {
                 />
                 <div>
                   <Title level={4}>
-                    {activePage === "chat" ? "AI 需求分析" : activePage === "api" ? "API 测试" : activePage === "ui" ? "UI 测试" : activePage === "app" ? "APP 测试" : activePage === "performance" ? "性能测试" : "安全测试"}
+                    {activePage === "chat" ? "AI 需求分析" : activePage === "quality" ? "AI 质量评估" : activePage === "api" ? "API 测试" : activePage === "ui" ? "UI 测试" : activePage === "app" ? "APP 测试" : activePage === "performance" ? "性能测试" : "安全测试"}
                   </Title>
                   <Text type="secondary">
                     {activePage === "chat"
                       ? subtitle
+                      : activePage === "quality"
+                        ? "用真实业务样本、人工标准与 Phoenix 实验证据验证 Agent 质量"
                       : activePage === "api"
                         ? "导入 OpenAPI，关联需求与证据并运行 Schemathesis"
                         : activePage === "ui"
@@ -357,6 +362,8 @@ function Workbench() {
                 <Tag color="blue">
                   {activePage === "chat"
                     ? "LangGraph Harness"
+                    : activePage === "quality"
+                      ? "Phoenix Eval"
                     : activePage === "api"
                       ? "Schemathesis 4.24.3"
                       : activePage === "ui"
@@ -540,6 +547,8 @@ function Workbench() {
                 </Card>
               </aside>
               </div>
+            ) : activePage === "quality" ? (
+              <AiQuality />
             ) : activePage === "api" ? (
               <ApiTesting />
             ) : activePage === "ui" ? (

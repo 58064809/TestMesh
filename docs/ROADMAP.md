@@ -6,7 +6,7 @@
 
 独立 FR01 形式化验证和 BR01 业务规则路径已撤回，产品页面、API、存储、运行时和测试全部删除；调研文档只作历史证据。后续任何成熟能力必须先对应具体 Agent 质量问题和真实验收样本，再决定是否接入，不能按推荐表直接开发。产品边界见 `docs/PRODUCT_DIRECTION.md`。
 
-当前主线回到：稳定唯一 AI 需求分析 → Agent / AI 应用评估资产与执行闭环 → Trace/Eval → 回归比较与准入。AQ01 已用真实 16 页中文 PRD 完成 Phoenix 技术尖峰：版本化 Dataset、Experiment、33 节点 Trace 和 4 项确定性评测全部贯通；候选 rubric 仍待人工批准，详见 `docs/PHASES/AQ01.md`。
+当前主线回到：稳定唯一 AI 需求分析 → Agent / AI 应用评估资产与执行闭环 → Trace/Eval → 回归比较与准入。AQ01 已用真实 16 页中文 PRD 完成 Phoenix 技术尖峰：版本化 Dataset、Experiment、33 节点 Trace 和 4 项确定性评测全部贯通；TestMesh 已提供评测配置、证据映射与人工批准入口，候选 rubric 因仍有 7 条需求问题待评审而保持未批准，详见 `docs/PHASES/AQ01.md`。
 
 ---
 
@@ -63,7 +63,7 @@ DI01 调研 Docling、PaddleOCR、MinerU、Unstructured 和 Apache Tika 后，�
 | RQ01 | QVscribe 需求语言质量分析结果接入与人工处置 | 阻塞（等待 API 租户、接口文档和中文支持验证） | 准入条件满足后实施；不得降级为自研规则 |
 | FR01 | TLA+ / TLC 形式化需求验证探索 | 已撤回 | 仅保留调研记录，不是产品路径 |
 | BR01 | Apache KIE DMN 业务规则探索 | 已撤回 | 仅保留调研记录，不是产品路径 |
-| AQ01 | 以当前需求分析 Agent 验证 Dataset、Trace、Eval、Experiment 与版本比较闭环 | 技术尖峰已通过（候选 rubric 待人工批准） | 扩充并人工确认数据集后定义正式准入阈值 |
+| AQ01 | 以当前需求分析 Agent 验证 Dataset、Trace、Eval、Experiment 与版本比较闭环 | 技术尖峰及评测治理入口已通过（候选 rubric 待人工批准） | 完成剩余问题评审并批准 candidate-v1，再扩充数据集和定义正式准入阈值 |
 | TD01 | 基于 Baseline 的测试设计、风险、测试点和 TestCase | 已规划 | TD01 验收通过后进入 AT01 |
 | AT01 | Approved TestCase 到 API 自动化与真实 Runner 证据 | 已规划 | AT01 验收通过后进入 AT02 |
 | AT02 | Approved TestCase 到 UI 自动化与 Playwright 证据 | 已规划 | AT02 验收通过后进入 FT01 |

@@ -1,6 +1,7 @@
 import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import pg from "pg";
 import { RequirementAnalysisPostgresStore } from "../requirement-analysis/postgres-store.js";
+import { AiQualityPostgresStore } from "../ai-quality/postgres-store.js";
 
 const DEFAULT_CHECKPOINT_SCHEMA = "deepagents_checkpoint";
 const DEFAULT_BUSINESS_SCHEMA = "testmesh_business";
@@ -18,6 +19,7 @@ export interface AnalysisPostgresConfig {
 export interface AnalysisPostgresResources {
   checkpointer: PostgresSaver;
   requirementAnalysisStore: RequirementAnalysisPostgresStore;
+  aiQualityStore: AiQualityPostgresStore;
   close(): Promise<void>;
 }
 
@@ -78,9 +80,11 @@ export async function createAnalysisPostgresResources(
     pool,
     config.businessSchema,
   );
+  const aiQualityStore = new AiQualityPostgresStore(pool, config.businessSchema);
   try {
     await checkpointer.setup();
     await requirementAnalysisStore.setup();
+    await aiQualityStore.setup();
   } catch (error) {
     await pool.end();
     throw error;
@@ -89,6 +93,7 @@ export async function createAnalysisPostgresResources(
   return {
     checkpointer,
     requirementAnalysisStore,
+    aiQualityStore,
     close: () => checkpointer.end(),
   };
 }

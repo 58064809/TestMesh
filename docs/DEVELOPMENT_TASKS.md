@@ -6,7 +6,7 @@
 
 下一步不是继续按表开发，而是先围绕具体 Agent 质量闭环调研：质量目标、评估数据集、目标 Agent 执行、Trace/Eval、回归比较和准入策略。每阶段选型必须有真实样本验收。
 
-AQ01 已完成文档调研，推荐 Phoenix 作为唯一技术尖峰候选；Langfuse 与 promptfoo 本阶段不并行接入。实施前必须用当前 AI 需求分析 Agent 验证真实 Dataset → Experiment → Trace → Eval → 版本比较闭环，任务见 `docs/PHASES/AQ01.md`。
+AQ01 已确认 Phoenix 为唯一评测底座；Langfuse 与 promptfoo 本阶段不并行接入。真实 Dataset → Experiment → Trace → Eval 技术尖峰和 TestMesh 评测配置/人工批准入口已经完成。当前等待人工完成 OQ-005～OQ-011 的评审后批准 candidate-v1，再扩充样本和定义版本比较准入阈值，详见 `docs/PHASES/AQ01.md`。
 
 ---
 

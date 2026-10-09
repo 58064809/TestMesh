@@ -819,3 +819,24 @@ body {
     min-height: 0;
   }
 }
+.quality-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.quality-grid {
+  margin-top: 16px;
+}
+
+.approval-form {
+  margin-top: 16px;
+}
+
+.centered-state {
+  min-height: 320px;
+  display: grid;
+  place-items: center;
+}

@@ -33,6 +33,7 @@ import { createDoclingClientFromEnvironment } from "./document-parsing/docling.j
 import { parseAnalysisSources } from "./document-parsing/parse-sources.js";
 import { z } from "zod";
 import { initializePhoenixTracing, resolvePhoenixTraceUrl } from "./observability/phoenix.js";
+import { assessProfileReadiness, type AiQualityProfile } from "./ai-quality/profile.js";
 
 initializePhoenixTracing();
 
@@ -42,6 +43,7 @@ const isProduction = process.env.NODE_ENV === "production";
 const store = new DomainStore(defaultDatabasePath());
 const analysisResources = await createAnalysisPostgresResources();
 const requirementAnalysisStore = analysisResources.requirementAnalysisStore;
+const aiQualityStore = analysisResources.aiQualityStore;
 const requirementAnalysisService = new RequirementAnalysisService(analysisResources);
 const documentParser = createDoclingClientFromEnvironment();
 
@@ -96,6 +98,65 @@ const AnalysisReviewInputSchema = z.object({
   decisionBy: z.string().default(""),
   prdRevision: z.string().default(""),
 }).strict();
+
+const AiQualityApprovalSchema = z.object({
+  approvedBy: z.string().trim().min(1),
+  approvalNote: z.string().trim().default(""),
+}).strict();
+
+await aiQualityStore.seed({
+  id: "ai-after-sales-prd-candidate-v1",
+  name: "AI 售后系统 PRD 需求问题验收",
+  version: "candidate-v1",
+  targetName: "TestMesh AI 需求分析 Agent",
+  targetVersion: "0.1.0",
+  environment: "local",
+  sourceAnalysisId: "e37d8907-00ee-4f31-a033-6775cccdc154",
+  sourceFilename: "《AI售后系统产品方案 + PRD文档》.pdf",
+  sourceSha256: "b3dd9367494d11cc39d1bfd80d1ae4c5e125814741d141442a11d648605b95e0",
+  criteria: {
+    minimumOpenQuestions: 8,
+    requiredIssueTypes: ["missing", "ambiguity"],
+    requiredTopicGroups: [["退款", "退货"], ["物流", "快递"], ["发票", "开票"], ["售后", "转人工", "人工客服"]],
+    maximumAgentLatencyMs: 600_000,
+    maximumTotalTokens: 300_000,
+  },
+  phoenix: {
+    endpoint: process.env.PHOENIX_ENDPOINT ?? "http://127.0.0.1:6006",
+    projectName: process.env.PHOENIX_PROJECT_NAME ?? "testmesh-requirement-analysis",
+    datasetId: "RGF0YXNldDox",
+    experimentId: "RXhwZXJpbWVudDo1",
+    traceId: "87115e87a7c2160638b8d430ca5482aa",
+  },
+});
+
+async function qualityProfileView(profile: AiQualityProfile) {
+  const endpoint = profile.phoenix.endpoint.replace(/\/$/, "");
+  try {
+    const { document } = await requirementAnalysisStore.getAnalysis(profile.sourceAnalysisId);
+    const reviews = await requirementAnalysisStore.listReviews(profile.sourceAnalysisId);
+    return {
+      ...profile,
+      readiness: assessProfileReadiness(document, reviews),
+      phoenixLinks: {
+        home: endpoint,
+        datasets: `${endpoint}/datasets`,
+        projects: `${endpoint}/projects`,
+      },
+    };
+  } catch {
+    return {
+      ...profile,
+      readiness: {
+        ready: false,
+        totalOpenQuestions: 0,
+        reviewedOpenQuestions: 0,
+        blockers: ["关联的真实需求分析不存在，请先完成验收样本分析"],
+      },
+      phoenixLinks: { home: endpoint, datasets: `${endpoint}/datasets`, projects: `${endpoint}/projects` },
+    };
+  }
+}
 
 app.get("/api/health", (_request, response) => {
   response.json({
@@ -173,6 +234,38 @@ app.post(
 
 app.get("/api/p02/trace-sources", (_request, response) => {
   response.json(store.listTraceSources());
+});
+
+app.get("/api/ai-quality/profiles", async (_request, response) => {
+  try {
+    const profiles = await aiQualityStore.list();
+    response.json(await Promise.all(profiles.map(qualityProfileView)));
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "无法读取 AI 质量评测配置" });
+  }
+});
+
+app.post("/api/ai-quality/profiles/:id/approve", async (request, response) => {
+  try {
+    const parsed = AiQualityApprovalSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: "请填写批准人" });
+      return;
+    }
+    const profile = await aiQualityStore.get(request.params.id);
+    const view = await qualityProfileView(profile);
+    if (!view.readiness.ready) {
+      response.status(409).json({ error: view.readiness.blockers.join("；") });
+      return;
+    }
+    response.json(await qualityProfileView(await aiQualityStore.approve(
+      request.params.id,
+      parsed.data.approvedBy,
+      parsed.data.approvalNote,
+    )));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "无法批准 AI 质量评测配置" });
+  }
 });
 
 app.get("/api/analyses", (_request, response) => {
