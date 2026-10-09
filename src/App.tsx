@@ -69,6 +69,13 @@ type SavedAnalysis = {
   traceProjectName: string;
   traceId: string;
   traceUrl: string;
+  reviewSummary: {
+    total: number;
+    pending: number;
+    accepted: number;
+    rejected: number;
+    merged: number;
+  };
 };
 
 function fileObject(file: UploadFile): File | undefined {
@@ -389,7 +396,16 @@ function Workbench() {
                       <Space size={[8, 8]} wrap>
                         {savedAnalyses.map((item) => (
                           <Button key={item.id} loading={openingAnalysisId === item.id} type={selectedAnalysisId === item.id ? "primary" : "default"} onClick={() => void openSavedAnalysis(item)}>
-                            <Space size={6}>{new Date(item.createdAt).toLocaleString("zh-CN")} · {item.summary.slice(0, 28) || "需求分析"}{item.protocol === "incompatible" && <Tag>旧协议</Tag>}<Tag color={analysisStatusLabels[item.status]?.color}>{analysisStatusLabels[item.status]?.label ?? "状态未知"}</Tag></Space>
+                            <Space size={6} wrap>
+                              {new Date(item.createdAt).toLocaleString("zh-CN")} · {item.summary.slice(0, 28) || "需求分析"}
+                              {item.protocol === "incompatible" && <Tag>旧协议</Tag>}
+                              <Tag color={analysisStatusLabels[item.status]?.color}>{analysisStatusLabels[item.status]?.label ?? "状态未知"}</Tag>
+                              {item.reviewSummary && <>
+                                <Tag color="orange">待评审 {item.reviewSummary.pending}</Tag>
+                                <Tag color="green">已接受 {item.reviewSummary.accepted}</Tag>
+                                {(item.reviewSummary.rejected + item.reviewSummary.merged) > 0 && <Tag>已处理 {item.reviewSummary.rejected + item.reviewSummary.merged}</Tag>}
+                              </>}
+                            </Space>
                           </Button>
                         ))}
                       </Space>

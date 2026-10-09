@@ -270,15 +270,38 @@ app.post("/api/ai-quality/profiles/:id/approve", async (request, response) => {
 
 app.get("/api/analyses", (_request, response) => {
   void requirementAnalysisStore.listAnalyses()
-    .then(async (records) => response.json(await Promise.all(records.map(async (record) => ({
-      ...record,
-      protocol: "current",
-      traceUrl: record.traceProvider === "phoenix" && record.traceId ? await resolvePhoenixTraceUrl({
-        provider: "phoenix",
-        projectName: record.traceProjectName,
-        traceId: record.traceId,
-      }) : "",
-    })))))
+    .then(async (records) => response.json(await Promise.all(records.map(async (record) => {
+      const [{ document }, reviews, traceUrl] = await Promise.all([
+        requirementAnalysisStore.getAnalysis(record.id),
+        requirementAnalysisStore.listReviews(record.id),
+        record.traceProvider === "phoenix" && record.traceId ? resolvePhoenixTraceUrl({
+          provider: "phoenix",
+          projectName: record.traceProjectName,
+          traceId: record.traceId,
+        }) : Promise.resolve(""),
+      ]);
+      const sections = [
+        document.requirements, document.actors, document.business_rules, document.flows,
+        document.states, document.constraints, document.exceptions, document.open_questions,
+      ];
+      const itemIds = [
+        ...(document.summary ? [document.summary.id] : []),
+        ...sections.flatMap((items) => items.map((item) => item.id)),
+      ];
+      const latest = new Map(reviews.map((review) => [review.itemId, review]));
+      return {
+        ...record,
+        protocol: "current",
+        traceUrl,
+        reviewSummary: {
+          total: itemIds.length,
+          pending: itemIds.filter((id) => !latest.has(id) || latest.get(id)?.status === "clarify").length,
+          accepted: itemIds.filter((id) => latest.get(id)?.status === "accepted").length,
+          rejected: itemIds.filter((id) => latest.get(id)?.status === "rejected").length,
+          merged: itemIds.filter((id) => latest.get(id)?.status === "merged").length,
+        },
+      };
+    }))))
     .catch((error) => response.status(500).json({ error: error instanceof Error ? error.message : "无法读取分析列表" }));
 });
 
