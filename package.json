@@ -29,6 +29,8 @@
     "@arizeai/openinference-instrumentation-openai": "^4.4.0",
     "@arizeai/phoenix-client": "^7.16.0",
     "@arizeai/phoenix-otel": "^2.2.0",
+    "@cucumber/gherkin": "^42.0.1",
+    "@cucumber/messages": "^34.2.1",
     "@langchain/core": "^1.2.11",
     "@langchain/langgraph": "^1.4.15",
     "@langchain/langgraph-checkpoint-postgres": "^1.0.5",

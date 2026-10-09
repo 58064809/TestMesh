@@ -125,12 +125,12 @@ DI01 已完成，下一阶段进入 TD01。
 
 | 任务 | 内容 | 验收结果 | 状态 |
 | --- | --- | --- | --- |
-| TD01-01 | 固定 TestDesign、Risk、TestPoint、TestCase Schema | 与 RequirementAnalysis 分离 | 待 RA01 |
-| TD01-02 | 固定 Test Design Stage Profile | 只读取 Baseline、范围、人工决策和获准知识 | 待 RA01 |
-| TD01-03 | 接入测试设计 Skills | 按任务加载等价类、边界值、判定表、状态迁移等；不适用有理由 | 待 RA01 |
-| TD01-04 | 覆盖矩阵与追溯 Gate | Requirement/Test Point/TestCase/证据可回链，无静默遗漏 | 待 RA01 |
-| TD01-05 | 人工 Review 与 Approved TestCase | 驳回/合并不进入后续，批准项形成不可覆盖版本 | 待 RA01 |
-| TD01-06 | 真实需求验收 | 数量不设上限，质量与完成由证据和 Gate 判断 | 待 RA01 |
+| TD01-01 | 固定 TestDesign、Risk、TestPoint、TestCase Schema | 与 RequirementAnalysis 分离 | 已完成 |
+| TD01-02 | 固定 Test Design Stage Profile | 只读取 Baseline、范围、人工决策和获准知识 | 已完成 |
+| TD01-03 | 接入测试设计 Skills | 按任务加载等价类、边界值、判定表、状态迁移等；不适用有理由 | 已完成 |
+| TD01-04 | 覆盖矩阵与追溯 Gate | Requirement/Test Point/TestCase/证据可回链，无静默遗漏 | 已完成 |
+| TD01-05 | 人工 Review 与 Approved TestCase | 驳回/合并不进入后续，批准项形成不可覆盖版本 | 已实现，待真实候选验收 |
+| TD01-06 | 真实需求验收 | 数量不设上限，质量与完成由证据和 Gate 判断 | 阻塞于一次模型 Connection error，未自动重试 |
 
 ## AT01 — API Automation
 

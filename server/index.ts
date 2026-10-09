@@ -34,6 +34,7 @@ import { parseAnalysisSources } from "./document-parsing/parse-sources.js";
 import { z } from "zod";
 import { initializePhoenixTracing, resolvePhoenixTraceUrl } from "./observability/phoenix.js";
 import { assessProfileReadiness, type AiQualityProfile } from "./ai-quality/profile.js";
+import { TestDesignService } from "./test-design/service.js";
 
 initializePhoenixTracing();
 
@@ -44,7 +45,9 @@ const store = new DomainStore(defaultDatabasePath());
 const analysisResources = await createAnalysisPostgresResources();
 const requirementAnalysisStore = analysisResources.requirementAnalysisStore;
 const aiQualityStore = analysisResources.aiQualityStore;
+const testDesignStore = analysisResources.testDesignStore;
 const requirementAnalysisService = new RequirementAnalysisService(analysisResources);
+const testDesignService = new TestDesignService(requirementAnalysisStore, testDesignStore);
 const documentParser = createDoclingClientFromEnvironment();
 
 app.use(express.json({ limit: "256kb" }));
@@ -104,6 +107,20 @@ const AiQualityApprovalSchema = z.object({
   approvalNote: z.string().trim().default(""),
 }).strict();
 
+const TestDesignRequestSchema = z.object({
+  baselineId: z.string().trim().min(1),
+}).strict();
+
+const TestCaseReviewInputSchema = z.object({
+  status: z.enum(["accepted", "rejected"]),
+  reviewer: z.string().trim().min(1),
+  reason: z.string().default(""),
+}).strict();
+
+const TestCaseApprovalSchema = z.object({
+  approvedBy: z.string().trim().min(1),
+}).strict();
+
 await aiQualityStore.seed({
   id: "ai-after-sales-prd-candidate-v1",
   name: "AI 售后系统 PRD 需求问题验收",
@@ -161,7 +178,7 @@ async function qualityProfileView(profile: AiQualityProfile) {
 app.get("/api/health", (_request, response) => {
   response.json({
     ok: true,
-    phase: "RA01 Requirement Analysis",
+    phase: "TD01 Test Design",
     model: MODEL,
     schemathesisVersion: SCHEMATHESIS_VERSION,
     playwrightVersion: PLAYWRIGHT_VERSION,
@@ -173,6 +190,8 @@ app.get("/api/health", (_request, response) => {
     zapVersion: ZAP_VERSION,
     openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
     documentParser: "Docling Serve v1",
+    testDesignHarness: "Deep Agents createDeepAgent",
+    testCaseFormat: "Cucumber Gherkin 42.0.1 (zh-CN)",
     doclingServeUrl: process.env.DOCLING_SERVE_URL ?? "http://127.0.0.1:5001",
     phoenixEnabled: process.env.PHOENIX_ENABLED === "true",
     phoenixEndpoint: process.env.PHOENIX_ENDPOINT ?? "http://127.0.0.1:6006",
@@ -402,6 +421,94 @@ app.get("/api/requirement-baselines/:id/prd", async (request, response) => {
     response.send(file);
   } catch (error) {
     response.status(404).json({ error: error instanceof Error ? error.message : "需求基线不存在" });
+  }
+});
+
+app.get("/api/test-designs", async (_request, response) => {
+  try {
+    const designs = await testDesignStore.listDesigns();
+    response.json(await Promise.all(designs.map(async (design) => {
+      const [reviews, approved, traceUrl] = await Promise.all([
+        testDesignStore.listReviews(design.id),
+        testDesignStore.getApprovedVersion(design.id),
+        design.traceProvider === "phoenix" && design.traceId
+          ? resolvePhoenixTraceUrl({ provider: "phoenix", projectName: design.traceProjectName, traceId: design.traceId })
+          : Promise.resolve(""),
+      ]);
+      const accepted = reviews.filter((item) => item.status === "accepted").length;
+      const rejected = reviews.filter((item) => item.status === "rejected").length;
+      return {
+        ...design,
+        traceUrl,
+        reviewSummary: {
+          total: design.document.test_cases.length,
+          pending: design.document.test_cases.length - reviews.length,
+          accepted,
+          rejected,
+        },
+        approvedVersion: approved?.record ?? null,
+      };
+    })));
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "无法读取测试设计" });
+  }
+});
+
+app.post("/api/test-designs", async (request, response) => {
+  try {
+    const parsed = TestDesignRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: "请选择已建立的需求基线" });
+      return;
+    }
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      response.status(503).json({ error: "服务端未配置 OPENAI_API_KEY，测试设计已停止" });
+      return;
+    }
+    const result = await testDesignService.generate({ baselineId: parsed.data.baselineId, apiKey });
+    response.status(result.reused ? 200 : 201).json(result);
+  } catch (error) {
+    response.status(422).json({ error: error instanceof Error ? error.message : "测试设计生成失败" });
+  }
+});
+
+app.get("/api/test-designs/:id", async (request, response) => {
+  try {
+    const design = await testDesignStore.getDesign(request.params.id);
+    const [reviews, approved] = await Promise.all([
+      testDesignStore.listReviews(design.id),
+      testDesignStore.getApprovedVersion(design.id),
+    ]);
+    response.json({ ...design, reviews, approvedVersion: approved });
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "测试设计不存在" });
+  }
+});
+
+app.put("/api/test-designs/:id/reviews/:testCaseId", async (request, response) => {
+  try {
+    const parsed = TestCaseReviewInputSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: "请填写评审人并选择处理结果" });
+      return;
+    }
+    response.json(await testDesignStore.recordReview(request.params.id, request.params.testCaseId, parsed.data));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "TestCase 评审失败" });
+  }
+});
+
+app.post("/api/test-designs/:id/approve", async (request, response) => {
+  try {
+    const parsed = TestCaseApprovalSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: "请填写批准人" });
+      return;
+    }
+    response.status(201).json(await testDesignStore.approve(request.params.id, parsed.data.approvedBy));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "无法批准 TestCase 版本" });
   }
 });
 

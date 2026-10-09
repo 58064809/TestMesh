@@ -83,6 +83,15 @@
 - `evaluation/ai-after-sales-prd-rubric.json` 是 `pending-human-approval` 的候选 rubric；人工确认前不能称为金标准或用于正式准入。
 - AQ01 复现实验使用 `npm run aq01:spike -- <PRD绝对路径>`。解析缓存只按 SHA-256 保存于忽略版本控制的 `data/aq01-parse-cache`，不是第二套 Dataset 存储。
 
+## 当前测试设计规则（2026-10-09）
+
+- TD01 已获用户批准并进入实施。唯一输入是不可覆盖的 Requirement Baseline；不得从 candidate/reviewing 分析直接生成 TestCase。
+- 唯一 Agent Harness 继续使用 Deep Agents `createDeepAgent`；TestCase 统一输出简体中文 Cucumber/Gherkin，并由 `@cucumber/gherkin` 官方 Parser 校验。
+- 风险、测试点和 TestCase 必须回链接受的 Baseline 条目与真实 source ID。所有应覆盖 Baseline ID 是动态 Structured Output Schema 的固定键，不允许静默遗漏。
+- fast-check、NIST ACTS、GraphWalker 仅在对应输入域、参数约束或状态图完整时适用；不适用必须保存原因，不得让 AI 猜测缺失模型。
+- TestMesh 只保存业务 ID、结构化设计、评审事件和不可覆盖 Approved TestCase 版本；不实现 Gherkin Parser、组合算法、路径算法或第二套 Agent Loop。
+- 当前代码闭环与自动检查已通过；三次真实调用均未保存候选：前两次分别被 Gate 拦截 `BR-002`、`STATE-003`，动态 Schema 修复后一次调用遇到 `Connection error`。未经新的页面点击或用户指示不得后台自动重试。
+
 ## P01 实现约束
 
 - 工作台：Refine + Ant Design，参考 Ant Design Pro 的企业后台布局与视觉。

@@ -111,6 +111,83 @@ export interface RequirementBaselineRecord {
   approvedAt: string;
 }
 
+export type TestTechnique = "scenario" | "equivalence_partition" | "boundary_value" | "decision_table" | "state_transition" | "combinatorial" | "property_based";
+
+export interface TestRisk {
+  id: string;
+  title: string;
+  description: string;
+  likelihood: "low" | "medium" | "high";
+  impact: "low" | "medium" | "high";
+  rationale: string;
+  trace_refs: string[];
+  source_refs: string[];
+}
+
+export interface TestPoint {
+  id: string;
+  title: string;
+  objective: string;
+  technique: TestTechnique;
+  technique_rationale: string;
+  trace_refs: string[];
+  risk_refs: string[];
+  source_refs: string[];
+}
+
+export interface DesignedTestCase {
+  id: string;
+  title: string;
+  objective: string;
+  priority: "P0" | "P1" | "P2" | "P3";
+  preconditions: string[];
+  gherkin: string;
+  trace_refs: string[];
+  risk_refs: string[];
+  test_point_refs: string[];
+  source_refs: string[];
+}
+
+export interface TestDesignDocument {
+  objective: string;
+  risks: TestRisk[];
+  test_points: TestPoint[];
+  test_cases: DesignedTestCase[];
+  tool_applications: Array<{
+    tool: "cucumber_gherkin" | "fast_check" | "nist_acts" | "graphwalker";
+    status: "applied" | "not_applicable";
+    reason: string;
+  }>;
+  coverage_exclusions: Array<{ trace_ref: string; reason: string }>;
+  coverage: Record<string, { test_point_refs: string[]; test_case_refs: string[]; exclusion_reason: string }>;
+}
+
+export interface TestCaseReviewRecord {
+  id: string;
+  designId: string;
+  testCaseId: string;
+  status: "accepted" | "rejected";
+  reviewer: string;
+  reason: string;
+  createdAt: string;
+}
+
+export interface TestDesignRecord {
+  id: string;
+  baselineId: string;
+  status: "draft" | "approved";
+  model: string;
+  document: TestDesignDocument;
+  traceProvider: string;
+  traceProjectName: string;
+  traceId: string;
+  traceUrl?: string;
+  createdAt: string;
+  reviewSummary?: { total: number; pending: number; accepted: number; rejected: number };
+  reviews?: TestCaseReviewRecord[];
+  approvedVersion?: unknown;
+}
+
 export interface AnalysisResponse {
   analysisId: string;
   result: RequirementAnalysis;
