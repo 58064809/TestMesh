@@ -1,5 +1,5 @@
 import { DownloadOutlined, FileDoneOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Empty, Flex, Input, Modal, Segmented, Select, Space, Tag, Tooltip, Typography, Upload, type UploadFile } from "antd";
+import { Alert, App as AntdApp, Button, Card, Empty, Flex, Input, Modal, Segmented, Select, Space, Tag, Tooltip, Typography, Upload, type UploadFile } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { mergedSourceEntries, renderReviewMarkdown, reviewEntries, unresolvedDecisionEntries, visibleReviewEntries, type ReviewEntry, type ReviewView } from "./review-report";
 import { issueTypeLabels, locatorLabels } from "./analysis-report";
@@ -44,9 +44,10 @@ function fieldHint(message: string, error?: string) {
 type StoredSourceFile = { sourceFileId: string; mimeType: string; provenance: string };
 
 export default function RequirementReviewView({ response, sourceFiles, onReviewSaved }: { response: AnalysisResponse; sourceFiles: StoredSourceFile[]; onReviewSaved?: () => Promise<void> | void }) {
+  const { message: toast } = AntdApp.useApp();
   const [reviews, setReviews] = useState<AnalysisReviewRecord[]>([]);
   const [baselines, setBaselines] = useState<RequirementBaselineRecord[]>([]);
-  const [view, setView] = useState<ReviewView>("issues");
+  const [view, setView] = useState<ReviewView>("pending");
   const [selected, setSelected] = useState<ReviewEntry>();
   const [preview, setPreview] = useState<{ sourceId: string; page: number }>();
   const [draft, setDraft] = useState<ReviewDraft>(emptyDraft);
@@ -153,6 +154,8 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
       ]);
       setSelected(undefined);
       setPreview(undefined);
+      setView("pending");
+      toast.success(`${savedReview.itemId} 已保存，评审列表和状态标签已刷新`);
       const [, refreshedReviews] = await Promise.all([
         onReviewSaved?.(),
         readJson<AnalysisReviewRecord[]>(await fetch(
@@ -250,7 +253,7 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
         </Space>
       </Flex>
       <Segmented style={{ marginTop: 14, marginBottom: 12 }} value={view} onChange={(value) => setView(value as ReviewView)} options={[
-        { label: `只看问题 ${issues.length}`, value: "issues" }, { label: "待评审", value: "pending" }, { label: "已接受", value: "accepted" }, { label: "全部记录", value: "all" },
+        { label: `待评审 ${pending.length}`, value: "pending" }, { label: `只看问题 ${issues.length}`, value: "issues" }, { label: `已接受 ${accepted.length}`, value: "accepted" }, { label: `全部记录 ${entries.length}`, value: "all" },
       ]} />
       {view === "issues" && <Space size={[8, 6]} wrap style={{ marginBottom: 12 }}>
         <Tag color="orange">缺失 {issueCounts.missing}</Tag>
