@@ -143,13 +143,24 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
       const payload = selected.section === "open_questions" && draft.status === "accepted" && !draft.prdRevision
         ? { ...draft, prdRevision: PENDING_PRD_REVISION }
         : draft;
-      await readJson<AnalysisReviewRecord>(await fetch(
+      const savedReview = await readJson<AnalysisReviewRecord>(await fetch(
         `/api/analyses/${encodeURIComponent(response.analysisId)}/reviews/${encodeURIComponent(selected.item.id)}`,
         { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
       ));
-      setReviews(await readJson<AnalysisReviewRecord[]>(await fetch(`/api/analyses/${encodeURIComponent(response.analysisId)}/reviews`)));
-      await onReviewSaved?.();
+      setReviews((current) => [
+        ...current.filter((review) => review.itemId !== savedReview.itemId),
+        savedReview,
+      ]);
       setSelected(undefined);
+      setPreview(undefined);
+      const [, refreshedReviews] = await Promise.all([
+        onReviewSaved?.(),
+        readJson<AnalysisReviewRecord[]>(await fetch(
+          `/api/analyses/${encodeURIComponent(response.analysisId)}/reviews`,
+          { cache: "no-store" },
+        )),
+      ]);
+      setReviews(refreshedReviews);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "评审保存失败");
     } finally { setSaving(false); }
@@ -172,8 +183,11 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
       data.append("approvedBy", baselineApprover.trim());
       if (previousBaselineId) data.append("previousBaselineId", previousBaselineId);
       await readJson<RequirementBaselineRecord>(await fetch(`/api/analyses/${encodeURIComponent(response.analysisId)}/baselines`, { method: "POST", body: data }));
-      setBaselines(await readJson<RequirementBaselineRecord[]>(await fetch("/api/requirement-baselines")));
-      await onReviewSaved?.();
+      const [, refreshedBaselines] = await Promise.all([
+        onReviewSaved?.(),
+        readJson<RequirementBaselineRecord[]>(await fetch("/api/requirement-baselines", { cache: "no-store" })),
+      ]);
+      setBaselines(refreshedBaselines);
       setBaselineOpen(false);
       setReviewedPrd([]);
       setBaselineRevision("");

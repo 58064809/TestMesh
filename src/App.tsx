@@ -162,13 +162,13 @@ function Workbench() {
   const lastResponse = [...messages].reverse().find((item) => item.role === "assistant");
 
   const refreshSavedAnalyses = useCallback(async () => {
-    const response = await fetch("/api/analyses");
+    const response = await fetch("/api/analyses", { cache: "no-store" });
     if (!response.ok) throw new Error(`刷新已保存报告失败（HTTP ${response.status}）`);
     setSavedAnalyses((await response.json()) as SavedAnalysis[]);
   }, []);
 
   useEffect(() => {
-    void fetch("/api/analyses")
+    void fetch("/api/analyses", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error(`读取已保存报告失败（HTTP ${response.status}）`);
         setSavedAnalyses((await response.json()) as SavedAnalysis[]);
