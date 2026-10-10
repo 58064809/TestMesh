@@ -137,10 +137,16 @@ export interface TestPoint {
 
 export interface DesignedTestCase {
   id: string;
+  module?: string;
   title: string;
   objective: string;
+  primary_trace_ref?: string;
+  scenario_type?: "normal" | "exception" | "boundary" | "rule_combination" | "state_transition" | "cross_business";
+  technique?: TestTechnique;
   priority: "P0" | "P1" | "P2" | "P3";
   preconditions: string[];
+  test_data?: string[];
+  steps?: Array<{ order: number; action: string; expected: string }>;
   gherkin: string;
   trace_refs: string[];
   risk_refs: string[];

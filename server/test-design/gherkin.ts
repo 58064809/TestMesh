@@ -16,7 +16,7 @@ export function validateChineseGherkin(source: string): void {
     const scenarioCount = feature.children.filter((child) => child.scenario).length
       + feature.children.flatMap((child) => child.rule?.children ?? [])
         .filter((child) => child.scenario).length;
-    if (scenarioCount < 1) throw new Error("至少需要一个场景或场景大纲");
+    if (scenarioCount !== 1) throw new Error(`每条 TestCase 必须且只能包含一个场景或场景大纲，当前为 ${scenarioCount} 个`);
   } catch (error) {
     throw new Error(`Cucumber Gherkin 语法校验失败：${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }

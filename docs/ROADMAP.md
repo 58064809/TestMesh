@@ -65,6 +65,7 @@ DI01 调研 Docling、PaddleOCR、MinerU、Unstructured 和 Apache Tika 后，�
 | BR01 | Apache KIE DMN 业务规则探索 | 已撤回 | 仅保留调研记录，不是产品路径 |
 | AQ01 | 以当前需求分析 Agent 验证 Dataset、Trace、Eval、Experiment 与版本比较闭环 | 技术尖峰及评测治理入口已通过（候选 rubric 待人工批准） | 完成剩余问题评审并批准 candidate-v1，再扩充数据集和定义正式准入阈值 |
 | TD01 | 基于 Baseline 的测试设计、风险、测试点和 TestCase | 进行中（已完成选型，实施 Baseline → Gherkin TestCase 闭环） | TD01 验收通过后进入 AT01 |
+| KR01 | 通用企业知识检索：Docling 分块、Qdrant 检索与证据回链 | 进行中（用户批准插入 TD01；已完成边界与候选选型，待实现和中文检索验收） | 作为 TD01 的知识补充层，不形成平行业务入口 |
 | AT01 | Approved TestCase 到 API 自动化与真实 Runner 证据 | 已规划 | AT01 验收通过后进入 AT02 |
 | AT02 | Approved TestCase 到 UI 自动化与 Playwright 证据 | 已规划 | AT02 验收通过后进入 FT01 |
 | FT01 | 测试失败后的辅助缺陷定位调研与最小闭环 | 已规划 | 调研结果另行评审 |

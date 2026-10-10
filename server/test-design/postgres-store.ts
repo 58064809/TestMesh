@@ -75,6 +75,42 @@ export class TestDesignPostgresStore {
     return this.parseDesign(result.rows[0]);
   }
 
+  async replaceDraft(id: string, input: {
+    model: string;
+    document: TestDesign;
+    trace?: { provider: string; projectName: string; traceId: string };
+  }): Promise<TestDesignRecord> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const current = await client.query(
+        `SELECT * FROM ${this.schema}.test_designs WHERE id = $1 FOR UPDATE`,
+        [id],
+      );
+      if (current.rowCount !== 1) throw new Error(`测试设计 ${id} 不存在`);
+      if (current.rows[0].status !== "draft") throw new Error("已批准的 TestCase 版本不可重新生成");
+      const reviews = await client.query(
+        `SELECT 1 FROM ${this.schema}.test_case_review_events WHERE design_id = $1 LIMIT 1`,
+        [id],
+      );
+      if (reviews.rowCount) throw new Error("已有人工评审的草稿不可重新生成，请先建立新的需求基线");
+      const updated = await client.query(
+        `UPDATE ${this.schema}.test_designs
+         SET model = $2, document_json = $3, trace_provider = $4,
+             trace_project_name = $5, trace_id = $6, created_at = NOW()
+         WHERE id = $1 RETURNING *`,
+        [id, input.model, input.document, input.trace?.provider ?? "", input.trace?.projectName ?? "", input.trace?.traceId ?? ""],
+      );
+      await client.query("COMMIT");
+      return this.parseDesign(updated.rows[0]);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async listDesigns(): Promise<TestDesignRecord[]> {
     const result = await this.pool.query(`SELECT * FROM ${this.schema}.test_designs ORDER BY created_at DESC`);
     return result.rows.map((row) => this.parseDesign(row));

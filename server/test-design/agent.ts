@@ -44,6 +44,7 @@ async function runTestDesignAgentImpl(input: {
   taskId?: string;
   baselineId: string;
   baseline: BaselineSnapshot;
+  prdMarkdown: string;
   model: BaseChatModel;
   requestedBy?: string;
 }): Promise<TestDesignAgentResult> {
@@ -81,7 +82,7 @@ async function runTestDesignAgentImpl(input: {
   });
   const response = await agent.invoke({
     messages: [new HumanMessage({
-      content: `请基于以下不可覆盖的需求基线设计测试。基线 ID：${input.baselineId}\n\n必须逐项覆盖的基线 ID（每项都必须同时出现在至少一个 TestPoint 和 TestCase 中，或进入 coverage_exclusions 并说明不可测试理由）：\n${requiredCoverage.join("、")}\n\n提交结构化结果前，请逐项核对上述清单，不得遗漏。\n\n基线 JSON：\n${JSON.stringify(input.baseline)}`,
+      content: `请基于“获批原始 PRD 全文 + 不可覆盖需求基线”完成专业测试分析与用例设计。基线 ID：${input.baselineId}\n\n必须逐项覆盖的基线 ID（每项都必须同时出现在至少一个 TestPoint 和 TestCase 中，或进入 coverage_exclusions 并说明不可测试理由；每个未排除 ID 还必须至少成为一条原子 TestCase 的 primary_trace_ref）：\n${requiredCoverage.join("、")}\n\n先从 PRD 全文识别业务模块、端到端流程、角色、规则、状态、数据、外部依赖与交互，再以批准基线限定可采信结论。PRD 与基线冲突时只能使用基线中的人工决策，不得恢复被驳回内容。提交结构化结果前逐项核对覆盖项、技法覆盖项、测试数据、步骤与预期结果。\n\n获批原始 PRD（Docling Markdown）：\n${input.prdMarkdown}\n\n批准基线 JSON：\n${JSON.stringify(input.baseline)}`,
     })],
   }, { configurable: { thread_id: `${taskId}:test-design` }, metadata: { requested_by: input.requestedBy ?? "local-user" } }).catch((error: unknown) => {
     let cause = error;
@@ -109,6 +110,7 @@ export const runTestDesignAgent = traceAgent(runTestDesignAgentImpl, {
     "testmesh.task.id": input.taskId ?? "generated",
     "testmesh.baseline.id": input.baselineId,
     "testmesh.baseline.accepted_count": input.baseline.accepted.length,
+    "testmesh.prd.markdown_chars": input.prdMarkdown.length,
   }),
   processOutput: (output) => ({
     "testmesh.task.id": output.taskId,

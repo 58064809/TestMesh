@@ -22,6 +22,15 @@ const toolLabels = {
   graphwalker: "GraphWalker",
 };
 
+const scenarioTypeLabels = {
+  normal: "正常流程",
+  exception: "异常分支",
+  boundary: "边界条件",
+  rule_combination: "规则组合",
+  state_transition: "状态迁移",
+  cross_business: "跨业务交互",
+};
+
 async function readJson<T>(response: Response): Promise<T> {
   const payload = await response.json() as T & { error?: string };
   if (!response.ok) throw new Error(payload.error ?? `请求失败（HTTP ${response.status}）`);
@@ -88,7 +97,7 @@ export default function TestDesign() {
     rejected: current.document.test_cases.filter((item) => reviews.get(item.id)?.status === "rejected").length,
   } : undefined;
 
-  async function generate() {
+  async function generate(regenerate = false) {
     if (!baselineId) return;
     setLoading(true);
     setError(undefined);
@@ -96,16 +105,36 @@ export default function TestDesign() {
       const result = await readJson<{ record: TestDesignRecord; reused: boolean }>(await fetch("/api/test-designs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baselineId }),
+        body: JSON.stringify({ baselineId, regenerate }),
       }));
       await refresh();
       await openDesign(result.record.id);
-      message.success(result.reused ? "已打开该基线现有的测试设计" : "测试设计已生成并通过 Gherkin 与追溯校验");
+      message.success(result.reused ? "已打开该基线现有的测试设计" : regenerate ? "测试设计草稿已重新生成并通过原子用例门禁" : "测试设计已生成并通过 Gherkin 与追溯校验");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "测试设计生成失败");
     } finally {
       setLoading(false);
     }
+  }
+
+  function requestGeneration() {
+    const existing = designs.find((item) => item.baselineId === baselineId);
+    if (!existing) {
+      void generate(false);
+      return;
+    }
+    if (existing.status === "approved") {
+      void openDesign(existing.id);
+      message.info("该基线已有批准版本，不可覆盖");
+      return;
+    }
+    Modal.confirm({
+      title: "重新生成当前草稿？",
+      content: "新候选通过全部质量门禁后才会原子替换当前未评审草稿；生成失败不会删除现有数据。已有人工评审的草稿不可替换。",
+      okText: "重新生成",
+      cancelText: "取消",
+      onOk: () => generate(true),
+    });
   }
 
   function startReview(testCase: DesignedTestCase) {
@@ -173,7 +202,7 @@ export default function TestDesign() {
           onChange={setBaselineId}
           options={baselines.map((item) => ({ value: item.id, label: `Baseline v${item.version} · ${item.prdRevision} · ${item.prdFilename}` }))}
         />
-        <Button type="primary" icon={<ExperimentOutlined />} loading={loading} disabled={!baselineId} onClick={() => void generate()}>生成测试设计</Button>
+        <Button type="primary" icon={<ExperimentOutlined />} loading={loading} disabled={!baselineId} onClick={requestGeneration}>{designs.some((item) => item.baselineId === baselineId && item.status === "draft") ? "重新生成草稿" : "生成测试设计"}</Button>
       </Space>
     </Flex>
 
@@ -220,7 +249,12 @@ export default function TestDesign() {
         return { key: testCase.id, label: <Flex justify="space-between" gap={8}><Space wrap><Text strong>{testCase.id} · {testCase.title}</Text><Tag color={testCase.priority === "P0" ? "red" : testCase.priority === "P1" ? "orange" : "blue"}>{testCase.priority}</Tag><Tag color={review?.status === "accepted" ? "green" : review?.status === "rejected" ? "red" : "gold"}>{review?.status === "accepted" ? "已接受" : review?.status === "rejected" ? "已驳回" : "待评审"}</Tag></Space>{current.status === "draft" && <Button size="small" onClick={(event) => { event.stopPropagation(); startReview(testCase); }}>评审</Button>}</Flex>, children: <Space direction="vertical" size={10} style={{ width: "100%" }}>
           <Text>{testCase.objective}</Text>
           <Descriptions size="small" column={1} items={[
+            { key: "module", label: "业务模块", children: testCase.module ?? "旧草稿未提供" },
+            { key: "scenario", label: "场景类型 / 技法", children: testCase.scenario_type && testCase.technique ? `${scenarioTypeLabels[testCase.scenario_type]} / ${techniqueLabels[testCase.technique]}` : "旧草稿未提供" },
             { key: "pre", label: "前置条件", children: testCase.preconditions.join("；") || "无" },
+            { key: "primary", label: "主要验证对象", children: testCase.primary_trace_ref ?? "旧草稿未提供" },
+            { key: "data", label: "测试数据", children: testCase.test_data?.join("；") || "无" },
+            { key: "steps", label: "步骤与预期", children: testCase.steps?.length ? <ol style={{ margin: 0, paddingLeft: 20 }}>{testCase.steps.map((step) => <li key={step.order}><Text>{step.action}</Text><br /><Text type="secondary">预期：{step.expected}</Text></li>)}</ol> : "旧草稿未提供" },
             { key: "trace", label: "基线追溯", children: <Space wrap>{testCase.trace_refs.map((id) => <Tag key={id}>{id}</Tag>)}</Space> },
             { key: "point", label: "测试点", children: testCase.test_point_refs.join("、") },
             { key: "risk", label: "风险", children: testCase.risk_refs.join("、") || "无" },

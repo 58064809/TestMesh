@@ -10,6 +10,16 @@ export const TestTechniqueSchema = z.enum([
   "property_based",
 ]);
 
+export const TestScenarioTypeSchema = z.enum([
+  "normal", "exception", "boundary", "rule_combination", "state_transition", "cross_business",
+]);
+
+export const TestStepSchema = z.object({
+  order: z.number().int().positive(),
+  action: z.string().min(1),
+  expected: z.string().min(1),
+}).strict();
+
 export const TestRiskSchema = z.object({
   id: z.string().regex(/^RISK-\d{3}$/),
   title: z.string().min(1),
@@ -34,10 +44,16 @@ export const TestPointSchema = z.object({
 
 export const TestCaseSchema = z.object({
   id: z.string().regex(/^TC-\d{3}$/),
+  module: z.string().min(1).optional(),
   title: z.string().min(1),
   objective: z.string().min(1),
+  primary_trace_ref: z.string().min(1).optional(),
+  scenario_type: TestScenarioTypeSchema.optional(),
+  technique: TestTechniqueSchema.optional(),
   priority: z.enum(["P0", "P1", "P2", "P3"]),
   preconditions: z.array(z.string().min(1)),
+  test_data: z.array(z.string().min(1)).optional(),
+  steps: z.array(TestStepSchema).min(1).optional(),
   gherkin: z.string().min(1),
   trace_refs: z.array(z.string().min(1)).min(1),
   risk_refs: z.array(z.string().min(1)),
@@ -74,7 +90,18 @@ export const TestDesignSchema = z.object({
 
 export function createModelTestDesignSchema(requiredCoverage: readonly string[]) {
   const coverageShape = Object.fromEntries(requiredCoverage.map((id) => [id, CoverageEntrySchema]));
-  return TestDesignSchema.extend({ coverage: z.object(coverageShape).strict() }).strict();
+  const modelTestCaseSchema = TestCaseSchema.extend({
+    module: z.string().min(1),
+    primary_trace_ref: z.string().min(1),
+    scenario_type: TestScenarioTypeSchema,
+    technique: TestTechniqueSchema,
+    test_data: z.array(z.string().min(1)),
+    steps: z.array(TestStepSchema).min(1),
+  }).strict();
+  return TestDesignSchema.extend({
+    test_cases: z.array(modelTestCaseSchema).min(1),
+    coverage: z.object(coverageShape).strict(),
+  }).strict();
 }
 
 export type TestDesign = z.infer<typeof TestDesignSchema>;

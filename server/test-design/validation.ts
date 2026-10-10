@@ -37,6 +37,17 @@ export function validateTestDesign(design: TestDesign, baseline: BaselineSnapsho
     assertRefs(point.source_refs, sourceIds, `${point.id}.source_refs`);
   }
   for (const testCase of design.test_cases) {
+    if (!testCase.primary_trace_ref) throw new Error(`${testCase.id} 缺少主要验证对象 primary_trace_ref`);
+    if (!testCase.module || !testCase.scenario_type || !testCase.technique || !testCase.steps?.length || !testCase.test_data) {
+      throw new Error(`${testCase.id} 缺少模块、场景类型、测试技法、测试数据或结构化步骤`);
+    }
+    const stepOrders = testCase.steps.map((step) => step.order);
+    if (new Set(stepOrders).size !== stepOrders.length || stepOrders.some((order, index) => order !== index + 1)) {
+      throw new Error(`${testCase.id}.steps 必须从 1 开始连续编号`);
+    }
+    if (!testCase.trace_refs.includes(testCase.primary_trace_ref)) {
+      throw new Error(`${testCase.id}.primary_trace_ref 必须同时存在于该用例的 trace_refs`);
+    }
     assertRefs(testCase.trace_refs, traceIds, `${testCase.id}.trace_refs`);
     assertRefs(testCase.risk_refs, riskIds, `${testCase.id}.risk_refs`);
     assertRefs(testCase.test_point_refs, pointIds, `${testCase.id}.test_point_refs`);
@@ -87,5 +98,10 @@ export function validateTestDesign(design: TestDesign, baseline: BaselineSnapsho
   const uncovered = [...new Set([...missingPoints, ...missingCases])];
   if (uncovered.length) {
     throw new Error(`覆盖 Gate 未通过：缺少测试点 [${missingPoints.join("、") || "无"}]；缺少 TestCase [${missingCases.join("、") || "无"}]。这些条目也没有不适用理由。`);
+  }
+  const primaryCoverage = new Set(design.test_cases.map((testCase) => testCase.primary_trace_ref).filter(Boolean));
+  const missingPrimaryCases = required.filter((id) => !primaryCoverage.has(id) && !exclusions.has(id));
+  if (missingPrimaryCases.length) {
+    throw new Error(`原子用例 Gate 未通过：以下基线项没有作为任何 TestCase 的主要验证对象：[${missingPrimaryCases.join("、")}]`);
   }
 }

@@ -10,6 +10,7 @@ export function selectTestDesignSkills(baseline: BaselineSnapshot): TestDesignSk
   const sections = new Set(baseline.accepted.map((item) => item.section));
   const text = baseline.accepted.map((item) => item.item.description).join("\n");
   return [
+    { skill_id: "test-analysis-planning", applicable: true, reason: "先从完整 PRD 与批准基线规划业务模型、测试条件和覆盖项" },
     { skill_id: "scenario-design", applicable: true, reason: "所有 TestCase 均使用 Cucumber/Gherkin 表达业务场景" },
     {
       skill_id: "equivalence-boundary",
@@ -25,6 +26,11 @@ export function selectTestDesignSkills(baseline: BaselineSnapshot): TestDesignSk
       skill_id: "state-transition",
       applicable: sections.has("states") || sections.has("flows"),
       reason: "基线包含状态或业务流程，需要检查有效与无效迁移",
+    },
+    {
+      skill_id: "failure-cross-system",
+      applicable: sections.has("exceptions") || sections.has("flows") || sections.has("constraints"),
+      reason: "基线包含异常、流程或依赖约束，需要分析失败模式、跨角色和跨系统一致性",
     },
   ];
 }

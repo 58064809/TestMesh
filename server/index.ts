@@ -47,8 +47,8 @@ const requirementAnalysisStore = analysisResources.requirementAnalysisStore;
 const aiQualityStore = analysisResources.aiQualityStore;
 const testDesignStore = analysisResources.testDesignStore;
 const requirementAnalysisService = new RequirementAnalysisService(analysisResources);
-const testDesignService = new TestDesignService(requirementAnalysisStore, testDesignStore);
 const documentParser = createDoclingClientFromEnvironment();
+const testDesignService = new TestDesignService(requirementAnalysisStore, testDesignStore, documentParser);
 
 app.use(express.json({ limit: "256kb" }));
 
@@ -109,6 +109,7 @@ const AiQualityApprovalSchema = z.object({
 
 const TestDesignRequestSchema = z.object({
   baselineId: z.string().trim().min(1),
+  regenerate: z.boolean().default(false),
 }).strict();
 
 const TestCaseReviewInputSchema = z.object({
@@ -466,7 +467,7 @@ app.post("/api/test-designs", async (request, response) => {
       response.status(503).json({ error: "服务端未配置 OPENAI_API_KEY，测试设计已停止" });
       return;
     }
-    const result = await testDesignService.generate({ baselineId: parsed.data.baselineId, apiKey });
+    const result = await testDesignService.generate({ baselineId: parsed.data.baselineId, regenerate: parsed.data.regenerate, apiKey });
     response.status(result.reused ? 200 : 201).json(result);
   } catch (error) {
     response.status(422).json({ error: error instanceof Error ? error.message : "测试设计生成失败" });
