@@ -140,7 +140,7 @@ export function createTestCaseBatchSchema(obligations: readonly { conditionId: s
         id: z.literal(caseId),
         primary_trace_ref: z.literal(traceRef),
         primary_test_condition_ref: z.literal(conditionId),
-        test_condition_refs: z.tuple([z.literal(conditionId)]),
+        test_condition_refs: z.array(z.literal(conditionId)).length(1),
       }).strict(),
     ]))).strict(),
   }).strict();
