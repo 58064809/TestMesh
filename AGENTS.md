@@ -90,7 +90,7 @@
 - 风险、测试点和 TestCase 必须回链接受的 Baseline 条目与真实 source ID。所有应覆盖 Baseline ID 是动态 Structured Output Schema 的固定键，不允许静默遗漏。
 - fast-check、NIST ACTS、GraphWalker 仅在对应输入域、参数约束或状态图完整时适用；不适用必须保存原因，不得让 AI 猜测缺失模型。
 - TestMesh 只保存业务 ID、结构化设计、评审事件和不可覆盖 Approved TestCase 版本；不实现 Gherkin Parser、组合算法、路径算法或第二套 Agent Loop。
-- 当前代码闭环与自动检查已通过；三次真实调用均未保存候选：前两次分别被 Gate 拦截 `BR-002`、`STATE-003`，动态 Schema 修复后一次调用遇到 `Connection error`。未经新的页面点击或用户指示不得后台自动重试。
+- 当前代码闭环与自动检查已通过。真实调用曾分别被 Gate 拦截覆盖遗漏、非法中文 Gherkin 和覆盖矩阵不一致，均未保存脏候选；2026-10-10 在用户明确指示继续后成功保存首个真实草稿 `36b0c1aa-0812-4a03-b674-ab62a96b2d6f`，包含 5 项风险、8 个测试点、8 条 TestCase，36 个应覆盖 Baseline 条目全部通过 Gate，等待人工评审。后续不得后台自动重试或自动批准。
 
 ## P01 实现约束
 

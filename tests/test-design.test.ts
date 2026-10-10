@@ -64,6 +64,17 @@ describe("TD01 mature-tool test design gate", () => {
     expect(() => validateChineseGherkin("功能: 缺少语言声明")).toThrow("# language: zh-CN");
   });
 
+  it("accepts the official zh-CN examples keyword and rejects the common invalid synonym", () => {
+    const outline = "# language: zh-CN\n功能: 登录\n  场景大纲: 密码校验\n    假如 用户名为 <用户名>\n    当 密码为 <密码>\n    那么 登录结果为 <结果>\n    例子:\n      | 用户名 | 密码 | 结果 |\n      | 张三 | 正确 | 成功 |";
+    expect(() => validateChineseGherkin(outline)).not.toThrow();
+    expect(() => validateChineseGherkin(outline.replace("例子:", "示例:"))).toThrow("Cucumber Gherkin 语法校验失败");
+  });
+
+  it("rejects free-form prose appended after a scenario", () => {
+    const source = "# language: zh-CN\n功能: 登录\n  场景: 登录成功\n    假如 用户已注册\n    当 用户提交正确密码\n    那么 登录成功\n补充说明应写入结构化字段";
+    expect(() => validateChineseGherkin(source)).toThrow("Cucumber Gherkin 语法校验失败");
+  });
+
   it("rejects a fabricated source reference", () => {
     const input = candidate();
     input.test_cases[0].source_refs = ["SRC-404"];
@@ -73,6 +84,12 @@ describe("TD01 mature-tool test design gate", () => {
   it("rejects silent baseline coverage gaps", () => {
     const input = candidate();
     input.test_cases[0].trace_refs = ["REQ-001"];
+    expect(() => validateTestDesign(input, baseline)).toThrow("STATE-001");
+  });
+
+  it("rejects coverage matrix references that do not trace the baseline item", () => {
+    const input = candidate();
+    input.test_points[0].trace_refs = ["REQ-001"];
     expect(() => validateTestDesign(input, baseline)).toThrow("STATE-001");
   });
 
