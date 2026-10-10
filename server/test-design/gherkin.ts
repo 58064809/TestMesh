@@ -2,7 +2,13 @@ import { AstBuilder, GherkinClassicTokenMatcher, Parser } from "@cucumber/gherki
 import { IdGenerator } from "@cucumber/messages";
 
 export function normalizeChineseGherkin(source: string): string {
-  return source.replace(/^(\s*(?:功能|规则|背景|场景|场景大纲|例子))：/gm, "$1:");
+  let normalized = source
+    .replace(/^(\s*)功能大纲[：:]/gm, "$1功能:")
+    .replace(/^(\s*(?:功能|规则|背景|场景|场景大纲|例子))：/gm, "$1:");
+  if (/^\s*例子:/m.test(normalized) && !/^\s*场景大纲:/m.test(normalized)) {
+    normalized = normalized.replace(/^(\s*)场景:/m, "$1场景大纲:");
+  }
+  return normalized;
 }
 
 export function validateChineseGherkin(source: string): void {

@@ -120,6 +120,15 @@ describe("TD01 mature-tool test design gate", () => {
     expect(() => validateChineseGherkin(normalized)).not.toThrow();
   });
 
+  it("canonicalizes common outline heading variants without rewriting steps or examples", () => {
+    const source = "# language: zh-CN\n功能大纲：订单状态\n场景：状态为 <状态>\n假如 订单存在\n当 查询订单\n那么 展示 <状态>\n例子：\n| 状态 |\n| 已完成 |";
+    const normalized = normalizeChineseGherkin(source);
+    expect(normalized).toContain("功能:订单状态");
+    expect(normalized).toContain("场景大纲:状态为 <状态>");
+    expect(normalized).toContain("例子:");
+    expect(() => validateChineseGherkin(normalized)).not.toThrow();
+  });
+
   it("rejects free-form prose appended after a scenario", () => {
     const source = "# language: zh-CN\n功能: 登录\n  场景: 登录成功\n    假如 用户已注册\n    当 用户提交正确密码\n    那么 登录成功\n补充说明应写入结构化字段";
     expect(() => validateChineseGherkin(source)).toThrow("Cucumber Gherkin 语法校验失败");
