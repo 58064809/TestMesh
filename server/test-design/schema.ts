@@ -34,6 +34,7 @@ export const TestConditionSchema = z.object({
   technique: TestTechniqueSchema,
   rationale: z.string().min(1),
   source_refs: z.array(z.string().min(1)).min(1),
+  knowledge_refs: z.array(z.string().min(1)).default([]),
 }).strict();
 
 export const TestRiskSchema = z.object({
@@ -45,6 +46,7 @@ export const TestRiskSchema = z.object({
   rationale: z.string().min(1),
   trace_refs: z.array(z.string().min(1)).min(1),
   source_refs: z.array(z.string().min(1)).min(1),
+  knowledge_refs: z.array(z.string().min(1)).default([]),
 }).strict();
 
 export const TestPointSchema = z.object({
@@ -56,6 +58,7 @@ export const TestPointSchema = z.object({
   trace_refs: z.array(z.string().min(1)).min(1),
   risk_refs: z.array(z.string().min(1)),
   source_refs: z.array(z.string().min(1)).min(1),
+  knowledge_refs: z.array(z.string().min(1)).default([]),
 }).strict();
 
 export const TestCaseSchema = z.object({
@@ -77,6 +80,7 @@ export const TestCaseSchema = z.object({
   risk_refs: z.array(z.string().min(1)),
   test_point_refs: z.array(z.string().min(1)).min(1),
   source_refs: z.array(z.string().min(1)).min(1),
+  knowledge_refs: z.array(z.string().min(1)).default([]),
 }).strict();
 
 export const ToolApplicationSchema = z.object({

@@ -16,6 +16,8 @@
     "start:stack": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-stack.ps1",
     "start:docling": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-docling.ps1",
     "start:phoenix": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-phoenix.ps1",
+    "start:qdrant": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-qdrant.ps1",
+    "setup:qdrant": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-qdrant.ps1",
     "aq01:spike": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-aq01-spike.ps1",
     "migrate:deepagents": "tsx scripts/migrate-deepagents.ts"
   },
@@ -36,6 +38,7 @@
     "@langchain/langgraph-checkpoint-postgres": "^1.0.5",
     "@langchain/openai": "^1.5.13",
     "@opentelemetry/api": "^1.9.0",
+    "@qdrant/js-client-rest": "^1.19.0",
     "@refinedev/core": "^5.0.12",
     "antd": "^5.29.3",
     "better-sqlite3": "^12.10.0",

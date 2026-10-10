@@ -35,6 +35,8 @@ import { z } from "zod";
 import { initializePhoenixTracing, resolvePhoenixTraceUrl } from "./observability/phoenix.js";
 import { assessProfileReadiness, type AiQualityProfile } from "./ai-quality/profile.js";
 import { TestDesignService } from "./test-design/service.js";
+import { KnowledgeService } from "./knowledge/service.js";
+import { QdrantKnowledgeIndex } from "./knowledge/qdrant.js";
 
 initializePhoenixTracing();
 
@@ -46,9 +48,11 @@ const analysisResources = await createAnalysisPostgresResources();
 const requirementAnalysisStore = analysisResources.requirementAnalysisStore;
 const aiQualityStore = analysisResources.aiQualityStore;
 const testDesignStore = analysisResources.testDesignStore;
+const knowledgeStore = analysisResources.knowledgeStore;
 const requirementAnalysisService = new RequirementAnalysisService(analysisResources);
 const documentParser = createDoclingClientFromEnvironment();
-const testDesignService = new TestDesignService(requirementAnalysisStore, testDesignStore, documentParser);
+const knowledgeService = new KnowledgeService(knowledgeStore, documentParser, new QdrantKnowledgeIndex());
+const testDesignService = new TestDesignService(requirementAnalysisStore, testDesignStore, documentParser, knowledgeService);
 
 app.use(express.json({ limit: "256kb" }));
 
@@ -91,6 +95,18 @@ const baselineUpload = multer({
   },
 });
 
+const knowledgeUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_BYTES, files: 1 },
+  fileFilter: (_request, file, callback) => {
+    if (!isAcceptedFilename(file.originalname)) {
+      callback(new Error(`知识库不支持该文件格式：${file.originalname}`));
+      return;
+    }
+    callback(null, true);
+  },
+});
+
 const AnalysisReviewInputSchema = z.object({
   status: z.enum(["accepted", "rejected", "merged", "clarify"]),
   reviewer: z.string().default(""),
@@ -110,6 +126,11 @@ const AiQualityApprovalSchema = z.object({
 const TestDesignRequestSchema = z.object({
   baselineId: z.string().trim().min(1),
   regenerate: z.boolean().default(false),
+}).strict();
+
+const KnowledgeSearchSchema = z.object({
+  query: z.string().trim().min(2),
+  limit: z.number().int().min(1).max(10).default(6),
 }).strict();
 
 const TestCaseReviewInputSchema = z.object({
@@ -196,7 +217,56 @@ app.get("/api/health", (_request, response) => {
     doclingServeUrl: process.env.DOCLING_SERVE_URL ?? "http://127.0.0.1:5001",
     phoenixEnabled: process.env.PHOENIX_ENABLED === "true",
     phoenixEndpoint: process.env.PHOENIX_ENDPOINT ?? "http://127.0.0.1:6006",
+    knowledgeIndex: "Qdrant 1.19.2",
+    knowledgeChunker: "Docling HybridChunker",
+    knowledgeEmbedding: "text-embedding-3-small",
   });
+});
+
+app.get("/api/knowledge-documents", async (_request, response) => {
+  try {
+    response.json(await knowledgeService.list());
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "无法读取项目知识" });
+  }
+});
+
+app.post("/api/knowledge-documents", knowledgeUpload.single("file"), async (request, response) => {
+  try {
+    if (!request.file) throw new Error("请选择项目知识文件");
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error("服务端未配置 OPENAI_API_KEY，知识向量化已停止");
+    const result = await knowledgeService.ingest({
+      filename: normalizeUploadFilename(request.file.originalname),
+      mimeType: request.file.mimetype || "application/octet-stream",
+      bytes: request.file.buffer,
+      apiKey,
+    });
+    response.status(result.reused ? 200 : 201).json(result);
+  } catch (error) {
+    response.status(422).json({ error: error instanceof Error ? error.message : "项目知识入库失败" });
+  }
+});
+
+app.post("/api/knowledge-search", async (request, response) => {
+  try {
+    const parsed = KnowledgeSearchSchema.safeParse(request.body);
+    if (!parsed.success) throw new Error("请输入至少 2 个字符的知识检索问题");
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error("服务端未配置 OPENAI_API_KEY，知识检索已停止");
+    response.json(await knowledgeService.search(parsed.data.query, apiKey, parsed.data.limit));
+  } catch (error) {
+    response.status(422).json({ error: error instanceof Error ? error.message : "项目知识检索失败" });
+  }
+});
+
+app.delete("/api/knowledge-documents/:id", async (request, response) => {
+  try {
+    await knowledgeService.remove(request.params.id);
+    response.status(204).end();
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "项目知识不存在" });
+  }
 });
 
 app.post(

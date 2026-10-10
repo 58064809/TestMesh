@@ -14,7 +14,7 @@ function assertRefs(values: string[], allowed: Set<string>, label: string): void
   if (invalid.length) throw new Error(`${label} 引用了不存在的 ID：${[...new Set(invalid)].join("、")}`);
 }
 
-export function validateTestDesignPlan(plan: TestDesignPlan, baseline: BaselineSnapshot): void {
+export function validateTestDesignPlan(plan: TestDesignPlan, baseline: BaselineSnapshot, allowedKnowledgeRefs = new Set<string>()): void {
   const traceIds = new Set(baseline.accepted.map((entry) => entry.item.id));
   const sourceIds = new Set(baseline.sourceRefs.map((source) => source.id));
   unique(plan.risks.map((risk) => risk.id), "Risk");
@@ -25,15 +25,18 @@ export function validateTestDesignPlan(plan: TestDesignPlan, baseline: BaselineS
   for (const risk of plan.risks) {
     assertRefs(risk.trace_refs, traceIds, `${risk.id}.trace_refs`);
     assertRefs(risk.source_refs, sourceIds, `${risk.id}.source_refs`);
+    assertRefs(risk.knowledge_refs, allowedKnowledgeRefs, `${risk.id}.knowledge_refs`);
   }
   for (const point of plan.test_points) {
     assertRefs(point.trace_refs, traceIds, `${point.id}.trace_refs`);
     assertRefs(point.risk_refs, riskIds, `${point.id}.risk_refs`);
     assertRefs(point.source_refs, sourceIds, `${point.id}.source_refs`);
+    assertRefs(point.knowledge_refs, allowedKnowledgeRefs, `${point.id}.knowledge_refs`);
   }
   for (const condition of conditions) {
     assertRefs([condition.primary_trace_ref], traceIds, `${condition.id}.primary_trace_ref`);
     assertRefs(condition.source_refs, sourceIds, `${condition.id}.source_refs`);
+    assertRefs(condition.knowledge_refs, allowedKnowledgeRefs, `${condition.id}.knowledge_refs`);
   }
   const required = baseline.accepted
     .filter((entry) => COVERAGE_SECTIONS.has(entry.section))
@@ -48,8 +51,8 @@ export function validateTestDesignPlan(plan: TestDesignPlan, baseline: BaselineS
   }
 }
 
-export function validateTestDesign(design: TestDesign, baseline: BaselineSnapshot): void {
-  validateTestDesignPlan(design as TestDesignPlan, baseline);
+export function validateTestDesign(design: TestDesign, baseline: BaselineSnapshot, allowedKnowledgeRefs = new Set<string>()): void {
+  validateTestDesignPlan(design as TestDesignPlan, baseline, allowedKnowledgeRefs);
   const traceIds = new Set(baseline.accepted.map((entry) => entry.item.id));
   const sourceIds = new Set(baseline.sourceRefs.map((source) => source.id));
   const riskIdList = design.risks.map((risk) => risk.id);
@@ -105,6 +108,9 @@ export function validateTestDesign(design: TestDesign, baseline: BaselineSnapsho
     assertRefs(testCase.risk_refs, riskIds, `${testCase.id}.risk_refs`);
     assertRefs(testCase.test_point_refs, pointIds, `${testCase.id}.test_point_refs`);
     assertRefs(testCase.source_refs, sourceIds, `${testCase.id}.source_refs`);
+    assertRefs(testCase.knowledge_refs, allowedKnowledgeRefs, `${testCase.id}.knowledge_refs`);
+    const allowedForCondition = new Set(primaryCondition?.knowledge_refs ?? []);
+    assertRefs(testCase.knowledge_refs, allowedForCondition, `${testCase.id}.knowledge_refs`);
     validateChineseGherkin(testCase.gherkin);
   }
 

@@ -6,12 +6,14 @@ import { resolvePhoenixTraceUrl } from "../observability/phoenix.js";
 import { createOpenAITestDesignModel, runTestDesignAgent } from "./agent.js";
 import type { TestDesignPostgresStore } from "./postgres-store.js";
 import { BaselineSnapshotSchema } from "./schema.js";
+import type { KnowledgeService } from "../knowledge/service.js";
 
 export class TestDesignService {
   constructor(
     private readonly requirementStore: RequirementAnalysisPostgresStore,
     private readonly testDesignStore: TestDesignPostgresStore,
     private readonly documentParser: DocumentParser,
+    private readonly knowledgeService: KnowledgeService,
   ) {}
 
   async generate(input: { baselineId: string; apiKey: string; requestedBy?: string; regenerate?: boolean }) {
@@ -26,12 +28,14 @@ export class TestDesignService {
       bytes: file,
     });
     if (!parsedPrd.markdown.trim()) throw new Error("Docling 未返回获批 PRD 正文，测试设计已停止");
+    const hasKnowledge = (await this.knowledgeService.list()).some((item) => item.status === "indexed");
     const candidate = await runTestDesignAgent({
       baselineId: input.baselineId,
       baseline,
       prdMarkdown: parsedPrd.markdown,
       model: createOpenAITestDesignModel(input.apiKey),
       requestedBy: input.requestedBy,
+      knowledgeSearch: hasKnowledge ? (query) => this.knowledgeService.search(query, input.apiKey) : undefined,
     });
     const record = existing
       ? await this.testDesignStore.replaceDraft(existing.id, {

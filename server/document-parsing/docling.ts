@@ -11,6 +11,22 @@ const DoclingResponseSchema = z.object({
   errors: z.array(z.unknown()).default([]),
 }).passthrough();
 
+const DoclingChunkResponseSchema = z.object({
+  chunks: z.array(z.object({
+    filename: z.string(),
+    chunk_index: z.number().int().nonnegative(),
+    text: z.string().min(1),
+    raw_text: z.string().nullish(),
+    num_tokens: z.number().int().nonnegative().nullish(),
+    headings: z.array(z.string()).nullish(),
+    captions: z.array(z.string()).nullish(),
+    doc_items: z.array(z.string()),
+    page_numbers: z.array(z.number().int().positive()).nullish(),
+    metadata: z.record(z.string(), z.unknown()).nullish(),
+  }).strict()),
+  processing_time: z.number().nonnegative(),
+}).passthrough();
+
 export interface DoclingElement {
   ref: string;
   kind: "text" | "table" | "picture" | "key_value";
@@ -28,6 +44,22 @@ export interface DoclingParseResult {
 
 export interface DocumentParser {
   parse(input: { filename: string; mimeType: string; bytes: Buffer }): Promise<DoclingParseResult>;
+}
+
+export interface DoclingChunk {
+  index: number;
+  text: string;
+  rawText: string;
+  tokenCount: number | null;
+  headings: string[];
+  captions: string[];
+  docItems: string[];
+  pageNumbers: number[];
+  metadata: Record<string, unknown>;
+}
+
+export interface DocumentChunker {
+  chunk(input: { filename: string; mimeType: string; bytes: Buffer }): Promise<DoclingChunk[]>;
 }
 
 type FetchLike = typeof fetch;
@@ -228,6 +260,52 @@ export class DoclingServeClient implements DocumentParser {
       throw new Error(`Docling 解析失败（HTTP ${response.status}）：${detail || response.statusText}`);
     }
     return parseDoclingResponse(await response.json());
+  }
+
+  async chunk(input: { filename: string; mimeType: string; bytes: Buffer }): Promise<DoclingChunk[]> {
+    const form = new FormData();
+    form.append("files", new Blob([new Uint8Array(input.bytes)], { type: input.mimeType }), input.filename);
+    form.append("include_converted_doc", "false");
+    form.append("convert_image_export_mode", "placeholder");
+    form.append("convert_do_ocr", "true");
+    form.append("convert_force_ocr", "false");
+    form.append("convert_table_mode", "accurate");
+    form.append("convert_abort_on_error", "true");
+    form.append("chunking_use_markdown_tables", "true");
+    form.append("chunking_include_raw_text", "true");
+    form.append("chunking_merge_peers", "true");
+    for (const language of this.ocrLanguages) form.append("convert_ocr_lang", language);
+    const headers: Record<string, string> = { accept: "application/json" };
+    if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${this.baseUrl}/v1/chunk/hybrid/file`, {
+        method: "POST",
+        headers,
+        body: form,
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+    } catch (error) {
+      throw new Error(`Docling HybridChunker 不可用（${this.baseUrl}）：${error instanceof Error ? error.message : "连接失败"}`, { cause: error });
+    }
+    if (!response.ok) {
+      const detail = (await response.text()).slice(0, 1_000);
+      throw new Error(`Docling HybridChunker 失败（HTTP ${response.status}）：${detail || response.statusText}`);
+    }
+    const parsed = DoclingChunkResponseSchema.safeParse(await response.json());
+    if (!parsed.success) throw new Error(`Docling HybridChunker 响应契约不匹配：${parsed.error.message}`);
+    if (parsed.data.chunks.length === 0) throw new Error("Docling HybridChunker 没有返回可索引片段");
+    return parsed.data.chunks.map((item) => ({
+      index: item.chunk_index,
+      text: item.text,
+      rawText: item.raw_text ?? "",
+      tokenCount: item.num_tokens ?? null,
+      headings: item.headings ?? [],
+      captions: item.captions ?? [],
+      docItems: item.doc_items,
+      pageNumbers: item.page_numbers ?? [],
+      metadata: item.metadata ?? {},
+    }));
   }
 }
 

@@ -145,6 +145,14 @@ describe("TD01 mature-tool test design gate", () => {
     expect(() => validateTestDesign(input, baseline)).toThrow("SRC-404");
   });
 
+  it("rejects knowledge references that were not returned by the retrieval tool", () => {
+    const input = candidate();
+    input.test_conditions![0].knowledge_refs = ["knowledge-1:chunk:0"];
+    input.test_cases[0].knowledge_refs = ["knowledge-1:chunk:0"];
+    expect(() => validateTestDesign(input, baseline)).toThrow("knowledge-1:chunk:0");
+    expect(() => validateTestDesign(input, baseline, new Set(["knowledge-1:chunk:0"]))).not.toThrow();
+  });
+
   it("rejects silent baseline coverage gaps", () => {
     const input = candidate();
     input.test_cases[1].trace_refs = ["REQ-001"];

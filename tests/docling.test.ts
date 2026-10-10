@@ -85,4 +85,19 @@ describe("Docling Serve v1 adapter", () => {
     await expect(client.parse({ filename: "需求.pdf", mimeType: "application/pdf", bytes: Buffer.from("pdf") }))
       .rejects.toThrow("Docling 未完整解析文档");
   });
+
+  it("uses the official HybridChunker endpoint and preserves structural provenance", async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toContain("/v1/chunk/hybrid/file");
+      const form = init?.body as FormData;
+      expect(form.get("chunking_use_markdown_tables")).toBe("true");
+      expect(form.get("chunking_include_raw_text")).toBe("true");
+      return new Response(JSON.stringify({
+        chunks: [{ filename: "架构.pdf", chunk_index: 0, text: "# 支付\n退款依赖支付网关", raw_text: "退款依赖支付网关", num_tokens: 12, headings: ["支付"], captions: [], doc_items: ["#/texts/1"], page_numbers: [4], metadata: {} }],
+        documents: [], processing_time: 0.5,
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    const chunks = await new DoclingServeClient({ fetchImpl: fetchImpl as typeof fetch }).chunk({ filename: "架构.pdf", mimeType: "application/pdf", bytes: Buffer.from("pdf") });
+    expect(chunks).toEqual([expect.objectContaining({ index: 0, headings: ["支付"], pageNumbers: [4], docItems: ["#/texts/1"] })]);
+  });
 });

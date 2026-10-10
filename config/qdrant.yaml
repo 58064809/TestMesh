@@ -1,0 +1,15 @@
+log_level: INFO
+
+storage:
+  storage_path: ./data/qdrant/storage
+  snapshots_path: ./data/qdrant/snapshots
+
+service:
+  host: 127.0.0.1
+  http_port: 6333
+  grpc_port: null
+
+cluster:
+  enabled: false
+
+telemetry_disabled: true

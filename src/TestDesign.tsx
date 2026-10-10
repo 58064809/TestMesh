@@ -1,7 +1,8 @@
-import { CheckCircleOutlined, ExperimentOutlined, LinkOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
-import { Alert, App as AntdApp, Button, Card, Collapse, Descriptions, Empty, Flex, Input, Modal, Segmented, Select, Space, Spin, Statistic, Tag, Typography } from "antd";
+import { CheckCircleOutlined, DatabaseOutlined, ExperimentOutlined, LinkOutlined, SafetyCertificateOutlined, UploadOutlined } from "@ant-design/icons";
+import { Alert, App as AntdApp, Button, Card, Collapse, Descriptions, Empty, Flex, Input, Modal, Popconfirm, Segmented, Select, Space, Spin, Statistic, Tag, Typography, Upload } from "antd";
+import type { UploadFile } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { DesignedTestCase, RequirementBaselineRecord, TestCaseReviewRecord, TestDesignRecord, TestTechnique } from "./types";
+import type { DesignedTestCase, KnowledgeDocumentRecord, RequirementBaselineRecord, TestCaseReviewRecord, TestDesignRecord, TestTechnique } from "./types";
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -54,14 +55,19 @@ export default function TestDesign() {
   const [savingReview, setSavingReview] = useState(false);
   const [approving, setApproving] = useState(false);
   const [approvedBy, setApprovedBy] = useState("");
+  const [knowledge, setKnowledge] = useState<KnowledgeDocumentRecord[]>([]);
+  const [knowledgeFile, setKnowledgeFile] = useState<UploadFile[]>([]);
+  const [indexingKnowledge, setIndexingKnowledge] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [baselineRows, designRows] = await Promise.all([
+    const [baselineRows, designRows, knowledgeRows] = await Promise.all([
       readJson<RequirementBaselineRecord[]>(await fetch("/api/requirement-baselines", { cache: "no-store" })),
       readJson<TestDesignRecord[]>(await fetch("/api/test-designs", { cache: "no-store" })),
+      readJson<KnowledgeDocumentRecord[]>(await fetch("/api/knowledge-documents", { cache: "no-store" })),
     ]);
     setBaselines(baselineRows);
     setDesigns(designRows);
+    setKnowledge(knowledgeRows);
     setBaselineId((value) => value ?? baselineRows[0]?.id);
     return designRows;
   }, []);
@@ -81,13 +87,48 @@ export default function TestDesign() {
     void Promise.all([
       fetch("/api/requirement-baselines", { cache: "no-store" }).then((response) => readJson<RequirementBaselineRecord[]>(response)),
       fetch("/api/test-designs", { cache: "no-store" }).then((response) => readJson<TestDesignRecord[]>(response)),
-    ]).then(([baselineRows, designRows]) => {
+      fetch("/api/knowledge-documents", { cache: "no-store" }).then((response) => readJson<KnowledgeDocumentRecord[]>(response)),
+    ]).then(([baselineRows, designRows, knowledgeRows]) => {
       setBaselines(baselineRows);
       setDesigns(designRows);
+      setKnowledge(knowledgeRows);
       setBaselineId(baselineRows[0]?.id);
       if (designRows[0]) void openDesign(designRows[0].id);
     }).catch((cause) => setError(cause instanceof Error ? cause.message : "无法读取测试设计"));
   }, [openDesign]);
+
+  async function uploadKnowledge() {
+    const nativeFile = knowledgeFile[0]?.originFileObj;
+    if (!nativeFile) {
+      message.error("请先选择项目知识文件");
+      return;
+    }
+    setIndexingKnowledge(true);
+    setError(undefined);
+    try {
+      const body = new FormData();
+      body.append("file", nativeFile, nativeFile.name);
+      const result = await readJson<{ record: KnowledgeDocumentRecord; reused: boolean }>(await fetch("/api/knowledge-documents", { method: "POST", body }));
+      setKnowledgeFile([]);
+      await refresh();
+      message.success(result.reused ? "该文件已存在，已复用现有知识索引" : `项目知识已完成解析并建立 ${result.record.chunkCount} 个可追溯片段`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "项目知识入库失败");
+    } finally {
+      setIndexingKnowledge(false);
+    }
+  }
+
+  async function removeKnowledge(id: string) {
+    try {
+      const response = await fetch(`/api/knowledge-documents/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!response.ok) await readJson(response);
+      await refresh();
+      message.success("项目知识及其向量索引已删除");
+    } catch (cause) {
+      message.error(cause instanceof Error ? cause.message : "项目知识删除失败");
+    }
+  }
 
   const reviews = useMemo(() => new Map((current?.reviews ?? []).map((item) => [item.testCaseId, item])), [current]);
   const reviewSummary = current ? {
@@ -206,6 +247,17 @@ export default function TestDesign() {
       </Space>
     </Flex>
 
+    <Card size="small" title={<Space><DatabaseOutlined />项目知识（RAG 补充证据）</Space>} style={{ marginBottom: 16 }} extra={<Tag color="blue">Docling HybridChunker · Qdrant</Tag>}>
+      <Paragraph type="secondary">上传架构说明、接口契约、数据字典、企业规则或历史缺陷。生成测试设计时 Agent 可按需检索，但完整 PRD 与已批准基线始终是主输入。</Paragraph>
+      <Space wrap align="start">
+        <Upload beforeUpload={() => false} maxCount={1} fileList={knowledgeFile} onChange={({ fileList }) => setKnowledgeFile(fileList.slice(-1))}>
+          <Button icon={<UploadOutlined />}>选择知识文件</Button>
+        </Upload>
+        <Button type="primary" loading={indexingKnowledge} disabled={!knowledgeFile.length} onClick={() => void uploadKnowledge()}>解析并建立索引</Button>
+      </Space>
+      <div style={{ marginTop: 12 }}><Space wrap>{knowledge.length ? knowledge.map((item) => <Space key={item.id} size={2}><Tag color={item.status === "indexed" ? "green" : item.status === "failed" ? "red" : "gold"}>{item.filename} · {item.status === "indexed" ? `${item.chunkCount} 片段` : item.status === "failed" ? `失败：${item.error}` : "处理中"}</Tag><Popconfirm title="删除该知识文档及其索引？" onConfirm={() => void removeKnowledge(item.id)}><Button size="small" danger>删除</Button></Popconfirm></Space>) : <Text type="secondary">尚未上传项目知识；当前会明确以“无知识命中”运行，不会伪造引用。</Text>}</Space></div>
+    </Card>
+
     {error && <Alert type="error" showIcon message="测试设计流程已停止" description={error} style={{ marginBottom: 16 }} />}
     {loading && <Card><Space><Spin /><Text>正在从 Baseline 生成风险、测试点和 Gherkin 用例；失败不会切换模型或生成器。</Text></Space></Card>}
 
@@ -261,6 +313,7 @@ export default function TestDesign() {
             { key: "point", label: "测试点", children: testCase.test_point_refs.join("、") },
             { key: "risk", label: "风险", children: testCase.risk_refs.join("、") || "无" },
             { key: "source", label: "原文", children: testCase.source_refs.join("、") },
+            { key: "knowledge", label: "项目知识", children: testCase.knowledge_refs?.length ? testCase.knowledge_refs.join("、") : "无知识引用" },
           ]} />
           <pre style={{ margin: 0, padding: 14, overflow: "auto", background: "#0f172a", color: "#e2e8f0", borderRadius: 8, whiteSpace: "pre-wrap" }}>{testCase.gherkin}</pre>
         </Space> };

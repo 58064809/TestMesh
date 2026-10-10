@@ -122,6 +122,7 @@ export interface TestRisk {
   rationale: string;
   trace_refs: string[];
   source_refs: string[];
+  knowledge_refs: string[];
 }
 
 export interface TestPoint {
@@ -133,6 +134,7 @@ export interface TestPoint {
   trace_refs: string[];
   risk_refs: string[];
   source_refs: string[];
+  knowledge_refs: string[];
 }
 
 export interface DesignedTestCase {
@@ -154,6 +156,7 @@ export interface DesignedTestCase {
   risk_refs: string[];
   test_point_refs: string[];
   source_refs: string[];
+  knowledge_refs: string[];
 }
 
 export interface TestDesignDocument {
@@ -169,6 +172,7 @@ export interface TestDesignDocument {
     technique: TestTechnique;
     rationale: string;
     source_refs: string[];
+    knowledge_refs: string[];
   }>;
   test_cases: DesignedTestCase[];
   tool_applications: Array<{
@@ -204,6 +208,20 @@ export interface TestDesignRecord {
   reviewSummary?: { total: number; pending: number; accepted: number; rejected: number };
   reviews?: TestCaseReviewRecord[];
   approvedVersion?: unknown;
+}
+
+export interface KnowledgeDocumentRecord {
+  id: string;
+  filename: string;
+  mimeType: string;
+  sha256: string;
+  byteSize: number;
+  status: "processing" | "indexed" | "failed";
+  chunkCount: number;
+  embeddingModel: string;
+  error: string;
+  createdAt: string;
+  indexedAt: string | null;
 }
 
 export interface AnalysisResponse {

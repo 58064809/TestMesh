@@ -25,10 +25,13 @@ if (-not (Test-LocalService "http://127.0.0.1:5001/health")) {
 if (-not (Test-LocalService "http://127.0.0.1:6006/healthz")) {
   Start-HiddenService (Join-Path $projectRoot "scripts\start-phoenix.ps1")
 }
+if (-not (Test-LocalService "http://127.0.0.1:6333/healthz")) {
+  Start-HiddenService (Join-Path $projectRoot "scripts\start-qdrant.ps1")
+}
 
 $deadline = (Get-Date).AddMinutes(3)
 while ((Get-Date) -lt $deadline) {
-  if ((Test-LocalService "http://127.0.0.1:5001/health") -and (Test-LocalService "http://127.0.0.1:6006/healthz")) {
+  if ((Test-LocalService "http://127.0.0.1:5001/health") -and (Test-LocalService "http://127.0.0.1:6006/healthz") -and (Test-LocalService "http://127.0.0.1:6333/healthz")) {
     break
   }
   Start-Sleep -Seconds 2
@@ -38,6 +41,9 @@ if (-not (Test-LocalService "http://127.0.0.1:5001/health")) {
 }
 if (-not (Test-LocalService "http://127.0.0.1:6006/healthz")) {
   throw "Phoenix did not become ready at http://127.0.0.1:6006."
+}
+if (-not (Test-LocalService "http://127.0.0.1:6333/healthz")) {
+  throw "Qdrant did not become ready at http://127.0.0.1:6333."
 }
 
 if (-not $env:PORT) { $env:PORT = "3011" }

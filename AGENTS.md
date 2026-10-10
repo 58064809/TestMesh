@@ -97,6 +97,8 @@
 - 用户已批准调研并接入通用 RAG。RAG 只补充架构、接口契约、数据字典、历史缺陷和企业规则，不得用检索片段替代完整 PRD 或不可覆盖基线。单一路径候选为 Docling HybridChunker + Qdrant + 成熟 Embedding；无知识语料时明确无命中，不伪造知识引用。实施和真实检索验收前不能宣称 RAG 已完成。
 - 草稿重新生成只能在无评审记录时进行，并且必须先完整通过 Schema、Gherkin、追溯和原子覆盖 Gate，再以单事务替换旧草稿；失败时保留旧记录。后续不得后台自动重试或自动批准。
 - 2026-10-10 两阶段真实验收最终成功：同一草稿 ID 已原子替换为 8 个风险、37 个测试点、72 个测试条件和 72 条 TestCase；36 个应覆盖基线项各有 2 个不同条件，72 个标题和 Gherkin 均唯一，0 条评审记录，仍是待人工评审草稿。Phoenix Trace ID `f588cda185eeb0c835b3b88ba8707030`，总 token 145,346。不得把这次生成自动批准；多条 open question 使用的是流程验收占位决策。
+- KR01 已于 2026-10-10 完成。唯一知识检索路径为 Docling HybridChunker + OpenAI `text-embedding-3-small` + 本机 Qdrant 1.19.2；Qdrant 只监听 127.0.0.1，由 `start-stack` 启动。项目知识只允许架构、接口、数据字典、历史缺陷和企业规则等补充材料，不能替代完整 PRD 或批准基线。
+- Test Design Agent 只在有已索引知识时获得 `search_project_knowledge`；输出的 `knowledge_refs` 必须是本次工具真实返回的 chunk ID，且 TestCase 只能沿用对应 TestCondition 的知识引用。无语料时不挂载检索工具、引用为空；不得伪造命中或加入备用检索路径。
 
 ## P01 实现约束
 
