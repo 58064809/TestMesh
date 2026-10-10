@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateChineseGherkin } from "../server/test-design/gherkin.js";
+import { normalizeChineseGherkin, validateChineseGherkin } from "../server/test-design/gherkin.js";
 import { BaselineSnapshotSchema, createModelTestDesignSchema, createTestCaseBatchSchema, TestDesignSchema } from "../server/test-design/schema.js";
 import { selectTestDesignSkills } from "../server/test-design/skill-selection.js";
 import { validateTestDesign } from "../server/test-design/validation.js";
@@ -110,6 +110,14 @@ describe("TD01 mature-tool test design gate", () => {
     const outline = "# language: zh-CN\n功能: 登录\n  场景大纲: 密码校验\n    假如 用户名为 <用户名>\n    当 密码为 <密码>\n    那么 登录结果为 <结果>\n    例子:\n      | 用户名 | 密码 | 结果 |\n      | 张三 | 正确 | 成功 |";
     expect(() => validateChineseGherkin(outline)).not.toThrow();
     expect(() => validateChineseGherkin(outline.replace("例子:", "示例:"))).toThrow("Cucumber Gherkin 语法校验失败");
+  });
+
+  it("canonicalizes full-width colons on supported Chinese Gherkin headings only", () => {
+    const source = "# language: zh-CN\n功能：登录\n  场景：登录成功\n    假如 用户已注册\n    当 用户提交正确密码\n    那么 登录成功";
+    const normalized = normalizeChineseGherkin(source);
+    expect(normalized).toContain("功能:登录");
+    expect(normalized).toContain("场景:登录成功");
+    expect(() => validateChineseGherkin(normalized)).not.toThrow();
   });
 
   it("rejects free-form prose appended after a scenario", () => {

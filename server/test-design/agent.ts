@@ -10,6 +10,7 @@ import { createMiddleware, MiddlewareError, providerStrategy } from "langchain";
 import { MAX_OUTPUT_TOKENS, MODEL } from "../requirement-analysis/config.js";
 import { currentPhoenixTraceReference, type PhoenixTraceReference } from "../observability/phoenix.js";
 import { TEST_DESIGN_INSTRUCTIONS } from "./prompt.js";
+import { normalizeChineseGherkin } from "./gherkin.js";
 import {
   createTestCaseBatchSchema,
   TestDesignPlanSchema,
@@ -123,7 +124,10 @@ async function runTestDesignAgentImpl(input: {
     }, taskId, `cases-${Math.floor(offset / 12) + 1}`, input.requestedBy);
     responses.push(batchResponse);
     const parsedBatch = batchSchema.parse(batchResponse.structuredResponse);
-    testCases.push(...batch.map(({ conditionId }) => parsedBatch.cases[conditionId]));
+    testCases.push(...batch.map(({ conditionId }) => ({
+      ...parsedBatch.cases[conditionId],
+      gherkin: normalizeChineseGherkin(parsedBatch.cases[conditionId].gherkin),
+    })));
   }
 
   const exclusions = new Map(plan.coverage_exclusions.map((item) => [item.trace_ref, item.reason]));

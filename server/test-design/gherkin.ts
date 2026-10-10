@@ -1,6 +1,10 @@
 import { AstBuilder, GherkinClassicTokenMatcher, Parser } from "@cucumber/gherkin";
 import { IdGenerator } from "@cucumber/messages";
 
+export function normalizeChineseGherkin(source: string): string {
+  return source.replace(/^(\s*(?:功能|规则|背景|场景|场景大纲|例子))：/gm, "$1:");
+}
+
 export function validateChineseGherkin(source: string): void {
   if (!source.trimStart().startsWith("# language: zh-CN")) {
     throw new Error("Gherkin 必须以“# language: zh-CN”声明简体中文");
