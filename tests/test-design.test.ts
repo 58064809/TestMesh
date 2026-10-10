@@ -150,7 +150,18 @@ describe("TD01 mature-tool test design gate", () => {
     input.test_conditions![0].knowledge_refs = ["knowledge-1:chunk:0"];
     input.test_cases[0].knowledge_refs = ["knowledge-1:chunk:0"];
     expect(() => validateTestDesign(input, baseline)).toThrow("knowledge-1:chunk:0");
+    input.knowledge_evidence = [{
+      chunk_id: "knowledge-1:chunk:0", document_id: "knowledge-1", filename: "architecture.md",
+      score: 0.8, text: "退款依赖支付网关", headings: ["退款"], page_numbers: [], doc_items: ["#/texts/1"],
+    }];
     expect(() => validateTestDesign(input, baseline, new Set(["knowledge-1:chunk:0"]))).not.toThrow();
+  });
+
+  it("requires every knowledge reference to have a frozen evidence snapshot", () => {
+    const input = candidate();
+    input.test_conditions![0].knowledge_refs = ["knowledge-1:chunk:0"];
+    input.test_cases[0].knowledge_refs = ["knowledge-1:chunk:0"];
+    expect(() => validateTestDesign(input, baseline, new Set(["knowledge-1:chunk:0"]))).toThrow("知识证据快照缺少引用");
   });
 
   it("rejects silent baseline coverage gaps", () => {

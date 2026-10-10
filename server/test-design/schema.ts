@@ -100,6 +100,17 @@ export const CoverageEntrySchema = z.object({
   exclusion_reason: z.string(),
 }).strict();
 
+export const KnowledgeEvidenceSchema = z.object({
+  chunk_id: z.string().min(1),
+  document_id: z.string().min(1),
+  filename: z.string().min(1),
+  score: z.number(),
+  text: z.string().min(1),
+  headings: z.array(z.string()),
+  page_numbers: z.array(z.number().int().positive()),
+  doc_items: z.array(z.string()),
+}).strict();
+
 export const TestDesignSchema = z.object({
   objective: z.string().min(1),
   risks: z.array(TestRiskSchema),
@@ -109,6 +120,7 @@ export const TestDesignSchema = z.object({
   tool_applications: z.array(ToolApplicationSchema).length(4),
   coverage_exclusions: z.array(CoverageExclusionSchema),
   coverage: z.record(z.string(), CoverageEntrySchema),
+  knowledge_evidence: z.array(KnowledgeEvidenceSchema).default([]),
 }).strict();
 
 export const TestDesignPlanSchema = TestDesignSchema.pick({

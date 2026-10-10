@@ -35,6 +35,7 @@ import { z } from "zod";
 import { initializePhoenixTracing, resolvePhoenixTraceUrl } from "./observability/phoenix.js";
 import { assessProfileReadiness, type AiQualityProfile } from "./ai-quality/profile.js";
 import { TestDesignService } from "./test-design/service.js";
+import { BaselineSnapshotSchema } from "./test-design/schema.js";
 import { KnowledgeService } from "./knowledge/service.js";
 import { QdrantKnowledgeIndex } from "./knowledge/qdrant.js";
 
@@ -547,11 +548,12 @@ app.post("/api/test-designs", async (request, response) => {
 app.get("/api/test-designs/:id", async (request, response) => {
   try {
     const design = await testDesignStore.getDesign(request.params.id);
-    const [reviews, approved] = await Promise.all([
+    const [reviews, approved, baseline] = await Promise.all([
       testDesignStore.listReviews(design.id),
       testDesignStore.getApprovedVersion(design.id),
+      requirementAnalysisStore.getBaseline(design.baselineId),
     ]);
-    response.json({ ...design, reviews, approvedVersion: approved });
+    response.json({ ...design, reviews, approvedVersion: approved, baselineSources: BaselineSnapshotSchema.parse(baseline.snapshot).sourceRefs });
   } catch (error) {
     response.status(404).json({ error: error instanceof Error ? error.message : "测试设计不存在" });
   }

@@ -137,6 +137,8 @@ export default function TestDesign() {
     accepted: current.document.test_cases.filter((item) => reviews.get(item.id)?.status === "accepted").length,
     rejected: current.document.test_cases.filter((item) => reviews.get(item.id)?.status === "rejected").length,
   } : undefined;
+  const baselineSources = useMemo(() => new Map((current?.baselineSources ?? []).map((item) => [item.id, item])), [current]);
+  const knowledgeEvidence = useMemo(() => new Map((current?.document.knowledge_evidence ?? []).map((item) => [item.chunk_id, item])), [current]);
 
   async function generate(regenerate = false) {
     if (!baselineId) return;
@@ -312,8 +314,8 @@ export default function TestDesign() {
             { key: "trace", label: "基线追溯", children: <Space wrap>{testCase.trace_refs.map((id) => <Tag key={id}>{id}</Tag>)}</Space> },
             { key: "point", label: "测试点", children: testCase.test_point_refs.join("、") },
             { key: "risk", label: "风险", children: testCase.risk_refs.join("、") || "无" },
-            { key: "source", label: "原文", children: testCase.source_refs.join("、") },
-            { key: "knowledge", label: "项目知识", children: testCase.knowledge_refs?.length ? testCase.knowledge_refs.join("、") : "无知识引用" },
+            { key: "source", label: "PRD 原文证据", children: <Space direction="vertical" size={6}>{testCase.source_refs.map((id) => { const source = baselineSources.get(id); return <Card key={id} size="small"><Text strong>{id} · {source?.source_file_name ?? "来源文件"}</Text><br /><Text type="secondary">{source ? `${source.locator_type} · ${source.locator}` : "定位信息不可用"}</Text><Paragraph style={{ margin: "6px 0 0" }}>{source?.excerpt ?? "该来源不在当前基线快照中"}</Paragraph></Card>; })}</Space> },
+            { key: "knowledge", label: "项目知识证据", children: testCase.knowledge_refs?.length ? <Space direction="vertical" size={6}>{testCase.knowledge_refs.map((id) => { const evidence = knowledgeEvidence.get(id); return <Card key={id} size="small"><Text strong>{evidence?.filename ?? id}</Text><br /><Text type="secondary">{[...(evidence?.headings ?? []), ...(evidence?.page_numbers ?? []).map((page) => `第 ${page} 页`), ...(evidence?.doc_items ?? [])].join(" · ") || id}</Text><Paragraph style={{ margin: "6px 0 0" }}>{evidence?.text ?? "冻结的知识证据不可用"}</Paragraph></Card>; })}</Space> : "无知识引用" },
           ]} />
           <pre style={{ margin: 0, padding: 14, overflow: "auto", background: "#0f172a", color: "#e2e8f0", borderRadius: 8, whiteSpace: "pre-wrap" }}>{testCase.gherkin}</pre>
         </Space> };

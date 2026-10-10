@@ -182,6 +182,16 @@ export interface TestDesignDocument {
   }>;
   coverage_exclusions: Array<{ trace_ref: string; reason: string }>;
   coverage: Record<string, { test_point_refs: string[]; test_case_refs: string[]; exclusion_reason: string }>;
+  knowledge_evidence: Array<{
+    chunk_id: string;
+    document_id: string;
+    filename: string;
+    score: number;
+    text: string;
+    headings: string[];
+    page_numbers: number[];
+    doc_items: string[];
+  }>;
 }
 
 export interface TestCaseReviewRecord {
@@ -208,6 +218,14 @@ export interface TestDesignRecord {
   reviewSummary?: { total: number; pending: number; accepted: number; rejected: number };
   reviews?: TestCaseReviewRecord[];
   approvedVersion?: unknown;
+  baselineSources?: Array<{
+    id: string;
+    source_file_name: string;
+    locator_type: string;
+    locator: string;
+    excerpt: string;
+    description: string;
+  }>;
 }
 
 export interface KnowledgeDocumentRecord {

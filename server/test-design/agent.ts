@@ -159,6 +159,20 @@ async function runTestDesignAgentImpl(input: {
   const result = TestDesignSchema.parse({
     ...plan,
     test_cases: testCases,
+    knowledge_evidence: [...retrievedKnowledge.values()]
+      .filter((hit) => plan.risks.some((item) => item.knowledge_refs.includes(hit.chunkId))
+        || plan.test_points.some((item) => item.knowledge_refs.includes(hit.chunkId))
+        || plan.test_conditions.some((item) => item.knowledge_refs.includes(hit.chunkId)))
+      .map((hit) => ({
+        chunk_id: hit.chunkId,
+        document_id: hit.documentId,
+        filename: hit.filename,
+        score: hit.score,
+        text: hit.text,
+        headings: hit.headings,
+        page_numbers: hit.pageNumbers,
+        doc_items: hit.docItems,
+      })),
     coverage: Object.fromEntries(requiredCoverage.map((id) => [id, {
       test_point_refs: plan.test_points.filter((point) => point.trace_refs.includes(id)).map((point) => point.id),
       test_case_refs: testCases.filter((testCase) => testCase.trace_refs.includes(id)).map((testCase) => testCase.id),

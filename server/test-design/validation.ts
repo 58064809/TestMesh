@@ -52,7 +52,13 @@ export function validateTestDesignPlan(plan: TestDesignPlan, baseline: BaselineS
 }
 
 export function validateTestDesign(design: TestDesign, baseline: BaselineSnapshot, allowedKnowledgeRefs = new Set<string>()): void {
-  validateTestDesignPlan(design as TestDesignPlan, baseline, allowedKnowledgeRefs);
+  const frozenKnowledgeRefs = new Set(design.knowledge_evidence.map((item) => item.chunk_id));
+  unique([...frozenKnowledgeRefs], "KnowledgeEvidence");
+  for (const ref of frozenKnowledgeRefs) {
+    if (allowedKnowledgeRefs.size && !allowedKnowledgeRefs.has(ref)) throw new Error(`knowledge_evidence 引用了本次检索未返回的 ID：${ref}`);
+  }
+  const effectiveKnowledgeRefs = allowedKnowledgeRefs.size ? allowedKnowledgeRefs : frozenKnowledgeRefs;
+  validateTestDesignPlan(design as TestDesignPlan, baseline, effectiveKnowledgeRefs);
   const traceIds = new Set(baseline.accepted.map((entry) => entry.item.id));
   const sourceIds = new Set(baseline.sourceRefs.map((source) => source.id));
   const riskIdList = design.risks.map((risk) => risk.id);
@@ -108,11 +114,19 @@ export function validateTestDesign(design: TestDesign, baseline: BaselineSnapsho
     assertRefs(testCase.risk_refs, riskIds, `${testCase.id}.risk_refs`);
     assertRefs(testCase.test_point_refs, pointIds, `${testCase.id}.test_point_refs`);
     assertRefs(testCase.source_refs, sourceIds, `${testCase.id}.source_refs`);
-    assertRefs(testCase.knowledge_refs, allowedKnowledgeRefs, `${testCase.id}.knowledge_refs`);
+    assertRefs(testCase.knowledge_refs, effectiveKnowledgeRefs, `${testCase.id}.knowledge_refs`);
     const allowedForCondition = new Set(primaryCondition?.knowledge_refs ?? []);
     assertRefs(testCase.knowledge_refs, allowedForCondition, `${testCase.id}.knowledge_refs`);
     validateChineseGherkin(testCase.gherkin);
   }
+  const usedKnowledgeRefs = new Set([
+    ...design.risks.flatMap((item) => item.knowledge_refs),
+    ...design.test_points.flatMap((item) => item.knowledge_refs),
+    ...conditions.flatMap((item) => item.knowledge_refs),
+    ...design.test_cases.flatMap((item) => item.knowledge_refs),
+  ]);
+  const missingFrozenEvidence = [...usedKnowledgeRefs].filter((ref) => !frozenKnowledgeRefs.has(ref));
+  if (missingFrozenEvidence.length) throw new Error(`知识证据快照缺少引用：${missingFrozenEvidence.join("、")}`);
 
   const toolRows = new Map(design.tool_applications.map((item) => [item.tool, item]));
   for (const tool of ["cucumber_gherkin", "fast_check", "nist_acts", "graphwalker"] as const) {
