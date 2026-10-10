@@ -20,6 +20,22 @@ export const TestStepSchema = z.object({
   expected: z.string().min(1),
 }).strict();
 
+export const TestConditionCategorySchema = z.enum([
+  "normal", "alternate", "negative", "boundary", "rule_combination",
+  "valid_transition", "invalid_transition", "dependency_failure", "recovery", "cross_business",
+]);
+
+export const TestConditionSchema = z.object({
+  id: z.string().regex(/^TCND-\d{3}$/),
+  title: z.string().min(1),
+  objective: z.string().min(1),
+  primary_trace_ref: z.string().min(1),
+  category: TestConditionCategorySchema,
+  technique: TestTechniqueSchema,
+  rationale: z.string().min(1),
+  source_refs: z.array(z.string().min(1)).min(1),
+}).strict();
+
 export const TestRiskSchema = z.object({
   id: z.string().regex(/^RISK-\d{3}$/),
   title: z.string().min(1),
@@ -48,6 +64,8 @@ export const TestCaseSchema = z.object({
   title: z.string().min(1),
   objective: z.string().min(1),
   primary_trace_ref: z.string().min(1).optional(),
+  primary_test_condition_ref: z.string().min(1).optional(),
+  test_condition_refs: z.array(z.string().min(1)).optional(),
   scenario_type: TestScenarioTypeSchema.optional(),
   technique: TestTechniqueSchema.optional(),
   priority: z.enum(["P0", "P1", "P2", "P3"]),
@@ -82,6 +100,7 @@ export const TestDesignSchema = z.object({
   objective: z.string().min(1),
   risks: z.array(TestRiskSchema),
   test_points: z.array(TestPointSchema).min(1),
+  test_conditions: z.array(TestConditionSchema).optional(),
   test_cases: z.array(TestCaseSchema).min(1),
   tool_applications: z.array(ToolApplicationSchema).length(4),
   coverage_exclusions: z.array(CoverageExclusionSchema),
@@ -93,12 +112,15 @@ export function createModelTestDesignSchema(requiredCoverage: readonly string[])
   const modelTestCaseSchema = TestCaseSchema.extend({
     module: z.string().min(1),
     primary_trace_ref: z.string().min(1),
+    primary_test_condition_ref: z.string().min(1),
+    test_condition_refs: z.array(z.string().min(1)).min(1),
     scenario_type: TestScenarioTypeSchema,
     technique: TestTechniqueSchema,
     test_data: z.array(z.string().min(1)),
     steps: z.array(TestStepSchema).min(1),
   }).strict();
   return TestDesignSchema.extend({
+    test_conditions: z.array(TestConditionSchema).min(1),
     test_cases: z.array(modelTestCaseSchema).min(1),
     coverage: z.object(coverageShape).strict(),
   }).strict();

@@ -35,9 +35,23 @@ function candidate() {
       id: "TP-001", title: "超时关闭", objective: "验证边界和状态迁移", technique: "state_transition",
       technique_rationale: "存在明确前后状态", trace_refs: ["REQ-001", "STATE-001"], risk_refs: ["RISK-001"], source_refs: ["SRC-001"],
     }],
+    test_conditions: [{
+      id: "TCND-001", title: "超时后关闭", objective: "验证超过时限的正常规则", primary_trace_ref: "REQ-001",
+      category: "normal", technique: "boundary_value", rationale: "存在明确时限", source_refs: ["SRC-001"],
+    }, {
+      id: "TCND-002", title: "未到时限不关闭", objective: "验证边界内不触发关闭", primary_trace_ref: "REQ-001",
+      category: "boundary", technique: "boundary_value", rationale: "需要验证边界相邻值", source_refs: ["SRC-001"],
+    }, {
+      id: "TCND-003", title: "有效关闭迁移", objective: "验证待支付到已关闭", primary_trace_ref: "STATE-001",
+      category: "valid_transition", technique: "state_transition", rationale: "存在有效迁移", source_refs: ["SRC-001"],
+    }, {
+      id: "TCND-004", title: "无效关闭迁移", objective: "验证非待支付状态不能重复关闭", primary_trace_ref: "STATE-001",
+      category: "invalid_transition", technique: "state_transition", rationale: "需要验证无效迁移", source_refs: ["SRC-001"],
+    }],
     test_cases: [{
       id: "TC-001", module: "订单", title: "未支付订单超时关闭", objective: "确认订单进入已关闭状态", priority: "P1",
       primary_trace_ref: "REQ-001",
+      primary_test_condition_ref: "TCND-001", test_condition_refs: ["TCND-001"],
       scenario_type: "boundary", technique: "boundary_value",
       preconditions: ["订单处于待支付状态"],
       test_data: ["未支付时间超过30分钟"],
@@ -47,11 +61,26 @@ function candidate() {
     }, {
       id: "TC-002", module: "订单", title: "订单关闭状态迁移", objective: "确认状态迁移结果可观察", priority: "P1",
       primary_trace_ref: "STATE-001",
+      primary_test_condition_ref: "TCND-003", test_condition_refs: ["TCND-003"],
       scenario_type: "state_transition", technique: "state_transition",
       preconditions: ["订单处于待支付状态"],
       test_data: ["待支付订单"],
       steps: [{ order: 1, action: "触发超时关闭事件", expected: "订单从待支付迁移为已关闭" }],
       gherkin: "# language: zh-CN\n@TC-002 @STATE-001\n功能: 订单状态迁移\n  场景: 超时后进入已关闭\n    假如 订单处于待支付状态\n    当 订单超过关闭时限\n    那么 订单状态变为已关闭",
+      trace_refs: ["STATE-001"], risk_refs: ["RISK-001"], test_point_refs: ["TP-001"], source_refs: ["SRC-001"],
+    }, {
+      id: "TC-003", module: "订单", title: "未到关闭时限", objective: "确认边界内保持待支付", priority: "P1",
+      primary_trace_ref: "REQ-001", primary_test_condition_ref: "TCND-002", test_condition_refs: ["TCND-002"],
+      scenario_type: "boundary", technique: "boundary_value", preconditions: ["订单处于待支付状态"], test_data: ["未支付时间不足30分钟"],
+      steps: [{ order: 1, action: "推进未支付时间但不超过30分钟", expected: "订单保持待支付" }],
+      gherkin: "# language: zh-CN\n@TC-003 @REQ-001\n功能: 订单关闭边界\n  场景: 未到时限保持待支付\n    假如 订单处于待支付状态\n    当 未支付时间不足30分钟\n    那么 订单状态保持待支付",
+      trace_refs: ["REQ-001"], risk_refs: ["RISK-001"], test_point_refs: ["TP-001"], source_refs: ["SRC-001"],
+    }, {
+      id: "TC-004", module: "订单", title: "已关闭订单不能重复关闭", objective: "确认无效迁移被拒绝", priority: "P1",
+      primary_trace_ref: "STATE-001", primary_test_condition_ref: "TCND-004", test_condition_refs: ["TCND-004"],
+      scenario_type: "state_transition", technique: "state_transition", preconditions: ["订单已经关闭"], test_data: ["已关闭订单"],
+      steps: [{ order: 1, action: "再次触发超时关闭事件", expected: "订单不产生重复关闭迁移" }],
+      gherkin: "# language: zh-CN\n@TC-004 @STATE-001\n功能: 订单无效状态迁移\n  场景: 已关闭订单再次关闭\n    假如 订单状态为已关闭\n    当 再次触发超时关闭事件\n    那么 订单不产生重复关闭迁移",
       trace_refs: ["STATE-001"], risk_refs: ["RISK-001"], test_point_refs: ["TP-001"], source_refs: ["SRC-001"],
     }],
     tool_applications: [
@@ -62,8 +91,8 @@ function candidate() {
     ],
     coverage_exclusions: [],
     coverage: {
-      "REQ-001": { test_point_refs: ["TP-001"], test_case_refs: ["TC-001"], exclusion_reason: "" },
-      "STATE-001": { test_point_refs: ["TP-001"], test_case_refs: ["TC-001", "TC-002"], exclusion_reason: "" },
+      "REQ-001": { test_point_refs: ["TP-001"], test_case_refs: ["TC-001", "TC-003"], exclusion_reason: "" },
+      "STATE-001": { test_point_refs: ["TP-001"], test_case_refs: ["TC-001", "TC-002", "TC-004"], exclusion_reason: "" },
     },
   });
 }
@@ -105,11 +134,11 @@ describe("TD01 mature-tool test design gate", () => {
     expect(() => validateTestDesign(input, baseline)).toThrow("primary_trace_ref");
   });
 
-  it("requires every covered baseline item to be the primary target of an atomic TestCase", () => {
+  it("keeps each atomic TestCase aligned with its primary TestCondition and baseline item", () => {
     const input = candidate();
     input.test_cases[1].primary_trace_ref = "REQ-001";
     input.test_cases[1].trace_refs = ["REQ-001", "STATE-001"];
-    expect(() => validateTestDesign(input, baseline)).toThrow("原子用例 Gate 未通过");
+    expect(() => validateTestDesign(input, baseline)).toThrow("主要测试条件与主要基线项不一致");
   });
 
   it("rejects coverage matrix references that do not trace the baseline item", () => {

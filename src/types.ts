@@ -141,6 +141,8 @@ export interface DesignedTestCase {
   title: string;
   objective: string;
   primary_trace_ref?: string;
+  primary_test_condition_ref?: string;
+  test_condition_refs?: string[];
   scenario_type?: "normal" | "exception" | "boundary" | "rule_combination" | "state_transition" | "cross_business";
   technique?: TestTechnique;
   priority: "P0" | "P1" | "P2" | "P3";
@@ -158,6 +160,16 @@ export interface TestDesignDocument {
   objective: string;
   risks: TestRisk[];
   test_points: TestPoint[];
+  test_conditions?: Array<{
+    id: string;
+    title: string;
+    objective: string;
+    primary_trace_ref: string;
+    category: string;
+    technique: TestTechnique;
+    rationale: string;
+    source_refs: string[];
+  }>;
   test_cases: DesignedTestCase[];
   tool_applications: Array<{
     tool: "cucumber_gherkin" | "fast_check" | "nist_acts" | "graphwalker";

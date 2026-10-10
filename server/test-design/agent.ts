@@ -14,6 +14,7 @@ import { selectTestDesignSkills, type TestDesignSkillDecision } from "./skill-se
 import { validateTestDesign } from "./validation.js";
 
 const SKILL_ROOT = fileURLToPath(new URL("./skills/", import.meta.url));
+const TEST_DESIGN_MAX_OUTPUT_TOKENS = 60_000;
 
 registerHarnessProfile("openai", {
   generalPurposeSubagent: { enabled: false },
@@ -35,7 +36,7 @@ export function createOpenAITestDesignModel(apiKey: string): ChatOpenAI {
     model: MODEL,
     useResponsesApi: true,
     maxRetries: 0,
-    maxTokens: MAX_OUTPUT_TOKENS,
+    maxTokens: Math.max(MAX_OUTPUT_TOKENS, TEST_DESIGN_MAX_OUTPUT_TOKENS),
     zdrEnabled: true,
   });
 }

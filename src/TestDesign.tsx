@@ -46,7 +46,7 @@ export default function TestDesign() {
   const [current, setCurrent] = useState<TestDesignRecord>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const [view, setView] = useState<"cases" | "points" | "risks" | "tools">("cases");
+  const [view, setView] = useState<"cases" | "conditions" | "points" | "risks" | "tools">("cases");
   const [reviewing, setReviewing] = useState<DesignedTestCase>();
   const [reviewStatus, setReviewStatus] = useState<"accepted" | "rejected">("accepted");
   const [reviewer, setReviewer] = useState("");
@@ -237,6 +237,7 @@ export default function TestDesign() {
       <Flex justify="space-between" align="center" gap={12} wrap style={{ marginBottom: 12 }}>
         <Segmented value={view} onChange={(value) => setView(value as typeof view)} options={[
           { label: `测试用例 ${current.document.test_cases.length}`, value: "cases" },
+          { label: `测试条件 ${current.document.test_conditions?.length ?? 0}`, value: "conditions" },
           { label: `测试点 ${current.document.test_points.length}`, value: "points" },
           { label: `风险 ${current.document.risks.length}`, value: "risks" },
           { label: "成熟工具", value: "tools" },
@@ -253,6 +254,7 @@ export default function TestDesign() {
             { key: "scenario", label: "场景类型 / 技法", children: testCase.scenario_type && testCase.technique ? `${scenarioTypeLabels[testCase.scenario_type]} / ${techniqueLabels[testCase.technique]}` : "旧草稿未提供" },
             { key: "pre", label: "前置条件", children: testCase.preconditions.join("；") || "无" },
             { key: "primary", label: "主要验证对象", children: testCase.primary_trace_ref ?? "旧草稿未提供" },
+            { key: "condition", label: "主要测试条件", children: testCase.primary_test_condition_ref ?? "旧草稿未提供" },
             { key: "data", label: "测试数据", children: testCase.test_data?.join("；") || "无" },
             { key: "steps", label: "步骤与预期", children: testCase.steps?.length ? <ol style={{ margin: 0, paddingLeft: 20 }}>{testCase.steps.map((step) => <li key={step.order}><Text>{step.action}</Text><br /><Text type="secondary">预期：{step.expected}</Text></li>)}</ol> : "旧草稿未提供" },
             { key: "trace", label: "基线追溯", children: <Space wrap>{testCase.trace_refs.map((id) => <Tag key={id}>{id}</Tag>)}</Space> },
@@ -265,6 +267,8 @@ export default function TestDesign() {
       })} />}
 
       {view === "points" && <Collapse items={current.document.test_points.map((point) => ({ key: point.id, label: <Space wrap><Text strong>{point.id} · {point.title}</Text><Tag color="blue">{techniqueLabels[point.technique]}</Tag></Space>, children: <Space direction="vertical"><Text>{point.objective}</Text><Text type="secondary">适用理由：{point.technique_rationale}</Text><Space wrap>{point.trace_refs.map((id) => <Tag key={id}>{id}</Tag>)}</Space></Space> }))} />}
+
+      {view === "conditions" && <Collapse items={(current.document.test_conditions ?? []).map((condition) => ({ key: condition.id, label: <Space wrap><Text strong>{condition.id} · {condition.title}</Text><Tag color="purple">{condition.category}</Tag><Tag>{techniqueLabels[condition.technique]}</Tag></Space>, children: <Space direction="vertical"><Text>{condition.objective}</Text><Text type="secondary">设计依据：{condition.rationale}</Text><Space wrap><Tag>{condition.primary_trace_ref}</Tag>{condition.source_refs.map((id) => <Tag key={id}>{id}</Tag>)}</Space></Space> }))} />}
 
       {view === "risks" && <Space direction="vertical" size={12} style={{ width: "100%" }}>{current.document.risks.map((risk) => <Card key={risk.id} size="small" title={`${risk.id} · ${risk.title}`} extra={<Space><Tag>概率 {risk.likelihood}</Tag><Tag color="orange">影响 {risk.impact}</Tag></Space>}><Paragraph>{risk.description}</Paragraph><Text type="secondary">判断依据：{risk.rationale}</Text><div style={{ marginTop: 8 }}><Space wrap>{risk.trace_refs.map((id) => <Tag key={id}>{id}</Tag>)}</Space></div></Card>)}</Space>}
 
