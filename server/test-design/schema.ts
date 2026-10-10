@@ -131,14 +131,16 @@ export function createModelTestCaseSchema() {
   }).strict();
 }
 
-export function createTestCaseBatchSchema(obligations: readonly { conditionId: string; caseId: string }[]) {
+export function createTestCaseBatchSchema(obligations: readonly { conditionId: string; caseId: string; traceRef: string }[]) {
   const modelTestCaseSchema = createModelTestCaseSchema();
   return z.object({
-    cases: z.object(Object.fromEntries(obligations.map(({ conditionId, caseId }) => [
+    cases: z.object(Object.fromEntries(obligations.map(({ conditionId, caseId, traceRef }) => [
       conditionId,
       modelTestCaseSchema.extend({
         id: z.literal(caseId),
+        primary_trace_ref: z.literal(traceRef),
         primary_test_condition_ref: z.literal(conditionId),
+        test_condition_refs: z.tuple([z.literal(conditionId)]),
       }).strict(),
     ]))).strict(),
   }).strict();

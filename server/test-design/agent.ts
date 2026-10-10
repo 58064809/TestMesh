@@ -100,6 +100,7 @@ async function runTestDesignAgentImpl(input: {
     condition,
     conditionId: condition.id,
     caseId: `TC-${String(index + 1).padStart(3, "0")}`,
+    traceRef: condition.primary_trace_ref,
   }));
   const testCases: TestCase[] = [];
   const responses = [planResponse];

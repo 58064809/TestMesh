@@ -165,8 +165,8 @@ describe("TD01 mature-tool test design gate", () => {
   it("makes every planned TestCondition a required batch output key", () => {
     const input = candidate();
     const batch = createTestCaseBatchSchema([
-      { conditionId: "TCND-001", caseId: "TC-001" },
-      { conditionId: "TCND-002", caseId: "TC-003" },
+      { conditionId: "TCND-001", caseId: "TC-001", traceRef: "REQ-001" },
+      { conditionId: "TCND-002", caseId: "TC-003", traceRef: "REQ-001" },
     ]);
     expect(batch.safeParse({ cases: { "TCND-001": input.test_cases[0] } }).success).toBe(false);
     expect(batch.safeParse({ cases: {
