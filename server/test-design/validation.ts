@@ -1,4 +1,4 @@
-import type { BaselineSnapshot, TestDesign } from "./schema.js";
+import type { BaselineSnapshot, TestDesign, TestDesignPlan } from "./schema.js";
 import { validateChineseGherkin } from "./gherkin.js";
 
 const COVERAGE_SECTIONS = new Set([
@@ -14,7 +14,42 @@ function assertRefs(values: string[], allowed: Set<string>, label: string): void
   if (invalid.length) throw new Error(`${label} 引用了不存在的 ID：${[...new Set(invalid)].join("、")}`);
 }
 
+export function validateTestDesignPlan(plan: TestDesignPlan, baseline: BaselineSnapshot): void {
+  const traceIds = new Set(baseline.accepted.map((entry) => entry.item.id));
+  const sourceIds = new Set(baseline.sourceRefs.map((source) => source.id));
+  unique(plan.risks.map((risk) => risk.id), "Risk");
+  unique(plan.test_points.map((point) => point.id), "TestPoint");
+  const conditions = plan.test_conditions ?? [];
+  unique(conditions.map((condition) => condition.id), "TestCondition");
+  const riskIds = new Set(plan.risks.map((risk) => risk.id));
+  for (const risk of plan.risks) {
+    assertRefs(risk.trace_refs, traceIds, `${risk.id}.trace_refs`);
+    assertRefs(risk.source_refs, sourceIds, `${risk.id}.source_refs`);
+  }
+  for (const point of plan.test_points) {
+    assertRefs(point.trace_refs, traceIds, `${point.id}.trace_refs`);
+    assertRefs(point.risk_refs, riskIds, `${point.id}.risk_refs`);
+    assertRefs(point.source_refs, sourceIds, `${point.id}.source_refs`);
+  }
+  for (const condition of conditions) {
+    assertRefs([condition.primary_trace_ref], traceIds, `${condition.id}.primary_trace_ref`);
+    assertRefs(condition.source_refs, sourceIds, `${condition.id}.source_refs`);
+  }
+  const required = baseline.accepted
+    .filter((entry) => COVERAGE_SECTIONS.has(entry.section))
+    .map((entry) => entry.item.id);
+  const exclusions = new Map(plan.coverage_exclusions.map((item) => [item.trace_ref, item.reason]));
+  assertRefs([...exclusions.keys()], traceIds, "coverage_exclusions");
+  for (const id of required.filter((traceRef) => !exclusions.has(traceRef))) {
+    const planned = conditions.filter((condition) => condition.primary_trace_ref === id);
+    if (planned.length < 2) {
+      throw new Error(`测试条件规划 Gate 未通过：${id} 只有 ${planned.length} 个测试条件，至少需要正常/有效路径与反向/异常路径各一个`);
+    }
+  }
+}
+
 export function validateTestDesign(design: TestDesign, baseline: BaselineSnapshot): void {
+  validateTestDesignPlan(design as TestDesignPlan, baseline);
   const traceIds = new Set(baseline.accepted.map((entry) => entry.item.id));
   const sourceIds = new Set(baseline.sourceRefs.map((source) => source.id));
   const riskIdList = design.risks.map((risk) => risk.id);
@@ -88,7 +123,7 @@ export function validateTestDesign(design: TestDesign, baseline: BaselineSnapsho
   const required = baseline.accepted
     .filter((entry) => COVERAGE_SECTIONS.has(entry.section))
     .map((entry) => entry.item.id);
-  for (const id of required) {
+  for (const id of required.filter((traceRef) => !exclusions.has(traceRef))) {
     const planned = conditions.filter((condition) => condition.primary_trace_ref === id);
     if (planned.length < 2) {
       throw new Error(`测试条件规划 Gate 未通过：${id} 只有 ${planned.length} 个测试条件，至少需要正常/有效路径与反向/异常路径各一个`);

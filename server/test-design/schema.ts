@@ -107,9 +107,19 @@ export const TestDesignSchema = z.object({
   coverage: z.record(z.string(), CoverageEntrySchema),
 }).strict();
 
-export function createModelTestDesignSchema(requiredCoverage: readonly string[]) {
-  const coverageShape = Object.fromEntries(requiredCoverage.map((id) => [id, CoverageEntrySchema]));
-  const modelTestCaseSchema = TestCaseSchema.extend({
+export const TestDesignPlanSchema = TestDesignSchema.pick({
+  objective: true,
+  risks: true,
+  test_points: true,
+  test_conditions: true,
+  tool_applications: true,
+  coverage_exclusions: true,
+}).extend({
+  test_conditions: z.array(TestConditionSchema).min(1),
+}).strict();
+
+export function createModelTestCaseSchema() {
+  return TestCaseSchema.extend({
     module: z.string().min(1),
     primary_trace_ref: z.string().min(1),
     primary_test_condition_ref: z.string().min(1),
@@ -119,6 +129,24 @@ export function createModelTestDesignSchema(requiredCoverage: readonly string[])
     test_data: z.array(z.string().min(1)),
     steps: z.array(TestStepSchema).min(1),
   }).strict();
+}
+
+export function createTestCaseBatchSchema(obligations: readonly { conditionId: string; caseId: string }[]) {
+  const modelTestCaseSchema = createModelTestCaseSchema();
+  return z.object({
+    cases: z.object(Object.fromEntries(obligations.map(({ conditionId, caseId }) => [
+      conditionId,
+      modelTestCaseSchema.extend({
+        id: z.literal(caseId),
+        primary_test_condition_ref: z.literal(conditionId),
+      }).strict(),
+    ]))).strict(),
+  }).strict();
+}
+
+export function createModelTestDesignSchema(requiredCoverage: readonly string[]) {
+  const coverageShape = Object.fromEntries(requiredCoverage.map((id) => [id, CoverageEntrySchema]));
+  const modelTestCaseSchema = createModelTestCaseSchema();
   return TestDesignSchema.extend({
     test_conditions: z.array(TestConditionSchema).min(1),
     test_cases: z.array(modelTestCaseSchema).min(1),
@@ -128,6 +156,7 @@ export function createModelTestDesignSchema(requiredCoverage: readonly string[])
 
 export type TestDesign = z.infer<typeof TestDesignSchema>;
 export type TestCase = z.infer<typeof TestCaseSchema>;
+export type TestDesignPlan = z.infer<typeof TestDesignPlanSchema>;
 
 export const BaselineAcceptedItemSchema = z.object({
   section: z.enum([

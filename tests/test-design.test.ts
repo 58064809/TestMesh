@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validateChineseGherkin } from "../server/test-design/gherkin.js";
-import { BaselineSnapshotSchema, createModelTestDesignSchema, TestDesignSchema } from "../server/test-design/schema.js";
+import { BaselineSnapshotSchema, createModelTestDesignSchema, createTestCaseBatchSchema, TestDesignSchema } from "../server/test-design/schema.js";
 import { selectTestDesignSkills } from "../server/test-design/skill-selection.js";
 import { validateTestDesign } from "../server/test-design/validation.js";
 
@@ -160,5 +160,18 @@ describe("TD01 mature-tool test design gate", () => {
     delete input.coverage["STATE-001"];
     const modelSchema = createModelTestDesignSchema(["REQ-001", "STATE-001"]);
     expect(modelSchema.safeParse(input).success).toBe(false);
+  });
+
+  it("makes every planned TestCondition a required batch output key", () => {
+    const input = candidate();
+    const batch = createTestCaseBatchSchema([
+      { conditionId: "TCND-001", caseId: "TC-001" },
+      { conditionId: "TCND-002", caseId: "TC-003" },
+    ]);
+    expect(batch.safeParse({ cases: { "TCND-001": input.test_cases[0] } }).success).toBe(false);
+    expect(batch.safeParse({ cases: {
+      "TCND-001": input.test_cases[0],
+      "TCND-002": input.test_cases[2],
+    } }).success).toBe(true);
   });
 });
