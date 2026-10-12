@@ -303,16 +303,25 @@ export interface TestCaseRecord {
   method: string;
   path: string;
   summary: string;
-  requirementIds: string[];
-  evidenceIds: string[];
+  approvedTestCaseIds: string[];
 }
 
 export interface OpenApiSpecRecord {
   id: string;
+  approvedVersionId: string;
   name: string;
   version: string;
   filename: string;
   testCases: TestCaseRecord[];
+}
+
+export interface ApprovedTestCaseVersionOption {
+  id: string;
+  designId: string;
+  version: number;
+  approvedBy: string;
+  approvedAt: string;
+  testCases: DesignedTestCase[];
 }
 
 export interface TestRunItem {

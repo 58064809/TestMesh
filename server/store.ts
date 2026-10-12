@@ -40,12 +40,12 @@ export interface TestCaseRecord {
   method: string;
   path: string;
   summary: string;
-  requirementIds: string[];
-  evidenceIds: string[];
+  approvedTestCaseIds: string[];
 }
 
 export interface OpenApiSpecRecord {
   id: string;
+  approvedVersionId: string;
   name: string;
   version: string;
   filename: string;
@@ -281,6 +281,7 @@ CREATE TABLE IF NOT EXISTS risk_evidence (
 );
 CREATE TABLE IF NOT EXISTS openapi_specs (
   id TEXT PRIMARY KEY,
+  approved_version_id TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL,
   version TEXT NOT NULL,
   filename TEXT NOT NULL,
@@ -305,6 +306,11 @@ CREATE TABLE IF NOT EXISTS test_case_evidence (
   test_case_id TEXT NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
   evidence_id TEXT NOT NULL REFERENCES evidence(id) ON DELETE CASCADE,
   PRIMARY KEY (test_case_id, evidence_id)
+);
+CREATE TABLE IF NOT EXISTS test_case_approved_links (
+  test_case_id TEXT NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
+  approved_test_case_id TEXT NOT NULL,
+  PRIMARY KEY (test_case_id, approved_test_case_id)
 );
 CREATE TABLE IF NOT EXISTS test_runs (
   id TEXT PRIMARY KEY,
@@ -489,6 +495,21 @@ export class DomainStore {
     this.db.pragma("journal_mode = WAL");
     this.db.exec(schema);
     this.removeDeprecatedAgentData();
+    this.migrateApiAutomation();
+  }
+
+  private migrateApiAutomation(): void {
+    const columns = this.db.pragma("table_info(openapi_specs)") as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "approved_version_id")) {
+      this.db.exec("ALTER TABLE openapi_specs ADD COLUMN approved_version_id TEXT NOT NULL DEFAULT ''");
+    }
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS test_case_approved_links (
+        test_case_id TEXT NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
+        approved_test_case_id TEXT NOT NULL,
+        PRIMARY KEY (test_case_id, approved_test_case_id)
+      )
+    `);
   }
 
   private removeDeprecatedAgentData(): void {
@@ -695,6 +716,7 @@ export class DomainStore {
   }
 
   createOpenApiSpec(input: {
+    approvedVersionId: string;
     name: string;
     version: string;
     filename: string;
@@ -703,8 +725,13 @@ export class DomainStore {
   }): OpenApiSpecRecord {
     const specId = randomUUID();
     const create = this.db.transaction(() => {
-      this.db.prepare("INSERT INTO openapi_specs VALUES (?, ?, ?, ?, ?, ?)").run(
+      this.db.prepare(
+        `INSERT INTO openapi_specs
+         (id, approved_version_id, name, version, filename, content, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
         specId,
+        input.approvedVersionId,
         input.name,
         input.version,
         input.filename,
@@ -731,7 +758,10 @@ export class DomainStore {
 
   getOpenApiSpec(specId: string): OpenApiSpecRecord {
     const spec = this.db
-      .prepare("SELECT id, name, version, filename FROM openapi_specs WHERE id = ?")
+      .prepare(
+        `SELECT id, approved_version_id AS approvedVersionId, name, version, filename
+         FROM openapi_specs WHERE id = ?`,
+      )
       .get(specId) as Omit<OpenApiSpecRecord, "testCases"> | undefined;
     if (!spec) throw new Error(`OpenAPI ${specId} 不存在`);
     return { ...spec, testCases: this.listTestCases(specId) };
@@ -751,48 +781,53 @@ export class DomainStore {
         `SELECT id, spec_id AS specId, operation_id AS operationId, method, path, summary
          FROM test_cases WHERE spec_id = ? ORDER BY path, method`,
       )
-      .all(specId) as Array<Omit<TestCaseRecord, "requirementIds" | "evidenceIds">>;
-    const requirementIds = this.db.prepare(
-      "SELECT requirement_id AS id FROM test_case_requirements WHERE test_case_id = ?",
-    );
-    const evidenceIds = this.db.prepare(
-      "SELECT evidence_id AS id FROM test_case_evidence WHERE test_case_id = ?",
+      .all(specId) as Array<Omit<TestCaseRecord, "approvedTestCaseIds">>;
+    const approvedIds = this.db.prepare(
+      "SELECT approved_test_case_id AS id FROM test_case_approved_links WHERE test_case_id = ? ORDER BY approved_test_case_id",
     );
     return rows.map((row) => ({
       ...row,
-      requirementIds: (requirementIds.all(row.id) as Array<{ id: string }>).map((item) => item.id),
-      evidenceIds: (evidenceIds.all(row.id) as Array<{ id: string }>).map((item) => item.id),
+      approvedTestCaseIds: (approvedIds.all(row.id) as Array<{ id: string }>).map((item) => item.id),
     }));
   }
 
-  updateTestCaseLinks(testCaseId: string, requirementIds: string[], evidenceIds: string[]): void {
+  getApprovedVersionIdForOperation(testCaseId: string): string {
+    const row = this.db.prepare(
+      `SELECT specs.approved_version_id AS approvedVersionId
+       FROM test_cases cases
+       JOIN openapi_specs specs ON specs.id = cases.spec_id
+       WHERE cases.id = ?`,
+    ).get(testCaseId) as { approvedVersionId: string } | undefined;
+    if (!row) throw new Error(`API operation ${testCaseId} 不存在`);
+    if (!row.approvedVersionId) throw new Error("历史 OpenAPI 未绑定 Approved TestCase 版本，请重新导入");
+    return row.approvedVersionId;
+  }
+
+  updateApprovedTestCaseLinks(testCaseId: string, approvedTestCaseIds: string[]): void {
     const update = this.db.transaction(() => {
       const exists = this.db.prepare("SELECT 1 FROM test_cases WHERE id = ?").get(testCaseId);
-      if (!exists) throw new Error(`TestCase ${testCaseId} 不存在`);
-      this.db.prepare("DELETE FROM test_case_requirements WHERE test_case_id = ?").run(testCaseId);
-      this.db.prepare("DELETE FROM test_case_evidence WHERE test_case_id = ?").run(testCaseId);
-      const addRequirement = this.db.prepare("INSERT INTO test_case_requirements VALUES (?, ?)");
-      const addEvidence = this.db.prepare("INSERT INTO test_case_evidence VALUES (?, ?)");
-      for (const id of requirementIds) addRequirement.run(testCaseId, id);
-      for (const id of evidenceIds) addEvidence.run(testCaseId, id);
+      if (!exists) throw new Error(`API operation ${testCaseId} 不存在`);
+      this.db.prepare("DELETE FROM test_case_approved_links WHERE test_case_id = ?").run(testCaseId);
+      const add = this.db.prepare("INSERT INTO test_case_approved_links VALUES (?, ?)");
+      for (const id of [...new Set(approvedTestCaseIds)]) add.run(testCaseId, id);
     });
     update();
   }
 
-  assertSpecTraceable(specId: string): void {
-    const row = this.db
+  getMappedOperationIds(specId: string): string[] {
+    const spec = this.getOpenApiSpec(specId);
+    if (!spec.approvedVersionId) throw new Error("历史 OpenAPI 未绑定 Approved TestCase 版本，请重新导入");
+    const rows = this.db
       .prepare(
-        `SELECT COUNT(*) AS missing
+        `SELECT tc.operation_id AS operationId
          FROM test_cases tc
-         WHERE tc.spec_id = ? AND (
-           NOT EXISTS (SELECT 1 FROM test_case_requirements tcr WHERE tcr.test_case_id = tc.id)
-           OR NOT EXISTS (SELECT 1 FROM test_case_evidence tce WHERE tce.test_case_id = tc.id)
-         )`,
+         WHERE tc.spec_id = ?
+           AND EXISTS (SELECT 1 FROM test_case_approved_links link WHERE link.test_case_id = tc.id)
+         ORDER BY tc.path, tc.method`,
       )
-      .get(specId) as { missing: number };
-    if (row.missing > 0) {
-      throw new Error(`${row.missing} 个 TestCase 尚未同时关联需求和证据`);
-    }
+      .all(specId) as Array<{ operationId: string }>;
+    if (rows.length === 0) throw new Error("至少需要把一个 API operation 关联到 Approved TestCase");
+    return rows.map((row) => row.operationId);
   }
 
   createTestRun(specId: string, targetBaseUrl: string): string {

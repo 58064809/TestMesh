@@ -4,7 +4,7 @@ import path from "node:path";
 import { XMLParser } from "fast-xml-parser";
 import type { DomainStore, TestRunItemInput, TestRunRecord } from "./store.js";
 
-export const SCHEMATHESIS_VERSION = "4.24.3";
+export const SCHEMATHESIS_VERSION = "4.29.3";
 const MAX_RUNNER_OUTPUT_BYTES = 2 * 1024 * 1024;
 
 export interface RunnerAuth {
@@ -145,7 +145,12 @@ async function execute(command: string, args: string[], cwd: string): Promise<{
       cwd,
       shell: false,
       windowsHide: true,
-      env: { ...process.env, NO_PROXY: "127.0.0.1,localhost" },
+      env: {
+        ...process.env,
+        NO_PROXY: "127.0.0.1,localhost",
+        PYTHONUTF8: "1",
+        PYTHONIOENCODING: "utf-8",
+      },
     });
     let output = "";
     let outputBytes = 0;
@@ -170,7 +175,7 @@ export async function runSchemathesis(
   store: DomainStore,
   dataRoot = path.resolve("data", "runs"),
 ): Promise<TestRunRecord> {
-  store.assertSpecTraceable(input.specId);
+  const operationIds = store.getMappedOperationIds(input.specId);
   const runId = store.createTestRun(input.specId, input.targetBaseUrl);
   const runDirectory = path.join(dataRoot, runId);
   fs.mkdirSync(runDirectory, { recursive: true });
@@ -191,8 +196,6 @@ export async function runSchemathesis(
     "0",
     "--max-examples",
     "20",
-    "--phases",
-    "examples,coverage,fuzzing",
     "--report",
     "junit",
     "--report-junit-path",
@@ -201,6 +204,7 @@ export async function runSchemathesis(
     "true",
     "--no-color",
   ];
+  for (const operationId of operationIds) args.push("--include-operation-id", operationId);
   for (const header of input.headers) args.push("--header", `${header.name}: ${header.value}`);
   args.push(...authArguments(input.auth));
 

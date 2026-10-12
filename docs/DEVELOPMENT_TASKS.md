@@ -129,17 +129,17 @@ DI01 已完成，下一阶段进入 TD01。
 | TD01-02 | 固定 Test Design Stage Profile | 只读取 Baseline、范围、人工决策和获准知识 | 已完成 |
 | TD01-03 | 接入测试设计 Skills | 按任务加载等价类、边界值、判定表、状态迁移等；不适用有理由 | 已完成 |
 | TD01-04 | 覆盖矩阵与追溯 Gate | Requirement/Test Point/TestCase/证据可回链，无静默遗漏 | 已完成 |
-| TD01-05 | 人工 Review 与 Approved TestCase | 驳回/合并不进入后续，批准项形成不可覆盖版本 | 已实现，待真实候选验收 |
-| TD01-06 | 真实需求验收 | 数量不设上限，质量与完成由证据和 Gate 判断 | 阻塞于一次模型 Connection error，未自动重试 |
+| TD01-05 | 人工 Review 与 Approved TestCase | 72 条逐条追加 accepted 事件，Approved v1 不可覆盖 | 已完成 |
+| TD01-06 | 真实需求验收 | 72 条原子用例、36 个基线项各 2 条条件，用户全量确认通过 | 已完成 |
 
 ## AT01 — API Automation
 
 | 任务 | 内容 | 验收结果 | 状态 |
 | --- | --- | --- | --- |
-| AT01-01 | 固定 API Automation Stage Profile | 只接收 Approved TestCase、目标仓库和必要代码上下文 | 待 TD01 |
-| AT01-02 | 选择单一成熟 Engineering Harness | 不同时维护 OpenHands 与另一套代码 Agent | 待 TD01 |
-| AT01-03 | 生成和验证 API 自动化 | 代码变更回链 TestCase，使用既定 Runner 真实执行 | 待 TD01 |
-| AT01-04 | 人工验收 | 不自动 commit/push，保存 Diff 和 Runner 证据 | 待 TD01 |
+| AT01-01 | 固定 API Automation 输入 | 只接收 Approved TestCase 版本、OpenAPI、目标 URL 与临时认证 | 已完成 |
+| AT01-02 | 选择单一成熟 Runner | OpenAPI 3.x + Schemathesis 4.29.3；不引入代码生成 Agent | 已完成 |
+| AT01-03 | operation 映射与真实 Runner 验证 | 只执行已映射 operation，受控 HTTP 目标保存 2 条失败证据 | 已完成（平台闭环） |
+| AT01-04 | 真实业务验收 | 使用本项目 OpenAPI 与测试环境执行并回链 Approved v1 | 等待真实契约、URL 与认证 |
 
 ## AT02 — UI Automation
 

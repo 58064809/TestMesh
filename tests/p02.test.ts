@@ -2,43 +2,6 @@ import { describe, expect, it } from "vitest";
 import { parseOpenApi } from "../server/openapi.js";
 import { parseJUnitReport } from "../server/schemathesis.js";
 import { DomainStore } from "../server/store.js";
-import type { AnalysisResult } from "../server/analysis.js";
-
-const analysis: AnalysisResult = {
-  summary: "售后 API 需求",
-  requirements: [
-    {
-      id: "REQ-001",
-      title: "查询售后单",
-      description: "按编号查询售后单",
-      priority: "must",
-      acceptanceCriteria: ["返回售后单"],
-      evidenceIds: ["EV-001"],
-    },
-  ],
-  risks: [
-    {
-      id: "RISK-001",
-      title: "越权",
-      description: "可能读取其他用户售后单",
-      severity: "high",
-      mitigation: "校验所属用户",
-      evidenceIds: ["EV-001"],
-    },
-  ],
-  pendingQuestions: [],
-  evidence: [
-    {
-      id: "EV-001",
-      sourceId: "ATT-1",
-      sourceName: "售后需求.pdf",
-      locatorType: "page",
-      locator: "第 1 页",
-      excerpt: "查询售后单",
-      note: "",
-    },
-  ],
-};
 
 const openapi = `
 openapi: 3.0.3
@@ -74,8 +37,8 @@ Reproduce with:
   </testsuite>
 </testsuites>`;
 
-describe("P02 domain and Schemathesis integration", () => {
-  it("creates one TestCase definition per OpenAPI operation", () => {
+describe("AT01 Approved TestCase and Schemathesis integration", () => {
+  it("discovers each OpenAPI operation", () => {
     const parsed = parseOpenApi(openapi);
 
     expect(parsed.name).toBe("After-sales API");
@@ -89,25 +52,22 @@ describe("P02 domain and Schemathesis integration", () => {
     ]);
   });
 
-  it("persists trace links and extracts minimum failure reproduction from JUnit", () => {
+  it("runs only operations mapped to an Approved TestCase and extracts minimum failure reproduction", () => {
     const store = new DomainStore(":memory:");
     try {
-      store.saveAnalysis(analysis, "gpt-5.6-luna");
-      const trace = store.listTraceSources();
       const parsed = parseOpenApi(openapi);
       const spec = store.createOpenApiSpec({
         ...parsed,
+        approvedVersionId: "approved-v1",
         filename: "openapi.yaml",
         content: openapi,
       });
 
-      expect(() => store.assertSpecTraceable(spec.id)).toThrow("尚未同时关联需求和证据");
-      store.updateTestCaseLinks(
-        spec.testCases[0].id,
-        [trace.requirements[0].id],
-        [trace.evidence[0].id],
-      );
-      expect(() => store.assertSpecTraceable(spec.id)).not.toThrow();
+      expect(spec.approvedVersionId).toBe("approved-v1");
+      expect(() => store.getMappedOperationIds(spec.id)).toThrow("至少需要");
+      store.updateApprovedTestCaseLinks(spec.testCases[0].id, ["TC-001"]);
+      expect(store.getMappedOperationIds(spec.id)).toEqual(["getCase"]);
+      expect(store.getOpenApiSpec(spec.id).testCases[0].approvedTestCaseIds).toEqual(["TC-001"]);
 
       const report = parseJUnitReport(junit, spec.id, store);
       expect(report.failed).toBe(1);

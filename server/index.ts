@@ -323,10 +323,6 @@ app.post(
   },
 );
 
-app.get("/api/p02/trace-sources", (_request, response) => {
-  response.json(store.listTraceSources());
-});
-
 app.get("/api/ai-quality/profiles", async (_request, response) => {
   try {
     const profiles = await aiQualityStore.list();
@@ -585,17 +581,33 @@ app.post("/api/test-designs/:id/approve", async (request, response) => {
   }
 });
 
-app.post("/api/p02/openapi", openApiUpload.single("spec"), (request, response) => {
+app.get("/api/api-automation/approved-versions", async (_request, response) => {
+  try {
+    const versions = await testDesignStore.listApprovedVersions();
+    response.json(versions.map(({ record, snapshot }) => ({ ...record, testCases: snapshot.test_cases })));
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "无法读取 Approved TestCase 版本" });
+  }
+});
+
+app.post("/api/api-automation/openapi", openApiUpload.single("spec"), async (request, response) => {
   try {
     if (!request.file) {
       response.status(400).json({ error: "请选择 OpenAPI JSON/YAML 文件" });
       return;
     }
+    const approvedVersionId = typeof request.body.approvedVersionId === "string" ? request.body.approvedVersionId.trim() : "";
+    if (!approvedVersionId) {
+      response.status(400).json({ error: "请选择 Approved TestCase 版本" });
+      return;
+    }
+    await testDesignStore.getApprovedVersionById(approvedVersionId);
     const filename = normalizeUploadFilename(request.file.originalname);
     const content = request.file.buffer.toString("utf8");
     const parsed = parseOpenApi(content);
     response.json(
       store.createOpenApiSpec({
+        approvedVersionId,
         name: parsed.name,
         version: parsed.version,
         filename,
@@ -609,15 +621,17 @@ app.post("/api/p02/openapi", openApiUpload.single("spec"), (request, response) =
   }
 });
 
-app.put("/api/p02/test-cases/:id/links", (request, response) => {
+app.put("/api/api-automation/operations/:id/links", async (request, response) => {
   try {
-    const requirementIds = Array.isArray(request.body.requirementIds)
-      ? request.body.requirementIds.filter((item: unknown): item is string => typeof item === "string")
+    const approvedTestCaseIds = Array.isArray(request.body.approvedTestCaseIds)
+      ? request.body.approvedTestCaseIds.filter((item: unknown): item is string => typeof item === "string")
       : [];
-    const evidenceIds = Array.isArray(request.body.evidenceIds)
-      ? request.body.evidenceIds.filter((item: unknown): item is string => typeof item === "string")
-      : [];
-    store.updateTestCaseLinks(request.params.id, requirementIds, evidenceIds);
+    const approvedVersionId = store.getApprovedVersionIdForOperation(request.params.id);
+    const approved = await testDesignStore.getApprovedVersionById(approvedVersionId);
+    const allowed = new Set(approved.snapshot.test_cases.map((item) => item.id));
+    const invalid = approvedTestCaseIds.filter((id: string) => !allowed.has(id));
+    if (invalid.length) throw new Error(`以下 TestCase 不属于所选 Approved 版本：${invalid.join("、")}`);
+    store.updateApprovedTestCaseLinks(request.params.id, approvedTestCaseIds);
     response.status(204).end();
   } catch (error) {
     const message = error instanceof Error ? error.message : "追溯关系保存失败";
@@ -625,7 +639,7 @@ app.put("/api/p02/test-cases/:id/links", (request, response) => {
   }
 });
 
-app.post("/api/p02/test-runs", async (request, response) => {
+app.post("/api/api-automation/test-runs", async (request, response) => {
   try {
     const specId = typeof request.body.specId === "string" ? request.body.specId : "";
     const targetBaseUrl = validateTargetBaseUrl(

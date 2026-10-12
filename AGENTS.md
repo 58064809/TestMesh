@@ -100,6 +100,16 @@
 - KR01 已于 2026-10-10 完成。唯一知识检索路径为 Docling HybridChunker + OpenAI `text-embedding-3-small` + 本机 Qdrant 1.19.2；Qdrant 只监听 127.0.0.1，由 `start-stack` 启动。项目知识只允许架构、接口、数据字典、历史缺陷和企业规则等补充材料，不能替代完整 PRD 或批准基线。
 - Test Design Agent 只在有已索引知识时获得 `search_project_knowledge`；输出的 `knowledge_refs` 必须是本次工具真实返回的 chunk ID，且 TestCase 只能沿用对应 TestCondition 的知识引用。无语料时不挂载检索工具、引用为空；不得伪造命中或加入备用检索路径。
 - 新 TestDesign 必须冻结实际使用的知识证据快照（chunk ID、文档、score、原文、标题、页码和 Docling 元素）；知识库删除不得破坏历史设计证据。用例页面必须展示 Baseline 原文摘录与定位，以及存在时的冻结知识证据，不能只展示引用 ID。
+- 2026-10-12 用户明确决定当前 72 条 TestCase 全部通过。系统已逐条写入 72 条 `accepted` 评审事件并冻结 Approved TestCase v1 `60e6e77a-6392-497a-bc66-a165a688d097`；TD01 已完成，后续只能读取该快照，不得覆盖。当前没有真实 RAG 资料，知识引用为空且不作为阻塞项，不得补造命中。
+
+## 当前 API 自动化规则（2026-10-12）
+
+- AT01 已进入实施。唯一输入是不可覆盖的 Approved TestCase 版本、真实 OpenAPI 3.x、目标 Base URL 和本次运行所需认证；不得从 PRD 猜接口契约。
+- 唯一 API Runner 是 Schemathesis 4.29.3，通过官方 uv 0.13.0 / `uvx` 运行；新环境使用 `npm run setup:api` 且必须是 Python 3.12。使用成熟的 examples、coverage、fuzzing、stateful 阶段；TestMesh 不自研生成、边界、Shrink 或状态链算法，也不再引入代码生成 Agent 复制这些能力。
+- TestMesh 只维护 Approved TestCase ↔ OpenAPI operation 映射与 TestRun 证据。只执行有映射的 operation，未映射项明确排除；映射不改变 Schemathesis 生成逻辑。
+- 旧 `/api/p02/*` 产品入口已删除。历史 SQLite OpenAPI 没有 Approved 版本 ID，不能进入新路径，必须重新导入；不得恢复旧需求/证据关联作为平行路径。
+- 认证和 Header 只用于本次执行，不持久化。Windows 子进程必须使用 UTF-8，避免 GBK 导致 Schemathesis Unicode 输出崩溃；Runner 无 JUnit 时保存真实错误并停止，不启用备用报告或 fallback。
+- 受控真实 HTTP 闭环已通过：固定 operation 映射后真实 Schemathesis 生成 2 个 examples，并保存 2 条受控 HTTP 500 失败证据。当前售后 PRD 没有 OpenAPI、测试 URL 或认证，不能称为业务验收完成；取得真实契约和环境前 AT01 保持进行中，不进入 AT02。
 
 ## P01 实现约束
 

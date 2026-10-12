@@ -314,7 +314,7 @@ function Workbench() {
               { key: "chat", icon: <MessageOutlined />, label: "AI 需求分析" },
               { key: "test-design", icon: <AuditOutlined />, label: "智能测试设计" },
               { key: "quality", icon: <ExperimentOutlined />, label: "AI 质量评估" },
-              { key: "api", icon: <ApiOutlined />, label: "API 测试" },
+              { key: "api", icon: <ApiOutlined />, label: "API 自动化" },
               { key: "ui", icon: <DesktopOutlined />, label: "UI 测试" },
               { key: "app", icon: <AndroidOutlined />, label: "APP 测试" },
               { key: "performance", icon: <ThunderboltOutlined />, label: "性能测试" },
@@ -326,12 +326,12 @@ function Workbench() {
             <div className="phase-card">
               <Flex justify="space-between" align="center">
                 <Text className="phase-label">当前阶段</Text>
-                <Tag color={activePage === "test-design" ? "processing" : "success"} bordered={false}>
-                  {activePage === "test-design" ? "进行中" : "已完成"}
+                <Tag color={activePage === "api" ? "processing" : "success"} bordered={false}>
+                  {activePage === "api" ? "进行中" : "已完成"}
                 </Tag>
               </Flex>
-              <Text className="phase-title">{activePage === "test-design" ? "TD01 · 智能测试设计" : "RA01 · AI 需求分析"}</Text>
-              <Text className="phase-copy">{activePage === "test-design" ? "从已批准 Baseline 生成可追溯、可评审的标准 TestCase" : "单一需求分析入口：发现缺失、歧义与冲突，并提供可核对的原文证据"}</Text>
+              <Text className="phase-title">{activePage === "api" ? "AT01 · API 自动化" : activePage === "test-design" ? "TD01 · 智能测试设计" : "RA01 · AI 需求分析"}</Text>
+              <Text className="phase-copy">{activePage === "api" ? "把 Approved TestCase 映射到 OpenAPI operation，并保存 Schemathesis 运行证据" : activePage === "test-design" ? "72 条用例已人工通过并冻结为 Approved TestCase v1" : "单一需求分析入口：发现缺失、歧义与冲突，并提供可核对的原文证据"}</Text>
             </div>
           )}
         </Sider>
@@ -347,7 +347,7 @@ function Workbench() {
                 />
                 <div>
                   <Title level={4}>
-                    {activePage === "chat" ? "AI 需求分析" : activePage === "test-design" ? "智能测试设计" : activePage === "quality" ? "AI 质量评估" : activePage === "api" ? "API 测试" : activePage === "ui" ? "UI 测试" : activePage === "app" ? "APP 测试" : activePage === "performance" ? "性能测试" : "安全测试"}
+                    {activePage === "chat" ? "AI 需求分析" : activePage === "test-design" ? "智能测试设计" : activePage === "quality" ? "AI 质量评估" : activePage === "api" ? "API 自动化" : activePage === "ui" ? "UI 测试" : activePage === "app" ? "APP 测试" : activePage === "performance" ? "性能测试" : "安全测试"}
                   </Title>
                   <Text type="secondary">
                     {activePage === "chat"
@@ -357,7 +357,7 @@ function Workbench() {
                       : activePage === "quality"
                         ? "用真实业务样本、人工标准与 Phoenix 实验证据验证 Agent 质量"
                       : activePage === "api"
-                        ? "导入 OpenAPI，关联需求与证据并运行 Schemathesis"
+                        ? "选择 Approved TestCase，映射 OpenAPI operation 并运行 Schemathesis"
                         : activePage === "ui"
                             ? "在一次性 Docker 容器中运行所选 Playwright 测试"
                             : activePage === "app"
@@ -379,7 +379,7 @@ function Workbench() {
                     : activePage === "quality"
                       ? "Phoenix Eval"
                     : activePage === "api"
-                      ? "Schemathesis 4.24.3"
+                      ? "Schemathesis 4.29.3"
                       : activePage === "ui"
                           ? "Playwright 1.62.1"
                           : activePage === "app"

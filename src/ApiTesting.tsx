@@ -29,11 +29,10 @@ import {
 import TextArea from "antd/es/input/TextArea";
 import { useEffect, useMemo, useState } from "react";
 import type {
+  ApprovedTestCaseVersionOption,
   OpenApiSpecRecord,
   TestCaseRecord,
   TestRunRecord,
-  TraceEvidence,
-  TraceRequirement,
 } from "./types";
 
 const { Title, Text } = Typography;
@@ -111,8 +110,8 @@ export default function ApiTesting() {
   const { message } = AntdApp.useApp();
   const [specFile, setSpecFile] = useState<UploadFile>();
   const [spec, setSpec] = useState<OpenApiSpecRecord>();
-  const [requirements, setRequirements] = useState<TraceRequirement[]>([]);
-  const [evidence, setEvidence] = useState<TraceEvidence[]>([]);
+  const [approvedVersions, setApprovedVersions] = useState<ApprovedTestCaseVersionOption[]>([]);
+  const [approvedVersionId, setApprovedVersionId] = useState("");
   const [targetBaseUrl, setTargetBaseUrl] = useState("");
   const [headersText, setHeadersText] = useState("");
   const [authType, setAuthType] = useState<"none" | "bearer" | "basic">("none");
@@ -125,29 +124,31 @@ export default function ApiTesting() {
   const [error, setError] = useState<string>();
 
   useEffect(() => {
-    void fetch("/api/p02/trace-sources")
+    void fetch("/api/api-automation/approved-versions")
       .then(async (response) => {
-        if (!response.ok) throw new Error(`追溯数据加载失败（HTTP ${response.status}）`);
-        return (await response.json()) as { requirements: TraceRequirement[]; evidence: TraceEvidence[] };
+        if (!response.ok) throw new Error(`Approved TestCase 加载失败（HTTP ${response.status}）`);
+        return (await response.json()) as ApprovedTestCaseVersionOption[];
       })
-      .then((body) => {
-        setRequirements(body.requirements);
-        setEvidence(body.evidence);
+      .then((versions) => {
+        setApprovedVersions(versions);
+        setApprovedVersionId((current) => current || versions[0]?.id || "");
       })
-      .catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "追溯数据加载失败"));
+      .catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "Approved TestCase 加载失败"));
   }, []);
 
-  const allLinked = useMemo(
-    () =>
-      Boolean(spec?.testCases.length) &&
-      spec?.testCases.every((testCase) => testCase.requirementIds.length > 0 && testCase.evidenceIds.length > 0),
+  const approvedVersion = useMemo(
+    () => approvedVersions.find((item) => item.id === approvedVersionId),
+    [approvedVersions, approvedVersionId],
+  );
+  const mappedCount = useMemo(
+    () => spec?.testCases.filter((testCase) => testCase.approvedTestCaseIds.length > 0).length ?? 0,
     [spec],
   );
 
   async function importSpec() {
     const file = specFile?.originFileObj;
-    if (!file) {
-      message.warning("请选择 OpenAPI JSON/YAML 文件");
+    if (!file || !approvedVersionId) {
+      message.warning(!approvedVersionId ? "请先选择 Approved TestCase 版本" : "请选择 OpenAPI JSON/YAML 文件");
       return;
     }
     setImporting(true);
@@ -156,11 +157,12 @@ export default function ApiTesting() {
     try {
       const form = new FormData();
       form.append("spec", file, specFile.name);
-      const response = await fetch("/api/p02/openapi", { method: "POST", body: form });
+      form.append("approvedVersionId", approvedVersionId);
+      const response = await fetch("/api/api-automation/openapi", { method: "POST", body: form });
       const body = (await response.json()) as OpenApiSpecRecord | { error?: string };
       if (!response.ok) throw new Error("error" in body && body.error ? body.error : "OpenAPI 导入失败");
       setSpec(body as OpenApiSpecRecord);
-      message.success("OpenAPI 已导入并生成 TestCase 定义");
+      message.success("OpenAPI 已导入，请关联需要执行的 Approved TestCase");
     } catch (caught) {
       const detail = caught instanceof Error ? caught.message : "OpenAPI 导入失败";
       setError(detail);
@@ -172,20 +174,19 @@ export default function ApiTesting() {
 
   async function updateLinks(
     testCase: TestCaseRecord,
-    kind: "requirementIds" | "evidenceIds",
     ids: string[],
   ) {
     if (!spec) return;
-    const next = { ...testCase, [kind]: ids };
+    const next = { ...testCase, approvedTestCaseIds: ids };
     setSpec({
       ...spec,
       testCases: spec.testCases.map((item) => (item.id === testCase.id ? next : item)),
     });
     try {
-      const response = await fetch(`/api/p02/test-cases/${testCase.id}/links`, {
+      const response = await fetch(`/api/api-automation/operations/${testCase.id}/links`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ requirementIds: next.requirementIds, evidenceIds: next.evidenceIds }),
+        body: JSON.stringify({ approvedTestCaseIds: next.approvedTestCaseIds }),
       });
       if (!response.ok) {
         const body = (await response.json()) as { error?: string };
@@ -203,15 +204,15 @@ export default function ApiTesting() {
       message.warning("请先导入 OpenAPI 并填写 Target Base URL");
       return;
     }
-    if (!allLinked) {
-      message.warning("每个 TestCase 必须关联至少一条需求和一条证据");
+    if (mappedCount === 0) {
+      message.warning("至少需要把一个 API operation 关联到 Approved TestCase");
       return;
     }
     setRunning(true);
     setError(undefined);
     setRun(undefined);
     try {
-      const response = await fetch("/api/p02/test-runs", {
+      const response = await fetch("/api/api-automation/test-runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -247,6 +248,20 @@ export default function ApiTesting() {
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={9}>
           <Card className="api-config-card" title={<Space><CloudUploadOutlined />导入与运行</Space>}>
+            <div className="api-field">
+              <Text strong>Approved TestCase 版本</Text>
+              <Select
+                value={approvedVersionId || undefined}
+                disabled={Boolean(spec)}
+                placeholder="请先在智能测试设计中批准一个版本"
+                onChange={(value) => setApprovedVersionId(value)}
+                options={approvedVersions.map((item) => ({
+                  value: item.id,
+                  label: `v${item.version} · ${item.testCases.length} 条 · ${item.approvedBy}`,
+                }))}
+              />
+              <Text type="secondary">只允许不可覆盖的 Approved 版本进入自动化；RAG 不是执行前置条件。</Text>
+            </div>
             <Dragger
               accept=".json,.yaml,.yml"
               maxCount={1}
@@ -260,7 +275,7 @@ export default function ApiTesting() {
             >
               <p className="ant-upload-drag-icon"><ApiOutlined /></p>
               <p className="ant-upload-text">选择 OpenAPI JSON/YAML</p>
-              <p className="ant-upload-hint">导入后每条 operation 生成一条 TestCase 定义</p>
+              <p className="ant-upload-hint">导入后识别 operation，再与批准用例建立人工映射</p>
             </Dragger>
             <Button block type="primary" onClick={() => void importSpec()} loading={importing} className="api-import-button">
               导入 OpenAPI
@@ -311,13 +326,13 @@ export default function ApiTesting() {
               size="large"
               type="primary"
               icon={<PlayCircleOutlined />}
-              disabled={!spec || !allLinked}
+              disabled={!spec || mappedCount === 0}
               loading={running}
               onClick={() => void executeRun()}
             >
               运行 Schemathesis
             </Button>
-            <Text type="secondary" className="api-run-note">4.24.3 · 单 worker · deterministic · zero retry</Text>
+            <Text type="secondary" className="api-run-note">4.29.3 · examples / coverage / fuzzing / stateful · deterministic · zero retry</Text>
           </Card>
         </Col>
 
@@ -325,7 +340,7 @@ export default function ApiTesting() {
           <Space direction="vertical" size={16} className="api-main-stack">
             {error && <Alert type="error" showIcon message="流程已停止" description={error} />}
 
-            <Card title={<Space><LinkOutlined />TestCase 与追溯关系</Space>}>
+            <Card title={<Space><LinkOutlined />Approved TestCase 与 API operation 映射</Space>}>
               {!spec ? (
                 <Empty description="导入 OpenAPI 后显示 API 测试定义" image={Empty.PRESENTED_IMAGE_SIMPLE} />
               ) : (
@@ -335,17 +350,27 @@ export default function ApiTesting() {
                       <Title level={5}>{spec.name}</Title>
                       <Text type="secondary">{spec.filename} · {spec.version || "未声明版本"}</Text>
                     </div>
-                    <Tag color="blue">{spec.testCases.length} 个 TestCase</Tag>
+                    <Space>
+                      <Tag color="blue">{spec.testCases.length} 个 operation</Tag>
+                      <Tag color={mappedCount > 0 ? "green" : "default"}>{mappedCount} 个待执行</Tag>
+                    </Space>
                   </Flex>
-                  {requirements.length === 0 && (
+                  {!approvedVersion && (
                     <Alert
                       type="warning"
                       showIcon
-                      message="暂无可关联需求"
-                      description="先在 AI 需求分析中完成一次分析，结果会写入 SQLite。"
+                      message="Approved TestCase 版本不可用"
+                      description="请返回智能测试设计，完成逐条评审并建立 Approved TestCase 版本。"
                       className="api-trace-warning"
                     />
                   )}
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="只执行已映射 operation"
+                    description="未映射接口会明确排除，不会让模型自动猜测业务关系。Schemathesis 根据 OpenAPI 生成请求；映射只负责结果回链。"
+                    className="api-trace-warning"
+                  />
                   <List
                     dataSource={spec.testCases}
                     renderItem={(testCase) => (
@@ -357,27 +382,15 @@ export default function ApiTesting() {
                             <Text type="secondary">{testCase.summary || testCase.operationId}</Text>
                           </Flex>
                           <Row gutter={[10, 10]} className="api-link-row">
-                            <Col xs={24} md={12}>
+                            <Col xs={24}>
                               <Select
                                 mode="multiple"
-                                value={testCase.requirementIds}
-                                onChange={(ids) => void updateLinks(testCase, "requirementIds", ids)}
-                                placeholder="关联需求"
-                                options={requirements.map((item) => ({
+                                value={testCase.approvedTestCaseIds}
+                                onChange={(ids) => void updateLinks(testCase, ids)}
+                                placeholder="选择该接口支撑的 Approved TestCase；留空则不执行此接口"
+                                options={(approvedVersion?.testCases ?? []).map((item) => ({
                                   value: item.id,
-                                  label: `${item.externalId} · ${item.title}`,
-                                }))}
-                              />
-                            </Col>
-                            <Col xs={24} md={12}>
-                              <Select
-                                mode="multiple"
-                                value={testCase.evidenceIds}
-                                onChange={(ids) => void updateLinks(testCase, "evidenceIds", ids)}
-                                placeholder="关联证据"
-                                options={evidence.map((item) => ({
-                                  value: item.id,
-                                  label: `${item.externalId} · ${item.sourceName} ${item.locator}`,
+                                  label: `${item.id} · ${item.title}`,
                                 }))}
                               />
                             </Col>

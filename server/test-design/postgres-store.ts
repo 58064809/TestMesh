@@ -197,10 +197,39 @@ export class TestDesignPostgresStore {
     }
   }
 
-  async getApprovedVersion(designId: string): Promise<{ record: ApprovedTestCaseVersionRecord; snapshot: unknown } | null> {
+  async listApprovedVersions(): Promise<Array<{ record: ApprovedTestCaseVersionRecord; snapshot: TestDesign }>> {
+    const result = await this.pool.query(
+      `SELECT * FROM ${this.schema}.approved_test_case_versions ORDER BY approved_at DESC`,
+    );
+    return result.rows.map((row) => ({
+      record: this.parseVersion(row),
+      snapshot: this.parseApprovedSnapshot(row.snapshot_json),
+    }));
+  }
+
+  async getApprovedVersionById(id: string): Promise<{ record: ApprovedTestCaseVersionRecord; snapshot: TestDesign }> {
+    const result = await this.pool.query(
+      `SELECT * FROM ${this.schema}.approved_test_case_versions WHERE id = $1`,
+      [id],
+    );
+    if (result.rowCount !== 1) throw new Error(`Approved TestCase 版本 ${id} 不存在`);
+    return {
+      record: this.parseVersion(result.rows[0]),
+      snapshot: this.parseApprovedSnapshot(result.rows[0].snapshot_json),
+    };
+  }
+
+  async getApprovedVersion(designId: string): Promise<{ record: ApprovedTestCaseVersionRecord; snapshot: TestDesign } | null> {
     const result = await this.pool.query(`SELECT * FROM ${this.schema}.approved_test_case_versions WHERE design_id = $1`, [designId]);
     if (!result.rowCount) return null;
-    return { record: this.parseVersion(result.rows[0]), snapshot: result.rows[0].snapshot_json };
+    return { record: this.parseVersion(result.rows[0]), snapshot: this.parseApprovedSnapshot(result.rows[0].snapshot_json) };
+  }
+
+  private parseApprovedSnapshot(value: unknown): TestDesign {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Approved TestCase 快照格式无效");
+    const design = { ...(value as Record<string, unknown>) };
+    delete design.reviews;
+    return TestDesignSchema.parse(design);
   }
 
   private parseDesign(row: Record<string, unknown>): TestDesignRecord {

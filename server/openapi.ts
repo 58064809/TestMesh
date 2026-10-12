@@ -60,6 +60,12 @@ export function parseOpenApi(content: string): ParsedOpenApi {
   if (operations.length === 0) {
     throw new Error("OpenAPI 没有可执行的 API operation");
   }
+  const duplicatedOperationIds = operations
+    .map((item) => item.operationId)
+    .filter((operationId, index, values) => values.indexOf(operationId) !== index);
+  if (duplicatedOperationIds.length) {
+    throw new Error(`OpenAPI operationId 必须唯一：${[...new Set(duplicatedOperationIds)].join("、")}`);
+  }
   return { name, version: apiVersion, operations };
 }
 
