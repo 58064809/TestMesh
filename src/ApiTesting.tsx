@@ -100,6 +100,7 @@ function ContractApiTesting() {
   const { message } = AntdApp.useApp();
   const [specFile, setSpecFile] = useState<UploadFile>();
   const [spec, setSpec] = useState<OpenApiSpecRecord>();
+  const [specs, setSpecs] = useState<OpenApiSpecRecord[]>([]);
   const [approvedVersions, setApprovedVersions] = useState<ApprovedTestCaseVersionOption[]>([]);
   const [approvedVersionId, setApprovedVersionId] = useState("");
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
@@ -112,6 +113,7 @@ function ContractApiTesting() {
   const [importing, setImporting] = useState(false);
   const [running, setRunning] = useState(false);
   const [run, setRun] = useState<TestRunRecord>();
+  const [runs, setRuns] = useState<TestRunRecord[]>([]);
   const [error, setError] = useState<string>();
   const [configLoading, setConfigLoading] = useState(true);
 
@@ -125,13 +127,28 @@ function ContractApiTesting() {
         if (!response.ok) throw new Error(`项目配置加载失败（HTTP ${response.status}）`);
         return (await response.json()) as ProjectRecord[];
       }),
-    ]).then(([versions, loadedProjects]) => {
+      fetch("/api/api-automation/openapi", { cache: "no-store" }).then(async (response) => {
+        if (!response.ok) throw new Error(`OpenAPI 历史加载失败（HTTP ${response.status}）`);
+        return (await response.json()) as OpenApiSpecRecord[];
+      }),
+      fetch("/api/api-automation/test-runs", { cache: "no-store" }).then(async (response) => {
+        if (!response.ok) throw new Error(`TestRun 历史加载失败（HTTP ${response.status}）`);
+        return (await response.json()) as TestRunRecord[];
+      }),
+    ]).then(([versions, loadedProjects, loadedSpecs, loadedRuns]) => {
       setApprovedVersions(versions);
-      setApprovedVersionId((current) => current || versions[0]?.id || "");
       setProjects(loadedProjects);
-      const initialProject = loadedProjects[0];
-      setProjectId((current) => current || initialProject?.id || "");
-      setEnvironmentId((current) => current || initialProject?.environments[0]?.id || "");
+      setSpecs(loadedSpecs);
+      setRuns(loadedRuns);
+      const initialSpec = loadedSpecs[0];
+      const initialProject = initialSpec
+        ? loadedProjects.find((item) => item.id === initialSpec.projectId)
+        : loadedProjects[0];
+      setSpec(initialSpec);
+      setRun(initialSpec ? loadedRuns.find((item) => item.specId === initialSpec.id) : undefined);
+      setApprovedVersionId(initialSpec?.approvedVersionId || versions[0]?.id || "");
+      setProjectId(initialSpec?.projectId || initialProject?.id || "");
+      setEnvironmentId(initialSpec?.environmentId || initialProject?.environments[0]?.id || "");
     }).catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "API 自动化配置加载失败"))
       .finally(() => setConfigLoading(false));
   }, []);
@@ -169,7 +186,9 @@ function ContractApiTesting() {
       const response = await fetch("/api/api-automation/openapi", { method: "POST", body: form });
       const body = (await response.json()) as OpenApiSpecRecord | { error?: string };
       if (!response.ok) throw new Error("error" in body && body.error ? body.error : "OpenAPI 导入失败");
-      setSpec(body as OpenApiSpecRecord);
+      const imported = body as OpenApiSpecRecord;
+      setSpec(imported);
+      setSpecs((current) => [imported, ...current]);
       message.success("OpenAPI 已导入，请关联需要执行的 Approved TestCase");
     } catch (caught) {
       const detail = caught instanceof Error ? caught.message : "OpenAPI 导入失败";
@@ -234,6 +253,7 @@ function ContractApiTesting() {
       }
       const completedRun = body as TestRunRecord;
       setRun(completedRun);
+      setRuns((current) => [completedRun, ...current]);
       if (completedRun.status === "error") {
         throw new Error("Schemathesis Runner 失败，已保留原始错误并停止");
       }
@@ -254,6 +274,29 @@ function ContractApiTesting() {
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={9}>
           <Card className="api-config-card" title={<Space><CloudUploadOutlined />导入与运行</Space>}>
+            <div className="api-field">
+              <Text strong>已保存的 OpenAPI</Text>
+              <Select
+                allowClear
+                value={spec?.id}
+                placeholder="选择历史契约，或清空后导入新契约"
+                onChange={(value) => {
+                  const selected = specs.find((item) => item.id === value);
+                  setSpec(selected);
+                  setRun(selected ? runs.find((item) => item.specId === selected.id) : undefined);
+                  if (selected) {
+                    setProjectId(selected.projectId);
+                    setEnvironmentId(selected.environmentId);
+                    setApprovedVersionId(selected.approvedVersionId);
+                  }
+                }}
+                options={specs.map((item) => ({
+                  value: item.id,
+                  label: `${item.name} · ${item.filename}`,
+                }))}
+              />
+              <Text type="secondary">刷新页面后会恢复最近契约、映射和 TestRun；清空选择即可导入新的契约。</Text>
+            </div>
             <div className="api-field">
               <Text strong>项目</Text>
               <Select

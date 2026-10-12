@@ -66,7 +66,7 @@ DI01 调研 Docling、PaddleOCR、MinerU、Unstructured 和 Apache Tika 后，�
 | AQ01 | 以当前需求分析 Agent 验证 Dataset、Trace、Eval、Experiment 与版本比较闭环 | 技术尖峰及评测治理入口已通过（候选 rubric 待人工批准） | 完成剩余问题评审并批准 candidate-v1，再扩充数据集和定义正式准入阈值 |
 | TD01 | 基于 Baseline 的测试设计、风险、测试点和 TestCase | 已完成（72 条人工全量通过，Approved TestCase v1 已冻结） | 已进入 AT01 |
 | KR01 | 通用企业知识检索：Docling 分块、Qdrant 检索与证据回链 | 已完成（中文真实入库/检索/删除验收；77 项测试、lint、build 通过） | 作为 TD01 的知识补充层，不形成平行业务入口 |
-| AT01 | Approved TestCase 到 API 自动化与真实 Runner 证据 | 进行中（Schemathesis 契约测试与 Hurl 业务场景平台闭环均已通过；等待真实业务契约、场景与环境） | 真实业务验收通过后进入 AT02 |
+| AT01 | Approved TestCase 到 API 自动化与真实 Runner 证据 | 进行中（Schemathesis 与 Hurl 平台闭环、可重复本机演示和刷新恢复均已通过；等待真实业务契约、场景与环境） | 真实业务验收通过后进入 AT02 |
 | AT02 | Approved TestCase 到 UI 自动化与 Playwright 证据 | 已规划 | AT02 验收通过后进入 FT01 |
 | FT01 | 测试失败后的辅助缺陷定位调研与最小闭环 | 已规划 | 调研结果另行评审 |
 

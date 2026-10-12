@@ -22,6 +22,7 @@
     "setup:api": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-api-runner.ps1",
     "setup:hurl": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-hurl.ps1",
     "test:hurl": "tsx tests/at01-hurl.integration.ts",
+    "demo:api-target": "tsx examples/api-automation/controlled-target.ts",
     "aq01:spike": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-aq01-spike.ps1",
     "migrate:deepagents": "tsx scripts/migrate-deepagents.ts"
   },

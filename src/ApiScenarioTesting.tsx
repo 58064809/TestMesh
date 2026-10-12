@@ -15,6 +15,7 @@ export default function ApiScenarioTesting() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [versions, setVersions] = useState<ApprovedTestCaseVersionOption[]>([]);
   const [suites, setSuites] = useState<ApiScenarioSuiteRecord[]>([]);
+  const [runs, setRuns] = useState<ApiScenarioRunRecord[]>([]);
   const [projectId, setProjectId] = useState("");
   const [environmentId, setEnvironmentId] = useState("");
   const [versionId, setVersionId] = useState("");
@@ -44,12 +45,20 @@ export default function ApiScenarioTesting() {
         if (!response.ok) throw new Error("Hurl 场景集加载失败");
         return await response.json() as ApiScenarioSuiteRecord[];
       }),
-    ]).then(([loadedProjects, loadedVersions, loadedSuites]) => {
+      fetch("/api/api-automation/scenario-runs", { cache: "no-store" }).then(async (response) => {
+        if (!response.ok) throw new Error("Hurl TestRun 加载失败");
+        return await response.json() as ApiScenarioRunRecord[];
+      }),
+    ]).then(([loadedProjects, loadedVersions, loadedSuites, loadedRuns]) => {
       setProjects(loadedProjects); setVersions(loadedVersions); setSuites(loadedSuites);
-      setProjectId(loadedProjects[0]?.id ?? "");
-      setEnvironmentId(loadedProjects[0]?.environments[0]?.id ?? "");
-      setVersionId(loadedVersions[0]?.id ?? "");
-      setSuiteId(loadedSuites[0]?.id ?? "");
+      setRuns(loadedRuns);
+      const initialSuite = loadedSuites[0];
+      setProjectId(initialSuite?.projectId ?? loadedProjects[0]?.id ?? "");
+      setEnvironmentId(initialSuite?.environmentId ?? loadedProjects[0]?.environments[0]?.id ?? "");
+      setVersionId(initialSuite?.approvedVersionId ?? loadedVersions[0]?.id ?? "");
+      setTestCaseIds(initialSuite?.approvedTestCaseIds ?? []);
+      setSuiteId(initialSuite?.id ?? "");
+      setRun(initialSuite ? loadedRuns.find((item) => item.suiteId === initialSuite.id) : undefined);
     }).catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "业务场景配置加载失败"));
   }, []);
 
@@ -73,7 +82,7 @@ export default function ApiScenarioTesting() {
       const body = await response.json() as ApiScenarioSuiteRecord | { error?: string };
       if (!response.ok) throw new Error("error" in body ? body.error || "Hurl 场景导入失败" : "Hurl 场景导入失败");
       const saved = body as ApiScenarioSuiteRecord;
-      setSuites((current) => [saved, ...current]); setSuiteId(saved.id);
+      setSuites((current) => [saved, ...current]); setSuiteId(saved.id); setRun(undefined);
       message.success("业务场景已保存并关联 Approved TestCase");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Hurl 场景导入失败");
@@ -91,7 +100,7 @@ export default function ApiScenarioTesting() {
       });
       const body = await response.json() as ApiScenarioRunRecord | { error?: string };
       if (!response.ok && !("items" in body)) throw new Error("error" in body ? body.error || "Hurl 运行失败" : "Hurl 运行失败");
-      const completed = body as ApiScenarioRunRecord; setRun(completed);
+      const completed = body as ApiScenarioRunRecord; setRun(completed); setRuns((current) => [completed, ...current]);
       if (completed.status === "error") throw new Error("Hurl Runner 失败，已保留真实错误并停止");
       message[completed.status === "passed" ? "success" : "warning"](completed.status === "passed" ? "业务场景执行通过" : "业务场景发现失败");
     } catch (caught) {
@@ -115,7 +124,17 @@ export default function ApiScenarioTesting() {
     <Col xs={24} xl={15}><Space direction="vertical" size={16} className="api-main-stack">
       {error && <Alert type="error" showIcon message="流程已停止" description={error} />}
       <Card title={<Space><PlayCircleOutlined />执行已审核场景</Space>}><Space direction="vertical" size={14} className="api-main-stack">
-        <Field title="场景集 *"><Select value={suiteId || undefined} placeholder="请先导入 .hurl 场景" onChange={setSuiteId} options={suites.map((item) => ({ value: item.id, label: `${item.filename} · ${item.approvedTestCaseIds.length} 条关联用例` }))} /></Field>
+        <Field title="场景集 *"><Select value={suiteId || undefined} placeholder="请先导入 .hurl 场景" onChange={(value) => {
+          const selected = suites.find((item) => item.id === value);
+          setSuiteId(value);
+          setRun(runs.find((item) => item.suiteId === value));
+          if (selected) {
+            setProjectId(selected.projectId);
+            setEnvironmentId(selected.environmentId);
+            setVersionId(selected.approvedVersionId);
+            setTestCaseIds(selected.approvedTestCaseIds);
+          }
+        }} options={suites.map((item) => ({ value: item.id, label: `${item.filename} · ${item.approvedTestCaseIds.length} 条关联用例` }))} /></Field>
         {selectedSuite && <Alert type="success" showIcon message={selectedSuite.filename} description={`已关联 ${selectedSuite.approvedTestCaseIds.length} 条 Approved TestCase；目标取自绑定的项目环境。`} />}
         <Field title="本次运行鉴权"><Select value={authType} onChange={setAuthType} options={[{ value: "none", label: "无鉴权" }, { value: "bearer", label: "Bearer Token" }, { value: "basic", label: "Basic Auth" }]} />
           {authType === "bearer" && <Input.Password value={token} onChange={(event) => setToken(event.target.value)} placeholder="Token（仅本次运行）" />}

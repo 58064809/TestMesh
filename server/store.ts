@@ -855,6 +855,13 @@ export class DomainStore {
     return { ...spec, testCases: this.listTestCases(specId) };
   }
 
+  listOpenApiSpecs(): OpenApiSpecRecord[] {
+    const ids = this.db
+      .prepare("SELECT id FROM openapi_specs WHERE approved_version_id <> '' ORDER BY created_at DESC LIMIT 20")
+      .all() as Array<{ id: string }>;
+    return ids.map((item) => this.getOpenApiSpec(item.id));
+  }
+
   getOpenApiContent(specId: string): string {
     const row = this.db.prepare("SELECT content FROM openapi_specs WHERE id = ?").get(specId) as
       | { content: string }
@@ -1012,6 +1019,13 @@ export class DomainStore {
       ...row,
       items: items.map((item) => ({ ...item, checks: JSON.parse(item.checks) as string[] })),
     };
+  }
+
+  listTestRuns(): TestRunRecord[] {
+    const ids = this.db
+      .prepare("SELECT id FROM test_runs ORDER BY started_at DESC LIMIT 20")
+      .all() as Array<{ id: string }>;
+    return ids.map((item) => this.getTestRun(item.id));
   }
 
   createApiScenarioSuite(input: {

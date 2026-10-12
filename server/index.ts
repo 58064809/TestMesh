@@ -666,6 +666,14 @@ app.get("/api/api-automation/approved-versions", async (_request, response) => {
   }
 });
 
+app.get("/api/api-automation/openapi", (_request, response) => {
+  response.json(store.listOpenApiSpecs());
+});
+
+app.get("/api/api-automation/test-runs", (_request, response) => {
+  response.json(store.listTestRuns());
+});
+
 app.post("/api/api-automation/openapi", openApiUpload.single("spec"), async (request, response) => {
   try {
     if (!request.file) {

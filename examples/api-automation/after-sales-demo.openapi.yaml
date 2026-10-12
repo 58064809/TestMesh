@@ -1,0 +1,94 @@
+openapi: 3.0.3
+info:
+  title: TestMesh 本机受控售后 API 演示
+  version: 1.0.0-demo
+  description: 仅用于验证 TestMesh API 自动化平台链路，不代表真实业务契约。
+servers:
+  - url: http://127.0.0.1:3021
+paths:
+  /health:
+    get:
+      operationId: getDemoHealth
+      summary: 检查受控演示服务
+      responses:
+        "200":
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, target]
+                properties:
+                  status: { type: string, enum: [ready] }
+                  target: { type: string }
+  /returns:
+    post:
+      operationId: createReturn
+      summary: 提交退货申请
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderId, reason, confirmed]
+              properties:
+                orderId: { type: string, minLength: 1 }
+                reason: { type: string, minLength: 1 }
+                confirmed: { type: boolean, enum: [true] }
+      responses:
+        "201":
+          description: 已进入审核
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReturnApplication"
+        "422":
+          description: 信息不完整或未确认
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "400":
+          description: 请求体不是有效 JSON
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /returns/{returnId}:
+    get:
+      operationId: getReturn
+      summary: 查询退货申请状态
+      parameters:
+        - name: returnId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReturnApplication"
+        "404":
+          description: 申请不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  schemas:
+    ReturnApplication:
+      type: object
+      required: [id, orderId, status]
+      properties:
+        id: { type: string, format: uuid }
+        orderId: { type: string }
+        status: { type: string, enum: [review_pending] }
+    Error:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string }
+        message: { type: string }
