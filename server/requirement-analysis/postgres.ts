@@ -4,6 +4,7 @@ import { RequirementAnalysisPostgresStore } from "../requirement-analysis/postgr
 import { AiQualityPostgresStore } from "../ai-quality/postgres-store.js";
 import { TestDesignPostgresStore } from "../test-design/postgres-store.js";
 import { KnowledgePostgresStore } from "../knowledge/postgres-store.js";
+import { ProjectConfigPostgresStore } from "../project-config/postgres-store.js";
 
 const DEFAULT_CHECKPOINT_SCHEMA = "deepagents_checkpoint";
 const DEFAULT_BUSINESS_SCHEMA = "testmesh_business";
@@ -24,6 +25,7 @@ export interface AnalysisPostgresResources {
   aiQualityStore: AiQualityPostgresStore;
   testDesignStore: TestDesignPostgresStore;
   knowledgeStore: KnowledgePostgresStore;
+  projectConfigStore: ProjectConfigPostgresStore;
   close(): Promise<void>;
 }
 
@@ -87,12 +89,14 @@ export async function createAnalysisPostgresResources(
   const aiQualityStore = new AiQualityPostgresStore(pool, config.businessSchema);
   const testDesignStore = new TestDesignPostgresStore(pool, config.businessSchema);
   const knowledgeStore = new KnowledgePostgresStore(pool, config.businessSchema);
+  const projectConfigStore = new ProjectConfigPostgresStore(pool, config.businessSchema);
   try {
     await checkpointer.setup();
     await requirementAnalysisStore.setup();
     await aiQualityStore.setup();
     await testDesignStore.setup();
     await knowledgeStore.setup();
+    await projectConfigStore.setup();
   } catch (error) {
     await pool.end();
     throw error;
@@ -104,6 +108,7 @@ export async function createAnalysisPostgresResources(
     aiQualityStore,
     testDesignStore,
     knowledgeStore,
+    projectConfigStore,
     close: () => checkpointer.end(),
   };
 }

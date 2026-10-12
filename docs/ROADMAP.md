@@ -6,7 +6,7 @@
 
 独立 FR01 形式化验证和 BR01 业务规则路径已撤回，产品页面、API、存储、运行时和测试全部删除；调研文档只作历史证据。后续任何成熟能力必须先对应具体 Agent 质量问题和真实验收样本，再决定是否接入，不能按推荐表直接开发。产品边界见 `docs/PRODUCT_DIRECTION.md`。
 
-当前主线回到：稳定唯一 AI 需求分析 → Agent / AI 应用评估资产与执行闭环 → Trace/Eval → 回归比较与准入。TD01 已于 2026-10-12 将 72 条人工全量通过的 TestCase 冻结为 Approved v1；当前进入 AT01，复用 OpenAPI + Schemathesis，把批准用例映射到真实 API operation 并保存 Runner 证据。当前 PRD 尚无真实 OpenAPI 和测试环境，因此平台受控闭环已通过，业务验收等待真实契约，详见 `docs/PHASES/AT01.md`。
+当前主线回到：稳定唯一 AI 需求分析 → Agent / AI 应用评估资产与执行闭环 → Trace/Eval → 回归比较与准入。TD01 已于 2026-10-12 将 72 条人工全量通过的 TestCase 冻结为 Approved v1；当前进入 AT01，复用 OpenAPI + Schemathesis，把批准用例映射到真实 API operation 并保存 Runner 证据。AT01 已增加独立项目/环境配置，并以 Infisical 作为后续敏感配置的唯一成熟能力边界；当前电脑未安装 Docker，先运行不落敏感信息的兼容路径。当前 PRD 尚无真实 OpenAPI 和测试环境，因此平台受控闭环已通过，业务验收等待真实契约，详见 `docs/PHASES/AT01.md`。
 
 ---
 

@@ -840,3 +840,23 @@ body {
   display: grid;
   place-items: center;
 }
+
+.project-config-page {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.project-config-stack,
+.project-config-select {
+  width: 100%;
+}
+
+.project-summary {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid #edf0f5;
+}
+
+.project-summary .ant-typography {
+  margin-bottom: 8px;
+}

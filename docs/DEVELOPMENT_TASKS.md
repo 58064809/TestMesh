@@ -137,6 +137,7 @@ DI01 已完成，下一阶段进入 TD01。
 | 任务 | 内容 | 验收结果 | 状态 |
 | --- | --- | --- | --- |
 | AT01-01 | 固定 API Automation 输入 | 只接收 Approved TestCase 版本、OpenAPI、目标 URL 与临时认证 | 已完成 |
+| AT01-01A | 独立项目/环境配置 | TestMesh 只保留业务主键与非敏感环境配置；API 执行引用固定环境；敏感 Header 拒绝落库，Infisical 作为正式 provider 边界 | 已完成（Infisical 实例接入待企业环境） |
 | AT01-02 | 选择单一成熟 Runner | OpenAPI 3.x + Schemathesis 4.29.3；不引入代码生成 Agent | 已完成 |
 | AT01-03 | operation 映射与真实 Runner 验证 | 只执行已映射 operation，受控 HTTP 目标保存 2 条失败证据 | 已完成（平台闭环） |
 | AT01-04 | 真实业务验收 | 使用本项目 OpenAPI 与测试环境执行并回链 Approved v1 | 等待真实契约、URL 与认证 |

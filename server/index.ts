@@ -38,6 +38,7 @@ import { TestDesignService } from "./test-design/service.js";
 import { BaselineSnapshotSchema } from "./test-design/schema.js";
 import { KnowledgeService } from "./knowledge/service.js";
 import { QdrantKnowledgeIndex } from "./knowledge/qdrant.js";
+import { ProjectEnvironmentInputSchema, ProjectInputSchema } from "./project-config/schema.js";
 
 initializePhoenixTracing();
 
@@ -50,6 +51,7 @@ const requirementAnalysisStore = analysisResources.requirementAnalysisStore;
 const aiQualityStore = analysisResources.aiQualityStore;
 const testDesignStore = analysisResources.testDesignStore;
 const knowledgeStore = analysisResources.knowledgeStore;
+const projectConfigStore = analysisResources.projectConfigStore;
 const requirementAnalysisService = new RequirementAnalysisService(analysisResources);
 const documentParser = createDoclingClientFromEnvironment();
 const knowledgeService = new KnowledgeService(knowledgeStore, documentParser, new QdrantKnowledgeIndex());
@@ -201,7 +203,7 @@ async function qualityProfileView(profile: AiQualityProfile) {
 app.get("/api/health", (_request, response) => {
   response.json({
     ok: true,
-    phase: "TD01 Test Design",
+    phase: "AT01 API Automation",
     model: MODEL,
     schemathesisVersion: SCHEMATHESIS_VERSION,
     playwrightVersion: PLAYWRIGHT_VERSION,
@@ -222,6 +224,66 @@ app.get("/api/health", (_request, response) => {
     knowledgeChunker: "Docling HybridChunker",
     knowledgeEmbedding: "text-embedding-3-small",
   });
+});
+
+app.get("/api/projects", async (_request, response) => {
+  try {
+    response.json(await projectConfigStore.listProjects());
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "无法读取项目配置" });
+  }
+});
+
+app.post("/api/projects", async (request, response) => {
+  const parsed = ProjectInputSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: parsed.error.issues[0]?.message ?? "项目配置不合法" });
+    return;
+  }
+  try {
+    response.status(201).json(await projectConfigStore.createProject(parsed.data));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "无法创建项目" });
+  }
+});
+
+app.put("/api/projects/:id", async (request, response) => {
+  const parsed = ProjectInputSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: parsed.error.issues[0]?.message ?? "项目配置不合法" });
+    return;
+  }
+  try {
+    response.json(await projectConfigStore.updateProject(request.params.id, parsed.data));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "无法更新项目" });
+  }
+});
+
+app.post("/api/projects/:id/environments", async (request, response) => {
+  const parsed = ProjectEnvironmentInputSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: parsed.error.issues[0]?.message ?? "环境配置不合法" });
+    return;
+  }
+  try {
+    response.status(201).json(await projectConfigStore.createEnvironment(request.params.id, parsed.data));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "无法创建环境" });
+  }
+});
+
+app.put("/api/projects/:projectId/environments/:id", async (request, response) => {
+  const parsed = ProjectEnvironmentInputSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: parsed.error.issues[0]?.message ?? "环境配置不合法" });
+    return;
+  }
+  try {
+    response.json(await projectConfigStore.updateEnvironment(request.params.projectId, request.params.id, parsed.data));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "无法更新环境" });
+  }
 });
 
 app.get("/api/knowledge-documents", async (_request, response) => {
@@ -597,10 +659,17 @@ app.post("/api/api-automation/openapi", openApiUpload.single("spec"), async (req
       return;
     }
     const approvedVersionId = typeof request.body.approvedVersionId === "string" ? request.body.approvedVersionId.trim() : "";
+    const projectId = typeof request.body.projectId === "string" ? request.body.projectId.trim() : "";
+    const environmentId = typeof request.body.environmentId === "string" ? request.body.environmentId.trim() : "";
     if (!approvedVersionId) {
       response.status(400).json({ error: "请选择 Approved TestCase 版本" });
       return;
     }
+    if (!projectId || !environmentId) {
+      response.status(400).json({ error: "请选择项目和测试环境" });
+      return;
+    }
+    await projectConfigStore.getEnvironment(projectId, environmentId);
     await testDesignStore.getApprovedVersionById(approvedVersionId);
     const filename = normalizeUploadFilename(request.file.originalname);
     const content = request.file.buffer.toString("utf8");
@@ -608,6 +677,8 @@ app.post("/api/api-automation/openapi", openApiUpload.single("spec"), async (req
     response.json(
       store.createOpenApiSpec({
         approvedVersionId,
+        projectId,
+        environmentId,
         name: parsed.name,
         version: parsed.version,
         filename,
@@ -642,10 +713,11 @@ app.put("/api/api-automation/operations/:id/links", async (request, response) =>
 app.post("/api/api-automation/test-runs", async (request, response) => {
   try {
     const specId = typeof request.body.specId === "string" ? request.body.specId : "";
-    const targetBaseUrl = validateTargetBaseUrl(
-      typeof request.body.targetBaseUrl === "string" ? request.body.targetBaseUrl : "",
-    );
-    const headers = parseHeaderLines(request.body.headers);
+    const spec = store.getOpenApiSpec(specId);
+    if (!spec.projectId || !spec.environmentId) throw new Error("历史 OpenAPI 未绑定项目环境，请重新导入");
+    const environment = await projectConfigStore.getEnvironment(spec.projectId, spec.environmentId);
+    const targetBaseUrl = validateTargetBaseUrl(environment.baseUrl);
+    const headers = parseHeaderLines(environment.headers);
     const rawAuth = request.body.auth;
     const auth: RunnerAuth =
       rawAuth && typeof rawAuth === "object"

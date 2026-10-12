@@ -110,6 +110,8 @@
 - 旧 `/api/p02/*` 产品入口已删除。历史 SQLite OpenAPI 没有 Approved 版本 ID，不能进入新路径，必须重新导入；不得恢复旧需求/证据关联作为平行路径。
 - 认证和 Header 只用于本次执行，不持久化。Windows 子进程必须使用 UTF-8，避免 GBK 导致 Schemathesis Unicode 输出崩溃；Runner 无 JUnit 时保存真实错误并停止，不启用备用报告或 fallback。
 - 受控真实 HTTP 闭环已通过：固定 operation 映射后真实 Schemathesis 生成 2 个 examples，并保存 2 条受控 HTTP 500 失败证据。当前售后 PRD 没有 OpenAPI、测试 URL 或认证，不能称为业务验收完成；取得真实契约和环境前 AT01 保持进行中，不进入 AT02。
+- 项目配置是独立入口。TestMesh 项目 ID 是需求、用例、OpenAPI 和执行结果的业务归属键；环境 Base URL 与非敏感公共 Header 只维护一次，API 自动化必须引用项目/环境，不得在各测试页重复保存。
+- 敏感配置的正式目标平台是 Infisical。TestMesh 不得保存 Authorization、Cookie、Token、API Key、密码或证书，也不得自研加密密钥表；当前没有可运维 Infisical 实例时，只允许单次运行内存输入。未来接入必须使用官方 SDK/API、Machine Identity 和明确的项目/环境映射，不建立第二条秘密读取路径。
 
 ## P01 实现约束
 

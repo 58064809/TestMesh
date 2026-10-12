@@ -46,6 +46,8 @@ export interface TestCaseRecord {
 export interface OpenApiSpecRecord {
   id: string;
   approvedVersionId: string;
+  projectId: string;
+  environmentId: string;
   name: string;
   version: string;
   filename: string;
@@ -282,6 +284,8 @@ CREATE TABLE IF NOT EXISTS risk_evidence (
 CREATE TABLE IF NOT EXISTS openapi_specs (
   id TEXT PRIMARY KEY,
   approved_version_id TEXT NOT NULL DEFAULT '',
+  project_id TEXT NOT NULL DEFAULT '',
+  environment_id TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL,
   version TEXT NOT NULL,
   filename TEXT NOT NULL,
@@ -503,6 +507,12 @@ export class DomainStore {
     if (!columns.some((column) => column.name === "approved_version_id")) {
       this.db.exec("ALTER TABLE openapi_specs ADD COLUMN approved_version_id TEXT NOT NULL DEFAULT ''");
     }
+    if (!columns.some((column) => column.name === "project_id")) {
+      this.db.exec("ALTER TABLE openapi_specs ADD COLUMN project_id TEXT NOT NULL DEFAULT ''");
+    }
+    if (!columns.some((column) => column.name === "environment_id")) {
+      this.db.exec("ALTER TABLE openapi_specs ADD COLUMN environment_id TEXT NOT NULL DEFAULT ''");
+    }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS test_case_approved_links (
         test_case_id TEXT NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
@@ -717,6 +727,8 @@ export class DomainStore {
 
   createOpenApiSpec(input: {
     approvedVersionId: string;
+    projectId: string;
+    environmentId: string;
     name: string;
     version: string;
     filename: string;
@@ -727,11 +739,13 @@ export class DomainStore {
     const create = this.db.transaction(() => {
       this.db.prepare(
         `INSERT INTO openapi_specs
-         (id, approved_version_id, name, version, filename, content, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         (id, approved_version_id, project_id, environment_id, name, version, filename, content, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         specId,
         input.approvedVersionId,
+        input.projectId,
+        input.environmentId,
         input.name,
         input.version,
         input.filename,
@@ -759,7 +773,8 @@ export class DomainStore {
   getOpenApiSpec(specId: string): OpenApiSpecRecord {
     const spec = this.db
       .prepare(
-        `SELECT id, approved_version_id AS approvedVersionId, name, version, filename
+        `SELECT id, approved_version_id AS approvedVersionId, project_id AS projectId,
+                environment_id AS environmentId, name, version, filename
          FROM openapi_specs WHERE id = ?`,
       )
       .get(specId) as Omit<OpenApiSpecRecord, "testCases"> | undefined;

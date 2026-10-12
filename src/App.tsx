@@ -4,7 +4,7 @@ import {
   AuditOutlined,
   BulbOutlined,
   CloudUploadOutlined,
-  DatabaseOutlined,
+  SettingOutlined,
   DesktopOutlined,
   FileSearchOutlined,
   ExperimentOutlined,
@@ -47,6 +47,7 @@ import SecurityTesting from "./SecurityTesting";
 import RequirementAnalysisView from "./RequirementAnalysisView";
 import AiQuality from "./AiQuality";
 import TestDesign from "./TestDesign";
+import ProjectConfig from "./ProjectConfig";
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -154,7 +155,7 @@ function UploadPanel({
 function Workbench() {
   const { message: toast } = AntdApp.useApp();
   const [collapsed, setCollapsed] = useState(false);
-  const [activePage, setActivePage] = useState<"chat" | "test-design" | "quality" | "api" | "ui" | "app" | "performance" | "security">("chat");
+  const [activePage, setActivePage] = useState<"chat" | "test-design" | "quality" | "project-config" | "api" | "ui" | "app" | "performance" | "security">("chat");
   const [prompt, setPrompt] = useState("帮我分析这个需求");
   const [attachments, setAttachments] = useState<UploadFile[]>([]);
   const [knowledge, setKnowledge] = useState<UploadFile[]>([]);
@@ -307,31 +308,31 @@ function Workbench() {
             mode="inline"
             selectedKeys={[activePage]}
             onClick={({ key }) => {
-              if (key === "chat" || key === "test-design" || key === "quality" || key === "api" || key === "ui" || key === "app" || key === "performance" || key === "security") setActivePage(key);
+              if (key === "chat" || key === "test-design" || key === "quality" || key === "project-config" || key === "api" || key === "ui" || key === "app" || key === "performance" || key === "security") setActivePage(key);
             }}
             items={[
               { key: "overview", icon: <BulbOutlined />, label: "工作台概览", disabled: true },
               { key: "chat", icon: <MessageOutlined />, label: "AI 需求分析" },
               { key: "test-design", icon: <AuditOutlined />, label: "智能测试设计" },
               { key: "quality", icon: <ExperimentOutlined />, label: "AI 质量评估" },
+              { key: "project-config", icon: <SettingOutlined />, label: "项目配置" },
               { key: "api", icon: <ApiOutlined />, label: "API 自动化" },
               { key: "ui", icon: <DesktopOutlined />, label: "UI 测试" },
               { key: "app", icon: <AndroidOutlined />, label: "APP 测试" },
               { key: "performance", icon: <ThunderboltOutlined />, label: "性能测试" },
               { key: "security", icon: <SafetyCertificateOutlined />, label: "安全测试" },
-              { key: "knowledge", icon: <DatabaseOutlined />, label: "项目资料", disabled: true },
             ]}
           />
           {!collapsed && (
             <div className="phase-card">
               <Flex justify="space-between" align="center">
                 <Text className="phase-label">当前阶段</Text>
-                <Tag color={activePage === "api" ? "processing" : "success"} bordered={false}>
-                  {activePage === "api" ? "进行中" : "已完成"}
+                <Tag color={activePage === "api" || activePage === "project-config" ? "processing" : "success"} bordered={false}>
+                  {activePage === "api" || activePage === "project-config" ? "进行中" : "已完成"}
                 </Tag>
               </Flex>
-              <Text className="phase-title">{activePage === "api" ? "AT01 · API 自动化" : activePage === "test-design" ? "TD01 · 智能测试设计" : "RA01 · AI 需求分析"}</Text>
-              <Text className="phase-copy">{activePage === "api" ? "把 Approved TestCase 映射到 OpenAPI operation，并保存 Schemathesis 运行证据" : activePage === "test-design" ? "72 条用例已人工通过并冻结为 Approved TestCase v1" : "单一需求分析入口：发现缺失、歧义与冲突，并提供可核对的原文证据"}</Text>
+              <Text className="phase-title">{activePage === "project-config" ? "项目配置" : activePage === "api" ? "AT01 · API 自动化" : activePage === "test-design" ? "TD01 · 智能测试设计" : "RA01 · AI 需求分析"}</Text>
+              <Text className="phase-copy">{activePage === "project-config" ? "统一维护项目归属与非敏感测试环境；敏感凭据不落库" : activePage === "api" ? "把 Approved TestCase 映射到 OpenAPI operation，并保存 Schemathesis 运行证据" : activePage === "test-design" ? "72 条用例已人工通过并冻结为 Approved TestCase v1" : "单一需求分析入口：发现缺失、歧义与冲突，并提供可核对的原文证据"}</Text>
             </div>
           )}
         </Sider>
@@ -347,7 +348,7 @@ function Workbench() {
                 />
                 <div>
                   <Title level={4}>
-                    {activePage === "chat" ? "AI 需求分析" : activePage === "test-design" ? "智能测试设计" : activePage === "quality" ? "AI 质量评估" : activePage === "api" ? "API 自动化" : activePage === "ui" ? "UI 测试" : activePage === "app" ? "APP 测试" : activePage === "performance" ? "性能测试" : "安全测试"}
+                    {activePage === "chat" ? "AI 需求分析" : activePage === "test-design" ? "智能测试设计" : activePage === "quality" ? "AI 质量评估" : activePage === "project-config" ? "项目配置" : activePage === "api" ? "API 自动化" : activePage === "ui" ? "UI 测试" : activePage === "app" ? "APP 测试" : activePage === "performance" ? "性能测试" : "安全测试"}
                   </Title>
                   <Text type="secondary">
                     {activePage === "chat"
@@ -356,6 +357,8 @@ function Workbench() {
                         ? "从获批需求基线生成风险、测试点与中文 Gherkin TestCase"
                       : activePage === "quality"
                         ? "用真实业务样本、人工标准与 Phoenix 实验证据验证 Agent 质量"
+                      : activePage === "project-config"
+                        ? "集中管理项目与测试环境，自动化模块只引用配置，不再重复填写"
                       : activePage === "api"
                         ? "选择 Approved TestCase，映射 OpenAPI operation 并运行 Schemathesis"
                         : activePage === "ui"
@@ -378,6 +381,8 @@ function Workbench() {
                       ? "Deep Agents + Cucumber"
                     : activePage === "quality"
                       ? "Phoenix Eval"
+                    : activePage === "project-config"
+                      ? "Infisical-ready"
                     : activePage === "api"
                       ? "Schemathesis 4.29.3"
                       : activePage === "ui"
@@ -574,6 +579,8 @@ function Workbench() {
               <TestDesign />
             ) : activePage === "quality" ? (
               <AiQuality />
+            ) : activePage === "project-config" ? (
+              <ProjectConfig />
             ) : activePage === "api" ? (
               <ApiTesting />
             ) : activePage === "ui" ? (

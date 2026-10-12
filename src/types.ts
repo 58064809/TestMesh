@@ -309,10 +309,36 @@ export interface TestCaseRecord {
 export interface OpenApiSpecRecord {
   id: string;
   approvedVersionId: string;
+  projectId: string;
+  environmentId: string;
   name: string;
   version: string;
   filename: string;
   testCases: TestCaseRecord[];
+}
+
+export interface ProjectEnvironmentRecord {
+  id: string;
+  projectId: string;
+  name: string;
+  baseUrl: string;
+  headers: Array<{ name: string; value: string }>;
+  configProvider: "testmesh_non_secret" | "infisical";
+  infisicalEnvironmentSlug: string;
+  infisicalSecretPath: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectRecord {
+  id: string;
+  name: string;
+  code: string;
+  description: string;
+  infisicalProjectId: string;
+  environments: ProjectEnvironmentRecord[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ApprovedTestCaseVersionOption {

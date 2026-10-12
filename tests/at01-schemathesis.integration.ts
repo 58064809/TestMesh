@@ -54,6 +54,8 @@ try {
   const spec = store.createOpenApiSpec({
     ...parsed,
     approvedVersionId: "controlled-approved-v1",
+    projectId: "controlled-project",
+    environmentId: "controlled-environment",
     filename: "at01-controlled-openapi.yaml",
     content: openapi,
   });

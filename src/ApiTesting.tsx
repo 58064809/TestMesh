@@ -26,11 +26,11 @@ import {
   Upload,
   type UploadFile,
 } from "antd";
-import TextArea from "antd/es/input/TextArea";
 import { useEffect, useMemo, useState } from "react";
 import type {
   ApprovedTestCaseVersionOption,
   OpenApiSpecRecord,
+  ProjectRecord,
   TestCaseRecord,
   TestRunRecord,
 } from "./types";
@@ -42,18 +42,6 @@ function methodColor(method: string): string {
   return ({ GET: "green", POST: "blue", PUT: "gold", PATCH: "purple", DELETE: "red" } as Record<string, string>)[
     method
   ] ?? "default";
-}
-
-function parseHeaders(value: string): Array<{ name: string; value: string }> {
-  return value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const separator = line.indexOf(":");
-      if (separator <= 0) throw new Error(`Header 格式错误：${line}`);
-      return { name: line.slice(0, separator).trim(), value: line.slice(separator + 1).trim() };
-    });
 }
 
 function FailureDetails({ run }: { run: TestRunRecord }) {
@@ -112,8 +100,9 @@ export default function ApiTesting() {
   const [spec, setSpec] = useState<OpenApiSpecRecord>();
   const [approvedVersions, setApprovedVersions] = useState<ApprovedTestCaseVersionOption[]>([]);
   const [approvedVersionId, setApprovedVersionId] = useState("");
-  const [targetBaseUrl, setTargetBaseUrl] = useState("");
-  const [headersText, setHeadersText] = useState("");
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [projectId, setProjectId] = useState("");
+  const [environmentId, setEnvironmentId] = useState("");
   const [authType, setAuthType] = useState<"none" | "bearer" | "basic">("none");
   const [token, setToken] = useState("");
   const [username, setUsername] = useState("");
@@ -122,19 +111,34 @@ export default function ApiTesting() {
   const [running, setRunning] = useState(false);
   const [run, setRun] = useState<TestRunRecord>();
   const [error, setError] = useState<string>();
+  const [configLoading, setConfigLoading] = useState(true);
 
   useEffect(() => {
-    void fetch("/api/api-automation/approved-versions")
-      .then(async (response) => {
+    void Promise.all([
+      fetch("/api/api-automation/approved-versions").then(async (response) => {
         if (!response.ok) throw new Error(`Approved TestCase 加载失败（HTTP ${response.status}）`);
         return (await response.json()) as ApprovedTestCaseVersionOption[];
-      })
-      .then((versions) => {
-        setApprovedVersions(versions);
-        setApprovedVersionId((current) => current || versions[0]?.id || "");
-      })
-      .catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "Approved TestCase 加载失败"));
+      }),
+      fetch("/api/projects", { cache: "no-store" }).then(async (response) => {
+        if (!response.ok) throw new Error(`项目配置加载失败（HTTP ${response.status}）`);
+        return (await response.json()) as ProjectRecord[];
+      }),
+    ]).then(([versions, loadedProjects]) => {
+      setApprovedVersions(versions);
+      setApprovedVersionId((current) => current || versions[0]?.id || "");
+      setProjects(loadedProjects);
+      const initialProject = loadedProjects[0];
+      setProjectId((current) => current || initialProject?.id || "");
+      setEnvironmentId((current) => current || initialProject?.environments[0]?.id || "");
+    }).catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "API 自动化配置加载失败"))
+      .finally(() => setConfigLoading(false));
   }, []);
+
+  const project = useMemo(() => projects.find((item) => item.id === projectId), [projects, projectId]);
+  const environment = useMemo(
+    () => project?.environments.find((item) => item.id === environmentId),
+    [project, environmentId],
+  );
 
   const approvedVersion = useMemo(
     () => approvedVersions.find((item) => item.id === approvedVersionId),
@@ -147,8 +151,8 @@ export default function ApiTesting() {
 
   async function importSpec() {
     const file = specFile?.originFileObj;
-    if (!file || !approvedVersionId) {
-      message.warning(!approvedVersionId ? "请先选择 Approved TestCase 版本" : "请选择 OpenAPI JSON/YAML 文件");
+    if (!file || !approvedVersionId || !projectId || !environmentId) {
+      message.warning(!projectId || !environmentId ? "请先选择项目和测试环境" : !approvedVersionId ? "请先选择 Approved TestCase 版本" : "请选择 OpenAPI JSON/YAML 文件");
       return;
     }
     setImporting(true);
@@ -158,6 +162,8 @@ export default function ApiTesting() {
       const form = new FormData();
       form.append("spec", file, specFile.name);
       form.append("approvedVersionId", approvedVersionId);
+      form.append("projectId", projectId);
+      form.append("environmentId", environmentId);
       const response = await fetch("/api/api-automation/openapi", { method: "POST", body: form });
       const body = (await response.json()) as OpenApiSpecRecord | { error?: string };
       if (!response.ok) throw new Error("error" in body && body.error ? body.error : "OpenAPI 导入失败");
@@ -200,8 +206,8 @@ export default function ApiTesting() {
   }
 
   async function executeRun() {
-    if (!spec || !targetBaseUrl.trim()) {
-      message.warning("请先导入 OpenAPI 并填写 Target Base URL");
+    if (!spec) {
+      message.warning("请先选择项目环境并导入 OpenAPI");
       return;
     }
     if (mappedCount === 0) {
@@ -217,8 +223,6 @@ export default function ApiTesting() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           specId: spec.id,
-          targetBaseUrl: targetBaseUrl.trim(),
-          headers: parseHeaders(headersText),
           auth: { type: authType, token, username, password },
         }),
       });
@@ -248,6 +252,32 @@ export default function ApiTesting() {
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={9}>
           <Card className="api-config-card" title={<Space><CloudUploadOutlined />导入与运行</Space>}>
+            <div className="api-field">
+              <Text strong>项目</Text>
+              <Select
+                value={projectId || undefined}
+                loading={configLoading}
+                disabled={Boolean(spec)}
+                placeholder="请先到项目配置创建项目"
+                onChange={(value) => {
+                  setProjectId(value);
+                  setEnvironmentId(projects.find((item) => item.id === value)?.environments[0]?.id ?? "");
+                }}
+                options={projects.map((item) => ({ value: item.id, label: `${item.name} · ${item.code}` }))}
+              />
+            </div>
+            <div className="api-field">
+              <Text strong>测试环境</Text>
+              <Select
+                value={environmentId || undefined}
+                disabled={Boolean(spec) || !project}
+                placeholder={project ? "请选择测试环境" : "请先选择项目"}
+                onChange={setEnvironmentId}
+                options={(project?.environments ?? []).map((item) => ({ value: item.id, label: `${item.name} · ${item.baseUrl}` }))}
+              />
+              {!configLoading && projects.length === 0 && <Alert type="warning" showIcon message="尚未配置项目" description="请先打开左侧“项目配置”，创建项目和测试环境。" />}
+              {!configLoading && project && project.environments.length === 0 && <Alert type="warning" showIcon message="该项目没有测试环境" description="请先在“项目配置”中新增测试环境。" />}
+            </div>
             <div className="api-field">
               <Text strong>Approved TestCase 版本</Text>
               <Select
@@ -281,23 +311,7 @@ export default function ApiTesting() {
               导入 OpenAPI
             </Button>
 
-            <div className="api-field">
-              <Text strong>Target Base URL</Text>
-              <Input
-                value={targetBaseUrl}
-                onChange={(event) => setTargetBaseUrl(event.target.value)}
-                placeholder="例如：http://127.0.0.1:8080"
-              />
-            </div>
-            <div className="api-field">
-              <Text strong>Header</Text>
-              <TextArea
-                value={headersText}
-                onChange={(event) => setHeadersText(event.target.value)}
-                rows={3}
-                placeholder={"每行一条，例如：\nX-Tenant-ID: demo"}
-              />
-            </div>
+            {environment && <Alert type="success" showIcon message={`${project?.name} / ${environment.name}`} description={`${environment.baseUrl} · ${environment.headers.length} 条公共 Header`} />}
             <div className="api-field">
               <Text strong>Auth</Text>
               <Select
@@ -318,7 +332,7 @@ export default function ApiTesting() {
                   <Input.Password value={password} onChange={(event) => setPassword(event.target.value)} placeholder="密码" />
                 </Space.Compact>
               )}
-              <Text type="secondary" className="api-secret-note">Header/Auth 仅用于本次运行，不写入数据库。</Text>
+              <Text type="secondary" className="api-secret-note">Auth 仅用于本次运行，不写入数据库；公共 Header 从项目环境读取。</Text>
             </div>
 
             <Button

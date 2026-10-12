@@ -59,11 +59,14 @@ describe("AT01 Approved TestCase and Schemathesis integration", () => {
       const spec = store.createOpenApiSpec({
         ...parsed,
         approvedVersionId: "approved-v1",
+        projectId: "project-1",
+        environmentId: "environment-1",
         filename: "openapi.yaml",
         content: openapi,
       });
 
       expect(spec.approvedVersionId).toBe("approved-v1");
+      expect(spec.projectId).toBe("project-1");
       expect(() => store.getMappedOperationIds(spec.id)).toThrow("至少需要");
       store.updateApprovedTestCaseLinks(spec.testCases[0].id, ["TC-001"]);
       expect(store.getMappedOperationIds(spec.id)).toEqual(["getCase"]);
