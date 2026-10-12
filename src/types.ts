@@ -379,6 +379,40 @@ export interface TestRunRecord {
   items: TestRunItem[];
 }
 
+export interface ApiScenarioSuiteRecord {
+  id: string;
+  projectId: string;
+  environmentId: string;
+  approvedVersionId: string;
+  filename: string;
+  approvedTestCaseIds: string[];
+  createdAt: string;
+}
+
+export interface ApiScenarioRunRecord {
+  id: string;
+  suiteId: string;
+  projectId: string;
+  environmentId: string;
+  targetBaseUrl: string;
+  status: "running" | "passed" | "failed" | "error";
+  hurlVersion: string;
+  startedAt: string;
+  finishedAt: string | null;
+  passed: number;
+  failed: number;
+  exitCode: number | null;
+  runnerOutput: string;
+  items: Array<{
+    id: string;
+    name: string;
+    classname: string;
+    status: "passed" | "failed" | "error";
+    durationMs: number;
+    detail: string;
+  }>;
+}
+
 export interface RepositoryInspection {
   repoPath: string;
   branch: string;

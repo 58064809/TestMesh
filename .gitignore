@@ -9,5 +9,6 @@ data/
 tmp/
 integrations/**/target/
 .schemathesis/
+.hurl/
 *.log
 .DS_Store

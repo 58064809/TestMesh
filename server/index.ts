@@ -14,6 +14,7 @@ import {
 } from "./analysis.js";
 import { MAX_OPENAPI_BYTES, parseHeaderLines, parseOpenApi, validateTargetBaseUrl } from "./openapi.js";
 import { SCHEMATHESIS_VERSION, runSchemathesis, type RunnerAuth } from "./schemathesis.js";
+import { HURL_VERSION, MAX_HURL_BYTES, runHurlScenario, validateHurlScenario } from "./hurl.js";
 import { inspectRepository } from "./repository.js";
 import { PLAYWRIGHT_IMAGE, PLAYWRIGHT_VERSION, runPlaywrightTest } from "./playwright.js";
 import {
@@ -80,6 +81,18 @@ const openApiUpload = multer({
   fileFilter: (_request, file, callback) => {
     if (!/\.(json|ya?ml)$/i.test(file.originalname)) {
       callback(new Error(`OpenAPI 只支持 JSON/YAML：${file.originalname}`));
+      return;
+    }
+    callback(null, true);
+  },
+});
+
+const hurlUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_HURL_BYTES, files: 1 },
+  fileFilter: (_request, file, callback) => {
+    if (!/\.hurl$/i.test(file.originalname)) {
+      callback(new Error(`业务场景只支持 .hurl 文件：${file.originalname}`));
       return;
     }
     callback(null, true);
@@ -206,6 +219,7 @@ app.get("/api/health", (_request, response) => {
     phase: "AT01 API Automation",
     model: MODEL,
     schemathesisVersion: SCHEMATHESIS_VERSION,
+    hurlVersion: HURL_VERSION,
     playwrightVersion: PLAYWRIGHT_VERSION,
     playwrightImage: PLAYWRIGHT_IMAGE,
     appiumVersion: APPIUM_VERSION,
@@ -707,6 +721,85 @@ app.put("/api/api-automation/operations/:id/links", async (request, response) =>
   } catch (error) {
     const message = error instanceof Error ? error.message : "追溯关系保存失败";
     response.status(400).json({ error: message });
+  }
+});
+
+app.get("/api/api-automation/scenario-suites", (_request, response) => {
+  response.json(store.listApiScenarioSuites());
+});
+
+app.post("/api/api-automation/scenario-suites", hurlUpload.single("scenario"), async (request, response) => {
+  try {
+    if (!request.file) {
+      response.status(400).json({ error: "请选择 .hurl 业务场景文件" });
+      return;
+    }
+    const projectId = typeof request.body.projectId === "string" ? request.body.projectId.trim() : "";
+    const environmentId = typeof request.body.environmentId === "string" ? request.body.environmentId.trim() : "";
+    const approvedVersionId = typeof request.body.approvedVersionId === "string" ? request.body.approvedVersionId.trim() : "";
+    if (!projectId || !environmentId) throw new Error("请选择项目和测试环境");
+    if (!approvedVersionId) throw new Error("请选择 Approved TestCase 版本");
+    let approvedTestCaseIds: string[] = [];
+    try {
+      const parsed = JSON.parse(typeof request.body.approvedTestCaseIds === "string" ? request.body.approvedTestCaseIds : "[]") as unknown;
+      if (Array.isArray(parsed)) approvedTestCaseIds = parsed.filter((item): item is string => typeof item === "string");
+    } catch {
+      throw new Error("Approved TestCase 映射格式无效");
+    }
+    if (approvedTestCaseIds.length === 0) throw new Error("至少关联一条 Approved TestCase");
+    await projectConfigStore.getEnvironment(projectId, environmentId);
+    const approved = await testDesignStore.getApprovedVersionById(approvedVersionId);
+    const allowed = new Set(approved.snapshot.test_cases.map((item) => item.id));
+    const invalid = approvedTestCaseIds.filter((id) => !allowed.has(id));
+    if (invalid.length > 0) throw new Error(`以下 TestCase 不属于所选 Approved 版本：${invalid.join("、")}`);
+    const content = request.file.buffer.toString("utf8");
+    validateHurlScenario(content);
+    response.status(201).json(store.createApiScenarioSuite({
+      projectId,
+      environmentId,
+      approvedVersionId,
+      filename: normalizeUploadFilename(request.file.originalname),
+      content,
+      approvedTestCaseIds,
+    }));
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : "Hurl 场景导入失败" });
+  }
+});
+
+app.get("/api/api-automation/scenario-runs", (_request, response) => {
+  response.json(store.listApiScenarioRuns());
+});
+
+app.get("/api/api-automation/scenario-runs/:id", (request, response) => {
+  try {
+    response.json(store.getApiScenarioRun(request.params.id));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "Hurl TestRun 不存在" });
+  }
+});
+
+app.post("/api/api-automation/scenario-runs", async (request, response) => {
+  try {
+    const suiteId = typeof request.body.suiteId === "string" ? request.body.suiteId : "";
+    const suite = store.getApiScenarioSuite(suiteId);
+    const environment = await projectConfigStore.getEnvironment(suite.projectId, suite.environmentId);
+    const targetBaseUrl = validateTargetBaseUrl(environment.baseUrl);
+    const headers = parseHeaderLines(environment.headers);
+    const rawAuth = request.body.auth;
+    const auth: RunnerAuth = rawAuth && typeof rawAuth === "object"
+      ? {
+          type: rawAuth.type === "bearer" || rawAuth.type === "basic" ? rawAuth.type : "none",
+          token: typeof rawAuth.token === "string" ? rawAuth.token : undefined,
+          username: typeof rawAuth.username === "string" ? rawAuth.username : undefined,
+          password: typeof rawAuth.password === "string" ? rawAuth.password : undefined,
+        }
+      : { type: "none" };
+    const run = await runHurlScenario({ suiteId, targetBaseUrl, headers, auth }, store);
+    response.status(run.status === "error" ? 502 : 200).json(run);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Hurl 运行失败";
+    response.status(502).json({ error: `Hurl 运行失败，流程已停止：${message}` });
   }
 });
 

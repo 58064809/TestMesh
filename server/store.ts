@@ -82,6 +82,41 @@ export interface TestRunRecord {
   items: Array<TestRunItemInput & { id: string }>;
 }
 
+export interface ApiScenarioSuiteRecord {
+  id: string;
+  projectId: string;
+  environmentId: string;
+  approvedVersionId: string;
+  filename: string;
+  approvedTestCaseIds: string[];
+  createdAt: string;
+}
+
+export interface ApiScenarioRunItemInput {
+  name: string;
+  classname: string;
+  status: "passed" | "failed" | "error";
+  durationMs: number;
+  detail: string;
+}
+
+export interface ApiScenarioRunRecord {
+  id: string;
+  suiteId: string;
+  projectId: string;
+  environmentId: string;
+  targetBaseUrl: string;
+  status: "running" | "passed" | "failed" | "error";
+  hurlVersion: string;
+  startedAt: string;
+  finishedAt: string | null;
+  passed: number;
+  failed: number;
+  exitCode: number | null;
+  runnerOutput: string;
+  items: Array<ApiScenarioRunItemInput & { id: string }>;
+}
+
 export interface UiTestResultInput {
   title: string;
   projectName: string;
@@ -341,6 +376,44 @@ CREATE TABLE IF NOT EXISTS test_run_items (
   request_text TEXT NOT NULL,
   response_text TEXT NOT NULL,
   reproduction TEXT NOT NULL,
+  detail TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS api_scenario_suites (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  environment_id TEXT NOT NULL,
+  approved_version_id TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS api_scenario_suite_test_cases (
+  suite_id TEXT NOT NULL REFERENCES api_scenario_suites(id) ON DELETE CASCADE,
+  approved_test_case_id TEXT NOT NULL,
+  PRIMARY KEY (suite_id, approved_test_case_id)
+);
+CREATE TABLE IF NOT EXISTS api_scenario_runs (
+  id TEXT PRIMARY KEY,
+  suite_id TEXT NOT NULL REFERENCES api_scenario_suites(id) ON DELETE CASCADE,
+  project_id TEXT NOT NULL,
+  environment_id TEXT NOT NULL,
+  target_base_url TEXT NOT NULL,
+  status TEXT NOT NULL,
+  hurl_version TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  passed INTEGER NOT NULL DEFAULT 0,
+  failed INTEGER NOT NULL DEFAULT 0,
+  exit_code INTEGER,
+  runner_output TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS api_scenario_run_items (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES api_scenario_runs(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  classname TEXT NOT NULL,
+  status TEXT NOT NULL,
+  duration_ms REAL NOT NULL,
   detail TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS ui_test_runs (
@@ -939,6 +1012,151 @@ export class DomainStore {
       ...row,
       items: items.map((item) => ({ ...item, checks: JSON.parse(item.checks) as string[] })),
     };
+  }
+
+  createApiScenarioSuite(input: {
+    projectId: string;
+    environmentId: string;
+    approvedVersionId: string;
+    filename: string;
+    content: string;
+    approvedTestCaseIds: string[];
+  }): ApiScenarioSuiteRecord {
+    const id = randomUUID();
+    const create = this.db.transaction(() => {
+      this.db.prepare(
+        `INSERT INTO api_scenario_suites
+         (id, project_id, environment_id, approved_version_id, filename, content, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        id,
+        input.projectId,
+        input.environmentId,
+        input.approvedVersionId,
+        input.filename,
+        input.content,
+        new Date().toISOString(),
+      );
+      const insertLink = this.db.prepare(
+        "INSERT INTO api_scenario_suite_test_cases (suite_id, approved_test_case_id) VALUES (?, ?)",
+      );
+      for (const testCaseId of [...new Set(input.approvedTestCaseIds)]) insertLink.run(id, testCaseId);
+    });
+    create();
+    return this.getApiScenarioSuite(id);
+  }
+
+  listApiScenarioSuites(): ApiScenarioSuiteRecord[] {
+    const ids = this.db
+      .prepare("SELECT id FROM api_scenario_suites ORDER BY created_at DESC")
+      .all() as Array<{ id: string }>;
+    return ids.map((item) => this.getApiScenarioSuite(item.id));
+  }
+
+  getApiScenarioSuite(id: string): ApiScenarioSuiteRecord {
+    const row = this.db.prepare(
+      `SELECT id, project_id AS projectId, environment_id AS environmentId,
+              approved_version_id AS approvedVersionId, filename, created_at AS createdAt
+       FROM api_scenario_suites WHERE id = ?`,
+    ).get(id) as Omit<ApiScenarioSuiteRecord, "approvedTestCaseIds"> | undefined;
+    if (!row) throw new Error(`Hurl 场景集 ${id} 不存在`);
+    const links = this.db.prepare(
+      `SELECT approved_test_case_id AS id FROM api_scenario_suite_test_cases
+       WHERE suite_id = ? ORDER BY approved_test_case_id`,
+    ).all(id) as Array<{ id: string }>;
+    return { ...row, approvedTestCaseIds: links.map((item) => item.id) };
+  }
+
+  getApiScenarioContent(id: string): string {
+    const row = this.db.prepare("SELECT content FROM api_scenario_suites WHERE id = ?").get(id) as
+      | { content: string }
+      | undefined;
+    if (!row) throw new Error(`Hurl 场景集 ${id} 不存在`);
+    return row.content;
+  }
+
+  createApiScenarioRun(input: {
+    suiteId: string;
+    projectId: string;
+    environmentId: string;
+    targetBaseUrl: string;
+    hurlVersion: string;
+  }): ApiScenarioRunRecord {
+    const id = randomUUID();
+    this.db.prepare(
+      `INSERT INTO api_scenario_runs
+       (id, suite_id, project_id, environment_id, target_base_url, status, hurl_version, started_at)
+       VALUES (?, ?, ?, ?, ?, 'running', ?, ?)`,
+    ).run(
+      id,
+      input.suiteId,
+      input.projectId,
+      input.environmentId,
+      input.targetBaseUrl,
+      input.hurlVersion,
+      new Date().toISOString(),
+    );
+    return this.getApiScenarioRun(id);
+  }
+
+  finishApiScenarioRun(input: {
+    id: string;
+    status: "passed" | "failed" | "error";
+    passed: number;
+    failed: number;
+    exitCode: number;
+    runnerOutput: string;
+    items: ApiScenarioRunItemInput[];
+  }): ApiScenarioRunRecord {
+    const save = this.db.transaction(() => {
+      this.db.prepare(
+        `UPDATE api_scenario_runs SET status = ?, finished_at = ?, passed = ?, failed = ?,
+         exit_code = ?, runner_output = ? WHERE id = ?`,
+      ).run(
+        input.status,
+        new Date().toISOString(),
+        input.passed,
+        input.failed,
+        input.exitCode,
+        input.runnerOutput,
+        input.id,
+      );
+      const insert = this.db.prepare(
+        `INSERT INTO api_scenario_run_items
+         (id, run_id, name, classname, status, duration_ms, detail)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const item of input.items) {
+        insert.run(
+          randomUUID(), input.id, item.name, item.classname, item.status, item.durationMs, item.detail,
+        );
+      }
+    });
+    save();
+    return this.getApiScenarioRun(input.id);
+  }
+
+  listApiScenarioRuns(): ApiScenarioRunRecord[] {
+    const ids = this.db
+      .prepare("SELECT id FROM api_scenario_runs ORDER BY started_at DESC LIMIT 20")
+      .all() as Array<{ id: string }>;
+    return ids.map((item) => this.getApiScenarioRun(item.id));
+  }
+
+  getApiScenarioRun(id: string): ApiScenarioRunRecord {
+    const row = this.db.prepare(
+      `SELECT id, suite_id AS suiteId, project_id AS projectId, environment_id AS environmentId,
+              target_base_url AS targetBaseUrl, status, hurl_version AS hurlVersion,
+              started_at AS startedAt, finished_at AS finishedAt, passed, failed,
+              exit_code AS exitCode, runner_output AS runnerOutput
+       FROM api_scenario_runs WHERE id = ?`,
+    ).get(id) as Omit<ApiScenarioRunRecord, "items"> | undefined;
+    if (!row) throw new Error(`Hurl TestRun ${id} 不存在`);
+    const items = this.db.prepare(
+      `SELECT id, name, classname, status, duration_ms AS durationMs, detail
+       FROM api_scenario_run_items WHERE run_id = ? ORDER BY rowid`,
+    ).all(id) as ApiScenarioRunRecord["items"];
+    return { ...row, items };
   }
 
   createUiTestRun(input: {

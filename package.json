@@ -20,6 +20,8 @@
     "start:qdrant": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-qdrant.ps1",
     "setup:qdrant": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-qdrant.ps1",
     "setup:api": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-api-runner.ps1",
+    "setup:hurl": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-hurl.ps1",
+    "test:hurl": "tsx tests/at01-hurl.integration.ts",
     "aq01:spike": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-aq01-spike.ps1",
     "migrate:deepagents": "tsx scripts/migrate-deepagents.ts"
   },

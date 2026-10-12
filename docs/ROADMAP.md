@@ -6,7 +6,7 @@
 
 独立 FR01 形式化验证和 BR01 业务规则路径已撤回，产品页面、API、存储、运行时和测试全部删除；调研文档只作历史证据。后续任何成熟能力必须先对应具体 Agent 质量问题和真实验收样本，再决定是否接入，不能按推荐表直接开发。产品边界见 `docs/PRODUCT_DIRECTION.md`。
 
-当前主线回到：稳定唯一 AI 需求分析 → Agent / AI 应用评估资产与执行闭环 → Trace/Eval → 回归比较与准入。TD01 已于 2026-10-12 将 72 条人工全量通过的 TestCase 冻结为 Approved v1；当前进入 AT01，复用 OpenAPI + Schemathesis，把批准用例映射到真实 API operation 并保存 Runner 证据。AT01 已增加独立项目/环境配置，并以 Infisical 作为后续敏感配置的唯一成熟能力边界；当前电脑未安装 Docker，先运行不落敏感信息的兼容路径。当前 PRD 尚无真实 OpenAPI 和测试环境，因此平台受控闭环已通过，业务验收等待真实契约，详见 `docs/PHASES/AT01.md`。
+当前主线回到：稳定唯一 AI 需求分析 → Agent / AI 应用评估资产与执行闭环 → Trace/Eval → 回归比较与准入。TD01 已于 2026-10-12 将 72 条人工全量通过的 TestCase 冻结为 Approved v1；当前进入 AT01，复用 OpenAPI + Schemathesis 执行契约/生成式测试，并复用 Hurl 8.0.1 执行确定性业务 API 场景。两类结果均回链 Approved TestCase。AT01 已增加独立项目/环境配置，并以 Infisical 作为后续敏感配置的唯一成熟能力边界；当前电脑未安装 Docker，先运行不落敏感信息的兼容路径。当前 PRD 尚无真实 OpenAPI、Hurl 业务场景和测试环境，因此平台受控闭环已通过，业务验收等待真实资产，详见 `docs/PHASES/AT01.md`。
 
 ---
 
@@ -66,7 +66,7 @@ DI01 调研 Docling、PaddleOCR、MinerU、Unstructured 和 Apache Tika 后，�
 | AQ01 | 以当前需求分析 Agent 验证 Dataset、Trace、Eval、Experiment 与版本比较闭环 | 技术尖峰及评测治理入口已通过（候选 rubric 待人工批准） | 完成剩余问题评审并批准 candidate-v1，再扩充数据集和定义正式准入阈值 |
 | TD01 | 基于 Baseline 的测试设计、风险、测试点和 TestCase | 已完成（72 条人工全量通过，Approved TestCase v1 已冻结） | 已进入 AT01 |
 | KR01 | 通用企业知识检索：Docling 分块、Qdrant 检索与证据回链 | 已完成（中文真实入库/检索/删除验收；77 项测试、lint、build 通过） | 作为 TD01 的知识补充层，不形成平行业务入口 |
-| AT01 | Approved TestCase 到 API 自动化与真实 Runner 证据 | 进行中（OpenAPI/Schemathesis 平台闭环已通过；等待真实业务契约与环境） | 真实业务验收通过后进入 AT02 |
+| AT01 | Approved TestCase 到 API 自动化与真实 Runner 证据 | 进行中（Schemathesis 契约测试与 Hurl 业务场景平台闭环均已通过；等待真实业务契约、场景与环境） | 真实业务验收通过后进入 AT02 |
 | AT02 | Approved TestCase 到 UI 自动化与 Playwright 证据 | 已规划 | AT02 验收通过后进入 FT01 |
 | FT01 | 测试失败后的辅助缺陷定位调研与最小闭环 | 已规划 | 调研结果另行评审 |
 

@@ -332,7 +332,7 @@ function Workbench() {
                 </Tag>
               </Flex>
               <Text className="phase-title">{activePage === "project-config" ? "项目配置" : activePage === "api" ? "AT01 · API 自动化" : activePage === "test-design" ? "TD01 · 智能测试设计" : "RA01 · AI 需求分析"}</Text>
-              <Text className="phase-copy">{activePage === "project-config" ? "统一维护项目归属与非敏感测试环境；敏感凭据不落库" : activePage === "api" ? "把 Approved TestCase 映射到 OpenAPI operation，并保存 Schemathesis 运行证据" : activePage === "test-design" ? "72 条用例已人工通过并冻结为 Approved TestCase v1" : "单一需求分析入口：发现缺失、歧义与冲突，并提供可核对的原文证据"}</Text>
+              <Text className="phase-copy">{activePage === "project-config" ? "统一维护项目归属与非敏感测试环境；敏感凭据不落库" : activePage === "api" ? "用 Schemathesis 验证契约，用 Hurl 执行业务 API 场景并保存证据" : activePage === "test-design" ? "72 条用例已人工通过并冻结为 Approved TestCase v1" : "单一需求分析入口：发现缺失、歧义与冲突，并提供可核对的原文证据"}</Text>
             </div>
           )}
         </Sider>
@@ -360,7 +360,7 @@ function Workbench() {
                       : activePage === "project-config"
                         ? "集中管理项目与测试环境，自动化模块只引用配置，不再重复填写"
                       : activePage === "api"
-                        ? "选择 Approved TestCase，映射 OpenAPI operation 并运行 Schemathesis"
+                        ? "选择 Approved TestCase，执行契约生成测试或确定性业务 API 场景"
                         : activePage === "ui"
                             ? "在一次性 Docker 容器中运行所选 Playwright 测试"
                             : activePage === "app"
@@ -384,7 +384,7 @@ function Workbench() {
                     : activePage === "project-config"
                       ? "Infisical-ready"
                     : activePage === "api"
-                      ? "Schemathesis 4.29.3"
+                      ? "Schemathesis 4.29.3 + Hurl 8.0.1"
                       : activePage === "ui"
                           ? "Playwright 1.62.1"
                           : activePage === "app"

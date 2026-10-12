@@ -21,12 +21,14 @@ import {
   Select,
   Space,
   Statistic,
+  Tabs,
   Tag,
   Typography,
   Upload,
   type UploadFile,
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
+import ApiScenarioTesting from "./ApiScenarioTesting";
 import type {
   ApprovedTestCaseVersionOption,
   OpenApiSpecRecord,
@@ -94,7 +96,7 @@ function FailureDetails({ run }: { run: TestRunRecord }) {
   );
 }
 
-export default function ApiTesting() {
+function ContractApiTesting() {
   const { message } = AntdApp.useApp();
   const [specFile, setSpecFile] = useState<UploadFile>();
   const [spec, setSpec] = useState<OpenApiSpecRecord>();
@@ -438,5 +440,17 @@ export default function ApiTesting() {
         </Col>
       </Row>
     </div>
+  );
+}
+
+export default function ApiTesting() {
+  return (
+    <Tabs
+      defaultActiveKey="contract"
+      items={[
+        { key: "contract", label: "契约生成测试 · Schemathesis", children: <ContractApiTesting /> },
+        { key: "scenario", label: "业务场景执行 · Hurl", children: <ApiScenarioTesting /> },
+      ]}
+    />
   );
 }
