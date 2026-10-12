@@ -65,6 +65,7 @@ export default function ApiScenarioTesting() {
   const project = useMemo(() => projects.find((item) => item.id === projectId), [projects, projectId]);
   const version = useMemo(() => versions.find((item) => item.id === versionId), [versions, versionId]);
   const selectedSuite = useMemo(() => suites.find((item) => item.id === suiteId), [suites, suiteId]);
+  const suiteRuns = useMemo(() => runs.filter((item) => item.suiteId === suiteId), [runs, suiteId]);
 
   async function saveSuite() {
     const scenario = file?.originFileObj;
@@ -144,7 +145,7 @@ export default function ApiScenarioTesting() {
         <Button block size="large" type="primary" icon={<PlayCircleOutlined />} disabled={!suiteId} loading={running} onClick={() => void execute()}>运行 Hurl 业务场景</Button>
         <Text type="secondary">Hurl 8.0.1 · chained requests / captures / asserts · JUnit evidence · zero retry</Text>
       </Space></Card>
-      {run ? <Card title="最近一次业务场景 TestRun"><Flex justify="space-between"><Tag color={run.status === "passed" ? "green" : "red"}>{run.status === "passed" ? "通过" : "失败"}</Tag><Text type="secondary">{run.targetBaseUrl}</Text></Flex><Row gutter={12} className="metric-row"><Col span={12}><Statistic title="通过" value={run.passed} /></Col><Col span={12}><Statistic title="失败" value={run.failed} /></Col></Row><List dataSource={run.items} renderItem={(item) => <List.Item><Card size="small" className="api-operation-card"><Flex justify="space-between"><Text strong>{item.name}</Text><Tag color={item.status === "passed" ? "green" : "red"}>{item.status}</Tag></Flex>{item.detail && <pre>{item.detail}</pre>}</Card></List.Item>} /></Card> : <Empty description="执行后展示 Hurl JUnit 证据" image={Empty.PRESENTED_IMAGE_SIMPLE} />}
+      {run ? <Card title="业务场景 TestRun"><Field title="运行历史"><Select value={run.id} onChange={(value) => setRun(suiteRuns.find((item) => item.id === value))} options={suiteRuns.map((item) => ({ value: item.id, label: `${new Date(item.startedAt).toLocaleString("zh-CN")} · ${item.status} · ${item.passed}/${item.passed + item.failed}` }))} /></Field><Flex justify="space-between"><Tag color={run.status === "passed" ? "green" : "red"}>{run.status === "passed" ? "通过" : "失败"}</Tag><Text type="secondary">{run.targetBaseUrl}</Text></Flex><Row gutter={12} className="metric-row"><Col span={12}><Statistic title="通过" value={run.passed} /></Col><Col span={12}><Statistic title="失败" value={run.failed} /></Col></Row><List dataSource={run.items} renderItem={(item) => <List.Item><Card size="small" className="api-operation-card"><Flex justify="space-between"><Text strong>{item.name}</Text><Tag color={item.status === "passed" ? "green" : "red"}>{item.status}</Tag></Flex>{item.detail && <pre>{item.detail}</pre>}</Card></List.Item>} /></Card> : <Empty description="执行后展示 Hurl JUnit 证据" image={Empty.PRESENTED_IMAGE_SIMPLE} />}
     </Space></Col>
   </Row></div>;
 }

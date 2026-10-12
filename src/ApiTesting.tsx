@@ -167,6 +167,10 @@ function ContractApiTesting() {
     () => spec?.testCases.filter((testCase) => testCase.approvedTestCaseIds.length > 0).length ?? 0,
     [spec],
   );
+  const specRuns = useMemo(
+    () => runs.filter((item) => item.specId === spec?.id),
+    [runs, spec?.id],
+  );
 
   async function importSpec() {
     const file = specFile?.originFileObj;
@@ -463,7 +467,18 @@ function ContractApiTesting() {
             </Card>
 
             {run && (
-              <Card title={<Space><SafetyCertificateOutlined />最近一次 TestRun</Space>}>
+              <Card title={<Space><SafetyCertificateOutlined />TestRun 证据</Space>}>
+                <div className="api-field">
+                  <Text strong>运行历史</Text>
+                  <Select
+                    value={run.id}
+                    onChange={(value) => setRun(specRuns.find((item) => item.id === value))}
+                    options={specRuns.map((item) => ({
+                      value: item.id,
+                      label: `${new Date(item.startedAt).toLocaleString("zh-CN")} · ${item.status} · ${item.generatedExamples} examples`,
+                    }))}
+                  />
+                </div>
                 <Flex justify="space-between" align="center" gap={12} wrap>
                   <Space>
                     {run.status === "passed" ? <CheckCircleOutlined className="success-icon" /> : <WarningOutlined className="run-warning-icon" />}
