@@ -53,15 +53,27 @@ async function validateProject(repoPath: string, testFile: string): Promise<{ te
   return { testFile: path.relative(repoPath, absoluteTestFile).replaceAll("\\", "/"), cliPath: path.join(repoPath, "node_modules", "@playwright", "test", "cli.js") };
 }
 
-export async function inspectPlaywrightProject(repoPath: string): Promise<RepositoryInspection> {
+export interface PlaywrightProjectInspection extends RepositoryInspection {
+  agentsInitialized: boolean;
+  agentFiles: string[];
+}
+
+export async function inspectPlaywrightProject(repoPath: string): Promise<PlaywrightProjectInspection> {
   const inspection = await inspectRepository(repoPath);
-  const candidates = inspection.files.filter((file) => /\.(spec|test)\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(file));
+  const candidates = inspection.files.filter((file) => file !== "seed.spec.ts" && /\.(spec|test)\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(file));
   const files: string[] = [];
   for (const file of candidates) {
     const source = await fs.readFile(path.join(inspection.repoPath, file), "utf8");
     if (source.includes("@playwright/test")) files.push(file);
   }
-  return { ...inspection, files };
+  const expectedAgentFiles = [
+    ".codex/agents/playwright_test_planner.toml",
+    ".codex/agents/playwright_test_generator.toml",
+    ".codex/agents/playwright_test_healer.toml",
+  ];
+  const normalizedFiles = new Set(inspection.files.map((file) => file.replaceAll("\\", "/")));
+  const agentFiles = expectedAgentFiles.filter((file) => normalizedFiles.has(file));
+  return { ...inspection, files, agentsInitialized: agentFiles.length === expectedAgentFiles.length, agentFiles };
 }
 
 function resultError(result: JsonResult): string {
@@ -87,6 +99,11 @@ export function parsePlaywrightReport(report: JsonReport): UiTestResultInput[] {
   for (const suite of report.suites ?? []) visit(suite, []);
   if (output.length === 0) throw new Error("Playwright JSON Reporter 没有可持久化的测试结果");
   return output;
+}
+
+export function determinePlaywrightRunStatus(results: UiTestResultInput[], exitCode: number): "passed" | "failed" | "error" {
+  if (results.some((item) => item.status !== "passed")) return "failed";
+  return exitCode === 0 ? "passed" : "error";
 }
 
 async function findTraceFiles(root: string): Promise<string[]> {
@@ -163,7 +180,7 @@ export async function runPlaywrightTest(input: {
     const skipped = results.filter((item) => item.status === "skipped").length;
     const failed = results.length - passed - skipped;
     if (failed > 0 && traceFiles.length === 0) throw new Error("Playwright 测试失败，但 retain-on-failure 未生成 Trace Evidence");
-    const status = failed > 0 ? "failed" : processResult.exitCode === 0 ? "passed" : "error";
+    const status = determinePlaywrightRunStatus(results, processResult.exitCode);
     return store.finishUiTestRun({ id: run.id, status, passed, failed, skipped, exitCode: processResult.exitCode, runnerOutput, error: status === "error" ? `Playwright 运行器退出码异常：${processResult.exitCode}` : "", results, artifacts: traceFiles.map((file, index) => ({ name: `trace-${index + 1}.zip`, kind: "trace" as const, path: file })) });
   } catch (error) {
     const runnerOutput = trimOutput([processResult.stdout, processResult.stderr].filter(Boolean).join("\n"));

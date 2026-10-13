@@ -154,6 +154,16 @@ export default function UiTesting() {
                 <Text strong>Git 仓库根目录</Text>
                 {repoPath ? <Text code>{repoPath}</Text> : <Alert type="warning" showIcon message="尚未配置 Playwright 仓库" description="请先到“项目配置 → API / UI 自动化配置”填写仓库根目录。" />}
                 {inspection?.repoPath === repoPath && <Alert type="success" showIcon message={`${inspection.branch} · ${testFiles.length} 个 Playwright 测试文件`} />}
+                {inspection?.repoPath === repoPath && (
+                  <Alert
+                    type={inspection.agentsInitialized ? "success" : "warning"}
+                    showIcon
+                    message={inspection.agentsInitialized ? "Playwright 官方 Test Agents 已初始化" : "尚未初始化 Playwright 官方 Test Agents"}
+                    description={inspection.agentsInitialized
+                      ? "planner、generator、healer 均来自 Playwright 官方初始化命令。"
+                      : "请在目标仓库运行：npx playwright init-agents --loop=codex --config=playwright.config.ts --project=chromium --prompts"}
+                  />
+                )}
                 <Text strong>Playwright 测试文件 *</Text>
                 <Select showSearch value={testFile || undefined} onChange={setTestFile} options={testFiles.map((file) => ({ label: file, value: file }))} placeholder="选择一个 spec/test 文件" disabled={inspection?.repoPath !== repoPath || running} optionFilterProp="label" />
               </Space>

@@ -421,6 +421,8 @@ export interface RepositoryInspection {
   branch: string;
   status: string;
   files: string[];
+  agentsInitialized?: boolean;
+  agentFiles?: string[];
 }
 
 export interface UiTestResultRecord {

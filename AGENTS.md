@@ -122,6 +122,7 @@
 - TestMesh 只保留 Project/Environment/Approved TestCase/测试文件映射、人工授权、执行结果和失败 Trace。目标仓库、API 默认环境、UI 默认环境统一维护在项目配置，不得在自动化页面重复保存。
 - 当前电脑没有 Docker。旧 Playwright 1.62.1 Docker-only 路径已删除；唯一 Runner 是人工审阅授权后的本机 Node 子进程，页面必须明确提示会以当前用户权限执行仓库代码，不得宣称存在容器隔离。
 - 无真实业务前端仓库、URL 和账号时，只能使用 `examples/ui-automation/` 本机受控演示，必须标注非业务验收。当前通过运行 2/2，失败验证生成 2 份 Trace；真实业务验收仍待企业资产。
+- Playwright 官方 healer 可能把持续失败用例标记为 `fixme()`；TestMesh 的运行判定必须把任何 `skipped/fixme` 视为未通过，禁止用跳过状态绕过 Approved TestCase 验收。
 
 ## P01 实现约束
 

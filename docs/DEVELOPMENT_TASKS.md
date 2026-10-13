@@ -149,7 +149,7 @@ DI01 已完成，下一阶段进入 TD01。
 | 任务 | 内容 | 验收结果 | 状态 |
 | --- | --- | --- | --- |
 | AT02-01 | 固定 UI Automation 输入 | Project、UI Environment、Approved TestCase、已配置仓库与测试文件 | 已完成 |
-| AT02-02 | 复用 Playwright 官方 Test Agents | planner/generator/healer 负责规划、生成和修复；TestMesh 不自研 UI Agent | 选型完成，等待真实仓库 |
+| AT02-02 | 复用 Playwright 官方 Test Agents | planner/generator/healer 负责规划、生成和修复；受控仓库已用官方命令初始化并通过 seed | 已完成（真实仓库待接入） |
 | AT02-03 | 真实 Runner 验证 | Playwright 1.64.0 + Chromium；受控页面 2/2 通过，失败运行产生 2 份 Trace | 已完成（非业务验收） |
 | AT02-04 | 真实业务人工验收 | 审阅官方 Agent Diff，执行真实前端并保存 Trace/截图与 TestCase 回链 | 等待真实仓库、URL 与账号 |
 

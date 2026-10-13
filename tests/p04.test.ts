@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePlaywrightReport } from "../server/playwright.js";
+import { determinePlaywrightRunStatus, parsePlaywrightReport } from "../server/playwright.js";
 import { DomainStore } from "../server/store.js";
 
 describe("P04-A Playwright JSON Reporter", () => {
@@ -26,6 +26,16 @@ describe("P04-A Playwright JSON Reporter", () => {
     expect(() => parsePlaywrightReport({
       suites: [{ specs: [{ tests: [{ results: [{ status: "unknown" }] }] }] }],
     })).toThrow("未支持状态");
+  });
+
+  it("跳过用例不能把 Approved TestCase 运行判定为通过", () => {
+    expect(determinePlaywrightRunStatus([{
+      title: "被 healer 标记为 fixme 的用例",
+      projectName: "chromium",
+      status: "skipped",
+      durationMs: 0,
+      error: "",
+    }], 0)).toBe("failed");
   });
 
   it("持久化项目、环境、Approved TestCase 与目标页面映射", () => {
