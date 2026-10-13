@@ -115,6 +115,14 @@
 - 项目配置是独立入口。TestMesh 项目 ID 是需求、用例、OpenAPI 和执行结果的业务归属键；环境 Base URL 与非敏感公共 Header 只维护一次，API 自动化必须引用项目/环境，不得在各测试页重复保存。
 - 敏感配置的正式目标平台是 Infisical。TestMesh 不得保存 Authorization、Cookie、Token、API Key、密码或证书，也不得自研加密密钥表；当前没有可运维 Infisical 实例时，只允许单次运行内存输入。未来接入必须使用官方 SDK/API、Machine Identity 和明确的项目/环境映射，不建立第二条秘密读取路径。
 
+## 当前 UI 自动化规则（2026-10-13）
+
+- 用户明确批准在 AT01 缺少真实公司契约与 URL 时继续 AT02；这是阶段顺序例外，不改变 AT01 仍缺真实业务验收的事实。
+- 唯一 UI 引擎是 `@playwright/test` 1.64.0 + Chromium。测试规划、生成和失败修复复用 Playwright 官方 planner/generator/healer Test Agents；不得自研第二套 UI Agent、浏览器控制、录制、Reporter 或 Trace Viewer。
+- TestMesh 只保留 Project/Environment/Approved TestCase/测试文件映射、人工授权、执行结果和失败 Trace。目标仓库、API 默认环境、UI 默认环境统一维护在项目配置，不得在自动化页面重复保存。
+- 当前电脑没有 Docker。旧 Playwright 1.62.1 Docker-only 路径已删除；唯一 Runner 是人工审阅授权后的本机 Node 子进程，页面必须明确提示会以当前用户权限执行仓库代码，不得宣称存在容器隔离。
+- 无真实业务前端仓库、URL 和账号时，只能使用 `examples/ui-automation/` 本机受控演示，必须标注非业务验收。当前通过运行 2/2，失败验证生成 2 份 Trace；真实业务验收仍待企业资产。
+
 ## P01 实现约束
 
 - 工作台：Refine + Ant Design，参考 Ant Design Pro 的企业后台布局与视觉。

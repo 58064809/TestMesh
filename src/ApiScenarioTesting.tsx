@@ -54,7 +54,7 @@ export default function ApiScenarioTesting() {
       setRuns(loadedRuns);
       const initialSuite = loadedSuites[0];
       setProjectId(initialSuite?.projectId ?? loadedProjects[0]?.id ?? "");
-      setEnvironmentId(initialSuite?.environmentId ?? loadedProjects[0]?.environments[0]?.id ?? "");
+      setEnvironmentId(initialSuite?.environmentId ?? loadedProjects[0]?.defaultApiEnvironmentId ?? loadedProjects[0]?.environments[0]?.id ?? "");
       setVersionId(initialSuite?.approvedVersionId ?? loadedVersions[0]?.id ?? "");
       setTestCaseIds(initialSuite?.approvedTestCaseIds ?? []);
       setSuiteId(initialSuite?.id ?? "");
@@ -114,7 +114,7 @@ export default function ApiScenarioTesting() {
     <Col xs={24} xl={9}><Card title={<Space><CloudUploadOutlined />导入业务场景</Space>}>
       <Space direction="vertical" size={14} className="api-main-stack">
         <Alert type="info" showIcon message="Hurl 执行确定性业务链路" description="请求链、变量捕获和断言由 Hurl 8.0.1 执行；TestMesh 只绑定环境、Approved TestCase 和结果证据。" />
-        <Field title="项目 *"><Select value={projectId || undefined} onChange={(value) => { setProjectId(value); setEnvironmentId(projects.find((item) => item.id === value)?.environments[0]?.id ?? ""); }} options={projects.map((item) => ({ value: item.id, label: item.name }))} /></Field>
+        <Field title="项目 *"><Select value={projectId || undefined} onChange={(value) => { const selected = projects.find((item) => item.id === value); setProjectId(value); setEnvironmentId(selected?.defaultApiEnvironmentId || selected?.environments[0]?.id || ""); }} options={projects.map((item) => ({ value: item.id, label: item.name }))} /></Field>
         <Field title="测试环境 *"><Select value={environmentId || undefined} placeholder="请先在项目配置中添加环境" onChange={setEnvironmentId} options={(project?.environments ?? []).map((item) => ({ value: item.id, label: `${item.name} · ${item.baseUrl}` }))} /></Field>
         <Field title="Approved TestCase 版本 *"><Select value={versionId || undefined} onChange={(value) => { setVersionId(value); setTestCaseIds([]); }} options={versions.map((item) => ({ value: item.id, label: `v${item.version} · ${item.testCases.length} 条` }))} /></Field>
         <Field title="关联 Approved TestCase *"><Select mode="multiple" value={testCaseIds} onChange={setTestCaseIds} placeholder="选择该场景实际验证的用例" options={(version?.testCases ?? []).map((item) => ({ value: item.id, label: `${item.id} · ${item.title}` }))} /></Field>

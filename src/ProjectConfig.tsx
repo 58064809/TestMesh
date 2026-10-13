@@ -1,4 +1,4 @@
-import { CloudServerOutlined, EditOutlined, PlusOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
+import { CloudServerOutlined, CodeOutlined, EditOutlined, PlusOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
 import {
   Alert,
   App as AntdApp,
@@ -25,6 +25,7 @@ const { Text, Title, Paragraph } = Typography;
 
 type ProjectForm = { name: string; code: string; description: string };
 type EnvironmentForm = { name: string; baseUrl: string; headersText: string };
+type AutomationForm = { defaultApiEnvironmentId: string; defaultUiEnvironmentId: string; uiRepositoryPath: string };
 
 function headersToText(headers: Array<{ name: string; value: string }>): string {
   return headers.map((header) => `${header.name}: ${header.value}`).join("\n");
@@ -44,6 +45,7 @@ export default function ProjectConfig() {
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [environmentModalOpen, setEnvironmentModalOpen] = useState(false);
+  const [automationModalOpen, setAutomationModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<ProjectRecord>();
   const [editingEnvironment, setEditingEnvironment] = useState<ProjectEnvironmentRecord>();
   const [loading, setLoading] = useState(false);
@@ -51,6 +53,7 @@ export default function ProjectConfig() {
   const [error, setError] = useState<string>();
   const [projectForm] = Form.useForm<ProjectForm>();
   const [environmentForm] = Form.useForm<EnvironmentForm>();
+  const [automationForm] = Form.useForm<AutomationForm>();
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId),
@@ -153,6 +156,39 @@ export default function ProjectConfig() {
     }
   }
 
+  function openAutomation() {
+    if (!selectedProject) return;
+    automationForm.setFieldsValue({
+      defaultApiEnvironmentId: selectedProject.defaultApiEnvironmentId,
+      defaultUiEnvironmentId: selectedProject.defaultUiEnvironmentId,
+      uiRepositoryPath: selectedProject.uiRepositoryPath,
+    });
+    setAutomationModalOpen(true);
+  }
+
+  async function saveAutomation() {
+    if (!selectedProject) return;
+    const values = await automationForm.validateFields();
+    setLoading(true);
+    setError(undefined);
+    try {
+      const response = await fetch(`/api/projects/${selectedProject.id}/automation-config`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      const body = (await response.json()) as ProjectRecord | { error?: string };
+      if (!response.ok) throw new Error("error" in body ? body.error ?? "自动化配置保存失败" : "自动化配置保存失败");
+      await refresh(selectedProject.id);
+      setAutomationModalOpen(false);
+      message.success("API / UI 自动化配置已更新");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "自动化配置保存失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="project-config-page">
       <Space direction="vertical" size={16} className="project-config-stack">
@@ -221,6 +257,27 @@ export default function ProjectConfig() {
             </Card>
           </Col>
         </Row>
+        <Card
+          title={<Space><CodeOutlined />API / UI 自动化配置</Space>}
+          extra={<Button type="primary" icon={<EditOutlined />} disabled={!selectedProject} onClick={openAutomation}>配置</Button>}
+        >
+          {!selectedProject ? <Empty description="请先创建项目" image={Empty.PRESENTED_IMAGE_SIMPLE} /> : (
+            <Row gutter={[16, 16]}>
+              <Col xs={24} md={8}>
+                <Text type="secondary">API 默认环境</Text>
+                <div><Text>{selectedProject.environments.find((item) => item.id === selectedProject.defaultApiEnvironmentId)?.name || "未配置"}</Text></div>
+              </Col>
+              <Col xs={24} md={8}>
+                <Text type="secondary">UI 默认环境</Text>
+                <div><Text>{selectedProject.environments.find((item) => item.id === selectedProject.defaultUiEnvironmentId)?.name || "未配置"}</Text></div>
+              </Col>
+              <Col xs={24} md={8}>
+                <Text type="secondary">Playwright 仓库</Text>
+                <div><Text code>{selectedProject.uiRepositoryPath || "未配置"}</Text></div>
+              </Col>
+            </Row>
+          )}
+        </Card>
       </Space>
 
       <Modal title={editingProject ? "编辑项目" : "新建项目"} open={projectModalOpen} onCancel={() => setProjectModalOpen(false)} onOk={() => void saveProject()} okText="保存" cancelText="取消" confirmLoading={loading} destroyOnHidden>
@@ -237,6 +294,20 @@ export default function ProjectConfig() {
           <Form.Item label="Base URL" name="baseUrl" rules={[{ required: true, message: "请填写 Base URL" }, { type: "url", message: "请填写完整的 HTTP/HTTPS 地址" }]}><Input placeholder="例如：http://127.0.0.1:8080" /></Form.Item>
           <Form.Item label="公共 Header" name="headersText" extra="每行一条 Name: Value。Authorization、Cookie、Token、API Key 等敏感信息会被拒绝保存。">
             <TextArea rows={4} placeholder={"例如：\nX-Tenant-ID: demo\nAccept-Language: zh-CN"} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title="API / UI 自动化配置" open={automationModalOpen} onCancel={() => setAutomationModalOpen(false)} onOk={() => void saveAutomation()} okText="保存" cancelText="取消" confirmLoading={loading} destroyOnHidden>
+        <Form form={automationForm} layout="vertical">
+          <Form.Item label="API 默认环境" name="defaultApiEnvironmentId" extra="API 自动化进入页面后默认使用，可在单次运行时切换。">
+            <Select allowClear placeholder="请选择默认环境" options={(selectedProject?.environments ?? []).map((item) => ({ value: item.id, label: `${item.name} · ${item.baseUrl}` }))} />
+          </Form.Item>
+          <Form.Item label="UI 默认环境" name="defaultUiEnvironmentId" extra="作为 Playwright 的目标页面 Base URL。">
+            <Select allowClear placeholder="请选择默认环境" options={(selectedProject?.environments ?? []).map((item) => ({ value: item.id, label: `${item.name} · ${item.baseUrl}` }))} />
+          </Form.Item>
+          <Form.Item label="Playwright Git 仓库根目录" name="uiRepositoryPath" extra="保存时检查仓库；执行页只读取，不再重复填写。">
+            <Input placeholder="例如：F:\\TestMesh" />
           </Form.Item>
         </Form>
       </Modal>

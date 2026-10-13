@@ -328,11 +328,11 @@ function Workbench() {
               <Flex justify="space-between" align="center">
                 <Text className="phase-label">当前阶段</Text>
                 <Tag color={activePage === "api" || activePage === "project-config" ? "processing" : "success"} bordered={false}>
-                  {activePage === "api" || activePage === "project-config" ? "进行中" : "已完成"}
+                  {activePage === "api" || activePage === "ui" || activePage === "project-config" ? "进行中" : "已完成"}
                 </Tag>
               </Flex>
-              <Text className="phase-title">{activePage === "project-config" ? "项目配置" : activePage === "api" ? "AT01 · API 自动化" : activePage === "test-design" ? "TD01 · 智能测试设计" : "RA01 · AI 需求分析"}</Text>
-              <Text className="phase-copy">{activePage === "project-config" ? "统一维护项目归属与非敏感测试环境；敏感凭据不落库" : activePage === "api" ? "用 Schemathesis 验证契约，用 Hurl 执行业务 API 场景并保存证据" : activePage === "test-design" ? "72 条用例已人工通过并冻结为 Approved TestCase v1" : "单一需求分析入口：发现缺失、歧义与冲突，并提供可核对的原文证据"}</Text>
+              <Text className="phase-title">{activePage === "project-config" ? "项目配置" : activePage === "api" ? "AT01 · API 自动化" : activePage === "ui" ? "AT02 · UI 自动化" : activePage === "test-design" ? "TD01 · 智能测试设计" : "RA01 · AI 需求分析"}</Text>
+              <Text className="phase-copy">{activePage === "project-config" ? "统一维护项目、API/UI 默认环境和 Playwright 仓库；敏感凭据不落库" : activePage === "api" ? "用 Schemathesis 验证契约，用 Hurl 执行业务 API 场景并保存证据" : activePage === "ui" ? "复用 Playwright 官方能力执行已审核 UI 测试并保存 Trace 证据" : activePage === "test-design" ? "72 条用例已人工通过并冻结为 Approved TestCase v1" : "单一需求分析入口：发现缺失、歧义与冲突，并提供可核对的原文证据"}</Text>
             </div>
           )}
         </Sider>
@@ -362,7 +362,7 @@ function Workbench() {
                       : activePage === "api"
                         ? "选择 Approved TestCase，执行契约生成测试或确定性业务 API 场景"
                         : activePage === "ui"
-                            ? "在一次性 Docker 容器中运行所选 Playwright 测试"
+                            ? "关联 Approved TestCase，在本机运行已审核的 Playwright 测试"
                             : activePage === "app"
                               ? "连接本机已启动的 Android Emulator，运行所选 WebdriverIO 测试"
                             : activePage === "performance"
@@ -386,7 +386,7 @@ function Workbench() {
                     : activePage === "api"
                       ? "Schemathesis 4.29.3 + Hurl 8.0.1"
                       : activePage === "ui"
-                          ? "Playwright 1.62.1"
+                          ? "Playwright 1.64.0"
                           : activePage === "app"
                             ? "Appium 3.7.0"
                             : activePage === "performance"

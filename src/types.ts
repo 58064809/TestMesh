@@ -336,6 +336,9 @@ export interface ProjectRecord {
   code: string;
   description: string;
   infisicalProjectId: string;
+  defaultApiEnvironmentId: string;
+  defaultUiEnvironmentId: string;
+  uiRepositoryPath: string;
   environments: ProjectEnvironmentRecord[];
   createdAt: string;
   updatedAt: string;
@@ -438,6 +441,11 @@ export interface UiTestArtifactRecord {
 
 export interface UiTestRunRecord {
   id: string;
+  projectId: string;
+  environmentId: string;
+  approvedVersionId: string;
+  approvedTestCaseIds: string[];
+  targetBaseUrl: string;
   repoPath: string;
   testFile: string;
   status: "running" | "passed" | "failed" | "error";

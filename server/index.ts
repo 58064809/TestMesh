@@ -16,7 +16,7 @@ import { MAX_OPENAPI_BYTES, parseHeaderLines, parseOpenApi, validateTargetBaseUr
 import { SCHEMATHESIS_VERSION, runSchemathesis, type RunnerAuth } from "./schemathesis.js";
 import { HURL_VERSION, MAX_HURL_BYTES, runHurlScenario, validateHurlScenario } from "./hurl.js";
 import { inspectRepository } from "./repository.js";
-import { PLAYWRIGHT_IMAGE, PLAYWRIGHT_VERSION, runPlaywrightTest } from "./playwright.js";
+import { PLAYWRIGHT_VERSION, inspectPlaywrightProject, runPlaywrightTest } from "./playwright.js";
 import {
   APPIUM_VERSION,
   UIAUTOMATOR2_VERSION,
@@ -39,7 +39,7 @@ import { TestDesignService } from "./test-design/service.js";
 import { BaselineSnapshotSchema } from "./test-design/schema.js";
 import { KnowledgeService } from "./knowledge/service.js";
 import { QdrantKnowledgeIndex } from "./knowledge/qdrant.js";
-import { ProjectEnvironmentInputSchema, ProjectInputSchema } from "./project-config/schema.js";
+import { ProjectAutomationConfigInputSchema, ProjectEnvironmentInputSchema, ProjectInputSchema } from "./project-config/schema.js";
 
 initializePhoenixTracing();
 
@@ -216,12 +216,12 @@ async function qualityProfileView(profile: AiQualityProfile) {
 app.get("/api/health", (_request, response) => {
   response.json({
     ok: true,
-    phase: "AT01 API Automation",
+    phase: "AT02 UI Automation",
     model: MODEL,
     schemathesisVersion: SCHEMATHESIS_VERSION,
     hurlVersion: HURL_VERSION,
     playwrightVersion: PLAYWRIGHT_VERSION,
-    playwrightImage: PLAYWRIGHT_IMAGE,
+    playwrightRunner: "local Node subprocess",
     appiumVersion: APPIUM_VERSION,
     uiautomator2Version: UIAUTOMATOR2_VERSION,
     webdriverioVersion: WDIO_VERSION,
@@ -271,6 +271,20 @@ app.put("/api/projects/:id", async (request, response) => {
     response.json(await projectConfigStore.updateProject(request.params.id, parsed.data));
   } catch (error) {
     response.status(409).json({ error: error instanceof Error ? error.message : "无法更新项目" });
+  }
+});
+
+app.put("/api/projects/:id/automation-config", async (request, response) => {
+  const parsed = ProjectAutomationConfigInputSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: parsed.error.issues[0]?.message ?? "自动化配置不合法" });
+    return;
+  }
+  try {
+    if (parsed.data.uiRepositoryPath) await inspectPlaywrightProject(parsed.data.uiRepositoryPath);
+    response.json(await projectConfigStore.updateAutomationConfig(request.params.id, parsed.data));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "无法更新自动化配置" });
   }
 });
 
@@ -848,11 +862,20 @@ app.post("/api/p03/repository/inspect", async (request, response) => {
   }
 });
 
-app.get("/api/p04/ui-runs", (_request, response) => {
+app.get("/api/ui-automation/runs", (_request, response) => {
   response.json(store.listUiTestRuns());
 });
 
-app.get("/api/p04/ui-runs/:id", (request, response) => {
+app.post("/api/ui-automation/repository", async (request, response) => {
+  try {
+    const repoPath = typeof request.body.repoPath === "string" ? request.body.repoPath : "";
+    response.json(await inspectPlaywrightProject(repoPath));
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : "Playwright 仓库检查失败" });
+  }
+});
+
+app.get("/api/ui-automation/runs/:id", (request, response) => {
   try {
     response.json(store.getUiTestRun(request.params.id));
   } catch (error) {
@@ -860,12 +883,27 @@ app.get("/api/p04/ui-runs/:id", (request, response) => {
   }
 });
 
-app.post("/api/p04/ui-runs", async (request, response) => {
+app.post("/api/ui-automation/runs", async (request, response) => {
   try {
+    const projectId = typeof request.body.projectId === "string" ? request.body.projectId : "";
+    const environmentId = typeof request.body.environmentId === "string" ? request.body.environmentId : "";
+    const approvedVersionId = typeof request.body.approvedVersionId === "string" ? request.body.approvedVersionId : "";
+    const approvedTestCaseIds = Array.isArray(request.body.approvedTestCaseIds)
+      ? request.body.approvedTestCaseIds.filter((item: unknown): item is string => typeof item === "string")
+      : [];
+    const environment = await projectConfigStore.getEnvironment(projectId, environmentId);
+    const approved = await testDesignStore.getApprovedVersionById(approvedVersionId);
+    const validIds = new Set<string>(approved.snapshot.test_cases.map((item) => item.id));
+    if (approvedTestCaseIds.some((id: string) => !validIds.has(id))) throw new Error("关联用例不属于所选 Approved TestCase 版本");
     const run = await runPlaywrightTest(
       {
         repoPath: typeof request.body.repoPath === "string" ? request.body.repoPath : "",
         testFile: typeof request.body.testFile === "string" ? request.body.testFile : "",
+        targetBaseUrl: environment.baseUrl,
+        projectId,
+        environmentId,
+        approvedVersionId,
+        approvedTestCaseIds,
         authorized: request.body.authorized === true,
       },
       store,
@@ -877,7 +915,7 @@ app.post("/api/p04/ui-runs", async (request, response) => {
   }
 });
 
-app.get("/api/p04/ui-runs/:id/artifacts/:artifactId", (request, response) => {
+app.get("/api/ui-automation/runs/:id/artifacts/:artifactId", (request, response) => {
   try {
     const artifact = store.getUiTestArtifact(request.params.id, request.params.artifactId);
     response.download(artifact.path, artifact.name);

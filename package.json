@@ -23,6 +23,8 @@
     "setup:hurl": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-hurl.ps1",
     "test:hurl": "tsx tests/at01-hurl.integration.ts",
     "demo:api-target": "tsx examples/api-automation/controlled-target.ts",
+    "demo:ui-target": "tsx examples/ui-automation/controlled-ui-target.ts",
+    "test:ui-demo": "playwright test examples/ui-automation/after-sales.spec.ts --project=chromium --workers=1 --retries=0",
     "aq01:spike": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-aq01-spike.ps1",
     "migrate:deepagents": "tsx scripts/migrate-deepagents.ts"
   },
@@ -60,6 +62,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "1.64.0",
     "@types/better-sqlite3": "^9.6.0",
     "@types/express": "^5.0.6",
     "@types/multer": "^2.2.0",

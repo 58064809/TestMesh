@@ -134,6 +134,11 @@ export interface UiTestArtifactRecord {
 
 export interface UiTestRunRecord {
   id: string;
+  projectId: string;
+  environmentId: string;
+  approvedVersionId: string;
+  approvedTestCaseIds: string[];
+  targetBaseUrl: string;
   repoPath: string;
   testFile: string;
   status: "running" | "passed" | "failed" | "error";
@@ -418,6 +423,11 @@ CREATE TABLE IF NOT EXISTS api_scenario_run_items (
 );
 CREATE TABLE IF NOT EXISTS ui_test_runs (
   id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL DEFAULT '',
+  environment_id TEXT NOT NULL DEFAULT '',
+  approved_version_id TEXT NOT NULL DEFAULT '',
+  approved_test_case_ids_json TEXT NOT NULL DEFAULT '[]',
+  target_base_url TEXT NOT NULL DEFAULT '',
   repo_path TEXT NOT NULL,
   test_file TEXT NOT NULL,
   status TEXT NOT NULL,
@@ -573,6 +583,21 @@ export class DomainStore {
     this.db.exec(schema);
     this.removeDeprecatedAgentData();
     this.migrateApiAutomation();
+    this.migrateUiAutomation();
+  }
+
+  private migrateUiAutomation(): void {
+    const columns = this.db.pragma("table_info(ui_test_runs)") as Array<{ name: string }>;
+    const additions = [
+      ["project_id", "TEXT NOT NULL DEFAULT ''"],
+      ["environment_id", "TEXT NOT NULL DEFAULT ''"],
+      ["approved_version_id", "TEXT NOT NULL DEFAULT ''"],
+      ["approved_test_case_ids_json", "TEXT NOT NULL DEFAULT '[]'"],
+      ["target_base_url", "TEXT NOT NULL DEFAULT ''"],
+    ] as const;
+    for (const [name, definition] of additions) {
+      if (!columns.some((column) => column.name === name)) this.db.exec(`ALTER TABLE ui_test_runs ADD COLUMN ${name} ${definition}`);
+    }
   }
 
   private migrateApiAutomation(): void {
@@ -1174,6 +1199,11 @@ export class DomainStore {
   }
 
   createUiTestRun(input: {
+    projectId: string;
+    environmentId: string;
+    approvedVersionId: string;
+    approvedTestCaseIds: string[];
+    targetBaseUrl: string;
     repoPath: string;
     testFile: string;
     playwrightVersion: string;
@@ -1183,10 +1213,16 @@ export class DomainStore {
     const id = randomUUID();
     this.db.prepare(
       `INSERT INTO ui_test_runs
-       (id, repo_path, test_file, status, playwright_version, image, container_name, started_at)
-       VALUES (?, ?, ?, 'running', ?, ?, ?, ?)`,
+       (id, project_id, environment_id, approved_version_id, approved_test_case_ids_json, target_base_url,
+        repo_path, test_file, status, playwright_version, image, container_name, started_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?)`,
     ).run(
       id,
+      input.projectId,
+      input.environmentId,
+      input.approvedVersionId,
+      JSON.stringify(input.approvedTestCaseIds),
+      input.targetBaseUrl,
       input.repoPath,
       input.testFile,
       input.playwrightVersion,
@@ -1260,12 +1296,14 @@ export class DomainStore {
 
   getUiTestRun(id: string): UiTestRunRecord {
     const row = this.db.prepare(
-      `SELECT id, repo_path AS repoPath, test_file AS testFile, status,
+      `SELECT id, project_id AS projectId, environment_id AS environmentId,
+              approved_version_id AS approvedVersionId, approved_test_case_ids_json AS approvedTestCaseIdsJson,
+              target_base_url AS targetBaseUrl, repo_path AS repoPath, test_file AS testFile, status,
               playwright_version AS playwrightVersion, image, container_name AS containerName,
               started_at AS startedAt, finished_at AS finishedAt, passed, failed, skipped,
               exit_code AS exitCode, runner_output AS runnerOutput, error
        FROM ui_test_runs WHERE id = ?`,
-    ).get(id) as Omit<UiTestRunRecord, "results" | "artifacts"> | undefined;
+    ).get(id) as (Omit<UiTestRunRecord, "results" | "artifacts" | "approvedTestCaseIds"> & { approvedTestCaseIdsJson: string }) | undefined;
     if (!row) throw new Error(`UI TestRun ${id} 不存在`);
     const results = this.db.prepare(
       `SELECT id, title, project_name AS projectName, status, duration_ms AS durationMs, error
@@ -1274,7 +1312,8 @@ export class DomainStore {
     const artifacts = this.db.prepare(
       `SELECT id, run_id AS runId, name, kind FROM ui_test_artifacts WHERE run_id = ? ORDER BY rowid`,
     ).all(id) as UiTestArtifactRecord[];
-    return { ...row, results, artifacts };
+    const { approvedTestCaseIdsJson, ...record } = row;
+    return { ...record, approvedTestCaseIds: JSON.parse(approvedTestCaseIdsJson) as string[], results, artifacts };
   }
 
   getUiTestArtifact(runId: string, artifactId: string): { name: string; path: string } {

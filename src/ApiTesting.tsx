@@ -148,7 +148,7 @@ function ContractApiTesting() {
       setRun(initialSpec ? loadedRuns.find((item) => item.specId === initialSpec.id) : undefined);
       setApprovedVersionId(initialSpec?.approvedVersionId || versions[0]?.id || "");
       setProjectId(initialSpec?.projectId || initialProject?.id || "");
-      setEnvironmentId(initialSpec?.environmentId || initialProject?.environments[0]?.id || "");
+      setEnvironmentId(initialSpec?.environmentId || initialProject?.defaultApiEnvironmentId || initialProject?.environments[0]?.id || "");
     }).catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "API 自动化配置加载失败"))
       .finally(() => setConfigLoading(false));
   }, []);
@@ -310,7 +310,8 @@ function ContractApiTesting() {
                 placeholder="请先到项目配置创建项目"
                 onChange={(value) => {
                   setProjectId(value);
-                  setEnvironmentId(projects.find((item) => item.id === value)?.environments[0]?.id ?? "");
+                  const selected = projects.find((item) => item.id === value);
+                  setEnvironmentId(selected?.defaultApiEnvironmentId || selected?.environments[0]?.id || "");
                 }}
                 options={projects.map((item) => ({ value: item.id, label: `${item.name} · ${item.code}` }))}
               />

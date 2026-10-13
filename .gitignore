@@ -10,5 +10,7 @@ tmp/
 integrations/**/target/
 .schemathesis/
 .hurl/
+test-results/
+playwright-report/
 *.log
 .DS_Store

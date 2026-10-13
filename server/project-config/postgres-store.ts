@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
-import type { ProjectEnvironmentInput, ProjectInput } from "./schema.js";
+import type { ProjectAutomationConfigInput, ProjectEnvironmentInput, ProjectInput } from "./schema.js";
 
 export interface ProjectEnvironmentRecord extends ProjectEnvironmentInput {
   id: string;
@@ -15,6 +15,9 @@ export interface ProjectEnvironmentRecord extends ProjectEnvironmentInput {
 export interface ProjectRecord extends ProjectInput {
   id: string;
   infisicalProjectId: string;
+  defaultApiEnvironmentId: string;
+  defaultUiEnvironmentId: string;
+  uiRepositoryPath: string;
   environments: ProjectEnvironmentRecord[];
   createdAt: string;
   updatedAt: string;
@@ -31,6 +34,9 @@ export class ProjectConfigPostgresStore {
         code TEXT NOT NULL UNIQUE,
         description TEXT NOT NULL DEFAULT '',
         infisical_project_id TEXT NOT NULL DEFAULT '',
+        default_api_environment_id TEXT NOT NULL DEFAULT '',
+        default_ui_environment_id TEXT NOT NULL DEFAULT '',
+        ui_repository_path TEXT NOT NULL DEFAULT '',
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
@@ -48,11 +54,15 @@ export class ProjectConfigPostgresStore {
         UNIQUE(project_id, name)
       );
     `);
+    await this.pool.query(`ALTER TABLE ${this.schema}.projects ADD COLUMN IF NOT EXISTS default_api_environment_id TEXT NOT NULL DEFAULT ''`);
+    await this.pool.query(`ALTER TABLE ${this.schema}.projects ADD COLUMN IF NOT EXISTS default_ui_environment_id TEXT NOT NULL DEFAULT ''`);
+    await this.pool.query(`ALTER TABLE ${this.schema}.projects ADD COLUMN IF NOT EXISTS ui_repository_path TEXT NOT NULL DEFAULT ''`);
   }
 
   async listProjects(): Promise<ProjectRecord[]> {
     const result = await this.pool.query(`
       SELECT p.id, p.name, p.code, p.description, p.infisical_project_id,
+             p.default_api_environment_id, p.default_ui_environment_id, p.ui_repository_path,
              p.created_at, p.updated_at,
              COALESCE(json_agg(json_build_object(
                'id', e.id, 'projectId', e.project_id, 'name', e.name,
@@ -101,6 +111,20 @@ export class ProjectConfigPostgresStore {
       if (isUniqueViolation(error)) throw new Error(`项目标识 ${input.code} 已存在`, { cause: error });
       throw error;
     }
+    return this.getProject(id);
+  }
+
+  async updateAutomationConfig(id: string, input: ProjectAutomationConfigInput): Promise<ProjectRecord> {
+    const project = await this.getProject(id);
+    const environmentIds = new Set(project.environments.map((item) => item.id));
+    if (input.defaultApiEnvironmentId && !environmentIds.has(input.defaultApiEnvironmentId)) throw new Error("默认 API 环境不属于所选项目");
+    if (input.defaultUiEnvironmentId && !environmentIds.has(input.defaultUiEnvironmentId)) throw new Error("默认 UI 环境不属于所选项目");
+    await this.pool.query(
+      `UPDATE ${this.schema}.projects
+       SET default_api_environment_id = $2, default_ui_environment_id = $3, ui_repository_path = $4, updated_at = NOW()
+       WHERE id = $1`,
+      [id, input.defaultApiEnvironmentId, input.defaultUiEnvironmentId, input.uiRepositoryPath],
+    );
     return this.getProject(id);
   }
 
@@ -159,6 +183,9 @@ function mapProject(row: Record<string, unknown>): ProjectRecord {
   return {
     id: String(row.id), name: String(row.name), code: String(row.code), description: String(row.description ?? ""),
     infisicalProjectId: String(row.infisical_project_id ?? ""),
+    defaultApiEnvironmentId: String(row.default_api_environment_id ?? ""),
+    defaultUiEnvironmentId: String(row.default_ui_environment_id ?? ""),
+    uiRepositoryPath: String(row.ui_repository_path ?? ""),
     environments: Array.isArray(row.environments) ? row.environments.map((item) => mapEnvironment(item as Record<string, unknown>)) : [],
     createdAt: new Date(String(row.created_at)).toISOString(), updatedAt: new Date(String(row.updated_at)).toISOString(),
   };

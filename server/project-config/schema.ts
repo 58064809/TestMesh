@@ -34,6 +34,13 @@ export const ProjectEnvironmentInputSchema = z.object({
   headers: z.array(EnvironmentHeaderSchema).max(30).default([]),
 }).strict();
 
+export const ProjectAutomationConfigInputSchema = z.object({
+  defaultApiEnvironmentId: z.string().trim().default(""),
+  defaultUiEnvironmentId: z.string().trim().default(""),
+  uiRepositoryPath: z.string().trim().max(1_000).default(""),
+}).strict();
+
 export type ProjectInput = z.infer<typeof ProjectInputSchema>;
 export type ProjectEnvironmentInput = z.infer<typeof ProjectEnvironmentInputSchema>;
+export type ProjectAutomationConfigInput = z.infer<typeof ProjectAutomationConfigInputSchema>;
 
