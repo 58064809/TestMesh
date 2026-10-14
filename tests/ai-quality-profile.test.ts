@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assessProfileReadiness } from "../server/ai-quality/profile.js";
+import { assessProfileReadiness, assessQuality } from "../server/ai-quality/profile.js";
 import type { RequirementAnalysis } from "../server/requirement-analysis/schema.js";
 import type { AnalysisReviewRecord } from "../server/requirement-analysis/postgres-store.js";
 
@@ -38,5 +38,52 @@ describe("AI 质量评测配置批准前置检查", () => {
     const result = assessProfileReadiness(document, [review("OQ-1", "accepted"), review("OQ-2", "clarify")]);
     expect(result.ready).toBe(false);
     expect(result.reviewedOpenQuestions).toBe(1);
+  });
+});
+
+describe("AI 质量证据画像", () => {
+  const qualityDocument = {
+    open_questions: [
+      { id: "OQ-1", issue_type: "missing", source_refs: [] },
+      { id: "OQ-2", issue_type: "ambiguity", source_refs: ["SRC-1"] },
+      { id: "OQ-3", issue_type: "conflict", source_refs: ["SRC-1", "SRC-2"] },
+    ],
+  } as RequirementAnalysis;
+
+  it("区分已测指标和当前无法证明的召回率、鲁棒性", () => {
+    const result = assessQuality(qualityDocument, [
+      review("OQ-1", "accepted"),
+      review("OQ-2", "merged"),
+      review("OQ-3", "rejected"),
+    ]);
+
+    expect(result.verdict).toBe("candidate");
+    expect(result.metrics.find((metric) => metric.id === "human-confirmed-rate")).toMatchObject({
+      status: "warning",
+      value: "66.7%（2/3）",
+    });
+    expect(result.metrics.find((metric) => metric.id === "citation-completeness")).toMatchObject({
+      status: "passed",
+      value: "100.0%（2/2）",
+    });
+    expect(result.metrics.find((metric) => metric.id === "defect-recall")?.status).toBe("unknown");
+    expect(result.unknown.join(" ")).toContain("漏掉");
+  });
+
+  it("人工评审未完成时不把单次运行描述成质量基线", () => {
+    const result = assessQuality(qualityDocument, [review("OQ-1", "accepted")]);
+    expect(result.verdict).toBe("insufficient-evidence");
+    expect(result.confidence).toBe("low");
+  });
+
+  it("引用缺失会形成明确告警", () => {
+    const invalidCitationDocument = {
+      open_questions: [{ id: "OQ-1", issue_type: "conflict", source_refs: ["SRC-1"] }],
+    } as RequirementAnalysis;
+    const result = assessQuality(invalidCitationDocument, [review("OQ-1", "accepted")]);
+    expect(result.metrics.find((metric) => metric.id === "citation-completeness")).toMatchObject({
+      status: "warning",
+      value: "0.0%（0/1）",
+    });
   });
 });

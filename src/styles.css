@@ -831,6 +831,27 @@ body {
   margin-top: 16px;
 }
 
+.quality-verdict {
+  margin-bottom: 12px;
+}
+
+.quality-metric-card {
+  height: 100%;
+}
+
+.quality-metric-value {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.quality-metric-explanation {
+  margin-bottom: 0 !important;
+}
+
+.quality-evidence-grid {
+  margin-top: 16px;
+}
+
 .approval-form {
   margin-top: 16px;
 }

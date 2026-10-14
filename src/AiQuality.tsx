@@ -15,6 +15,7 @@ import {
   Empty,
   Form,
   Input,
+  List,
   Modal,
   Progress,
   Row,
@@ -49,6 +50,22 @@ interface QualityProfile {
   phoenix: { projectName: string; datasetId: string; experimentId: string; traceId: string };
   phoenixLinks: { home: string; datasets: string; projects: string };
   readiness: { ready: boolean; totalOpenQuestions: number; reviewedOpenQuestions: number; blockers: string[] };
+  assessment: null | {
+    verdict: "insufficient-evidence" | "candidate";
+    headline: string;
+    confidence: "low" | "medium";
+    metrics: Array<{
+      id: string;
+      name: string;
+      status: "passed" | "warning" | "unknown";
+      value: string;
+      target: string;
+      explanation: string;
+    }>;
+    known: string[];
+    unknown: string[];
+    nextActions: string[];
+  };
   approvedBy: string;
   approvalNote: string;
   approvedAt: string | null;
@@ -141,6 +158,15 @@ export default function AiQuality() {
               </Button>
             )}
           >
+            {profile.assessment && (
+              <Alert
+                className="quality-verdict"
+                type={profile.assessment.verdict === "candidate" ? "warning" : "error"}
+                showIcon
+                message={profile.assessment.headline}
+                description={`结论置信度：${profile.assessment.confidence === "medium" ? "中" : "低"}。这里的“候选”只代表当前样本已有可核验证据，不代表已达到真实业务发布标准。`}
+              />
+            )}
             <Alert
               type={profile.readiness.ready ? "success" : "warning"}
               showIcon
@@ -179,6 +205,52 @@ export default function AiQuality() {
                 </Card>
               </Col>
             </Row>
+
+            {profile.assessment && (
+              <>
+                <Divider orientation="left">质量画像（不计算虚假的综合分）</Divider>
+                <Row gutter={[12, 12]}>
+                  {profile.assessment.metrics.map((metric) => (
+                    <Col xs={24} md={12} xl={8} key={metric.id}>
+                      <Card size="small" className="quality-metric-card">
+                        <Space direction="vertical" size={6}>
+                          <Space wrap>
+                            <Text strong>{metric.name}</Text>
+                            <Tag color={metric.status === "passed" ? "green" : metric.status === "warning" ? "orange" : "default"}>
+                              {metric.status === "passed" ? "达到候选门槛" : metric.status === "warning" ? "需改进" : "暂无证据"}
+                            </Tag>
+                          </Space>
+                          <Text className="quality-metric-value">{metric.value}</Text>
+                          <Text type="secondary">{metric.target}</Text>
+                          <Paragraph type="secondary" className="quality-metric-explanation">{metric.explanation}</Paragraph>
+                        </Space>
+                      </Card>
+                    </Col>
+                  ))}
+                </Row>
+
+                <Row gutter={[16, 16]} className="quality-evidence-grid">
+                  <Col xs={24} xl={12}>
+                    <Card size="small" title="现在有证据能说明的">
+                      <List size="small" dataSource={profile.assessment.known} renderItem={(item) => <List.Item><Text>{item}</Text></List.Item>} />
+                    </Card>
+                  </Col>
+                  <Col xs={24} xl={12}>
+                    <Card size="small" title="现在还不能说明的">
+                      <List size="small" dataSource={profile.assessment.unknown} renderItem={(item) => <List.Item><Text type="warning">{item}</Text></List.Item>} />
+                    </Card>
+                  </Col>
+                </Row>
+
+                <Divider orientation="left">没有真实项目资料时的下一步</Divider>
+                <List
+                  bordered
+                  size="small"
+                  dataSource={profile.assessment.nextActions}
+                  renderItem={(item, index) => <List.Item><Text strong>{index + 1}.</Text>&nbsp;{item}</List.Item>}
+                />
+              </>
+            )}
 
             <Divider orientation="left">准入标准</Divider>
             <Space size={[8, 8]} wrap>

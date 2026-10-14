@@ -34,7 +34,7 @@ import { createDoclingClientFromEnvironment } from "./document-parsing/docling.j
 import { parseAnalysisSources } from "./document-parsing/parse-sources.js";
 import { z } from "zod";
 import { initializePhoenixTracing, resolvePhoenixTraceUrl } from "./observability/phoenix.js";
-import { assessProfileReadiness, type AiQualityProfile } from "./ai-quality/profile.js";
+import { assessProfileReadiness, assessQuality, type AiQualityProfile } from "./ai-quality/profile.js";
 import { TestDesignService } from "./test-design/service.js";
 import { BaselineSnapshotSchema } from "./test-design/schema.js";
 import { KnowledgeService } from "./knowledge/service.js";
@@ -193,6 +193,7 @@ async function qualityProfileView(profile: AiQualityProfile) {
     return {
       ...profile,
       readiness: assessProfileReadiness(document, reviews),
+      assessment: assessQuality(document, reviews),
       phoenixLinks: {
         home: endpoint,
         datasets: `${endpoint}/datasets`,
@@ -208,6 +209,7 @@ async function qualityProfileView(profile: AiQualityProfile) {
         reviewedOpenQuestions: 0,
         blockers: ["关联的真实需求分析不存在，请先完成验收样本分析"],
       },
+      assessment: null,
       phoenixLinks: { home: endpoint, datasets: `${endpoint}/datasets`, projects: `${endpoint}/projects` },
     };
   }

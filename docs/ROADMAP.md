@@ -6,7 +6,7 @@
 
 独立 FR01 形式化验证和 BR01 业务规则路径已撤回，产品页面、API、存储、运行时和测试全部删除；调研文档只作历史证据。后续任何成熟能力必须先对应具体 Agent 质量问题和真实验收样本，再决定是否接入，不能按推荐表直接开发。产品边界见 `docs/PRODUCT_DIRECTION.md`。
 
-当前主线回到：稳定唯一 AI 需求分析 → Agent / AI 应用评估资产与执行闭环 → Trace/Eval → 回归比较与准入。TD01 已于 2026-10-12 将 72 条人工全量通过的 TestCase 冻结为 Approved v1。AT01 的 Schemathesis/Hurl 平台受控闭环已通过，真实业务 API 验收等待公司契约与环境。用户于 2026-10-13 明确批准继续 AT02；当前复用 Playwright 1.64.0、官方 Test Agents、JSON Reporter 和 Trace，受控仓库已用官方命令初始化 planner/generator/healer 并跑通 seed，项目配置集中维护 API/UI 默认环境与 Playwright 仓库，受控 UI 运行已 2/2 通过并验证失败 Trace，真实业务 UI 验收等待仓库、URL 与账号，详见 `docs/PHASES/AT02.md`。
+当前主线回到：稳定唯一 AI 需求分析 → Agent / AI 应用评估资产与执行闭环 → Trace/Eval → 回归比较与准入。TD01 已于 2026-10-12 将 72 条人工全量通过的 TestCase 冻结为 Approved v1。AT01 的 Schemathesis/Hurl 平台受控闭环已通过，真实业务 API 验收等待公司契约与环境。用户于 2026-10-13 明确批准继续 AT02；当前复用 Playwright 1.64.0、官方 Test Agents、JSON Reporter 和 Trace，受控仓库已用官方命令初始化 planner/generator/healer 并跑通 seed，项目配置集中维护 API/UI 默认环境与 Playwright 仓库，受控 UI 运行已 2/2 通过并验证失败 Trace，真实业务 UI 验收等待仓库、URL 与账号，详见 `docs/PHASES/AT02.md`。2026-10-14 补齐 AI 质量证据画像：不再以问题数量或单一总分判断质量，明确区分人工确认率、引用完整率与尚未知的召回率、鲁棒性、真实故障检出率；评估方法见 `docs/AI_QUALITY_EVALUATION.md`。
 
 ---
 
