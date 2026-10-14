@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { assessProfileReadiness, assessQuality } from "../server/ai-quality/profile.js";
+import {
+  assessControlledBenchmarkReadiness,
+  assessProfileReadiness,
+  assessQuality,
+  type ControlledBenchmarkEvidence,
+} from "../server/ai-quality/profile.js";
 import type { RequirementAnalysis } from "../server/requirement-analysis/schema.js";
 import type { AnalysisReviewRecord } from "../server/requirement-analysis/postgres-store.js";
 
@@ -85,5 +90,51 @@ describe("AI 质量证据画像", () => {
       status: "warning",
       value: "0.0%（0/1）",
     });
+  });
+
+  it("接入受控实验后展示检出率，但不冒充真实业务召回率", () => {
+    const controlled: ControlledBenchmarkEvidence = {
+      datasetId: "DS-1", datasetVersionId: "DV-1", experimentId: "EXP-1",
+      benchmarkVersion: "controlled-v0", dataClass: "controlled-synthetic",
+      totalRuns: 20, successfulRuns: 19, detectedRuns: 19, overreportingReviewRuns: 12,
+      averageOpenQuestions: 3.79, latencyP50Ms: 15_171, latencyP95Ms: 23_074, totalTokens: 182_449,
+    };
+    const result = assessQuality(qualityDocument, [
+      review("OQ-1", "accepted"), review("OQ-2", "accepted"), review("OQ-3", "accepted"),
+    ], controlled);
+    expect(result.metrics.find((metric) => metric.id === "defect-recall")).toMatchObject({
+      status: "passed",
+      value: "95.0%（19/20）",
+    });
+    expect(result.metrics.find((metric) => metric.id === "overreporting-review-rate")).toMatchObject({
+      status: "warning",
+      value: "60.0%（12/20）",
+    });
+    expect(result.unknown.join(" ")).toContain("真实业务问题仍然未知");
+  });
+});
+
+describe("受控基准准入", () => {
+  const evidence: ControlledBenchmarkEvidence = {
+    datasetId: "DS-1", datasetVersionId: "DV-1", experimentId: "EXP-1",
+    benchmarkVersion: "controlled-v0", dataClass: "controlled-synthetic",
+    totalRuns: 20, successfulRuns: 19, detectedRuns: 19, overreportingReviewRuns: 12,
+    averageOpenQuestions: 3.79, latencyP50Ms: 15_171, latencyP95Ms: 23_074, totalTokens: 182_449,
+  };
+
+  it("不会用高召回率抵消运行失败和过度报告", () => {
+    const blockers = assessControlledBenchmarkReadiness({
+      minimumOpenQuestions: 8,
+      requiredIssueTypes: ["missing", "ambiguity"],
+      requiredTopicGroups: [],
+      maximumAgentLatencyMs: 600_000,
+      maximumTotalTokens: 300_000,
+      minimumControlledRecall: 0.9,
+      minimumControlledRunSuccess: 1,
+      maximumOverreportingReviewRate: 0.5,
+    }, evidence);
+    expect(blockers).toHaveLength(2);
+    expect(blockers.join(" ")).toContain("运行成功率 95.0%");
+    expect(blockers.join(" ")).toContain("过度报告复核率 60.0%");
   });
 });

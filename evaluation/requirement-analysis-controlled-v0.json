@@ -1,0 +1,153 @@
+{
+  "name": "TestMesh 需求问题受控基准",
+  "version": "controlled-v0",
+  "status": "controlled-synthetic",
+  "description": "由单一已知缺陷构造的中文微型需求。用于建立召回率和回归能力，不代表真实业务分布。",
+  "limitations": [
+    "样本为受控合成需求，不能替代真实项目资料。",
+    "每条样本只注入一个主要缺陷，以便确定性计算检出率。",
+    "正式发布准入还需要真实需求、人工漏检和线上缺陷回流。"
+  ],
+  "cases": [
+    {
+      "id": "MISSING-ACTOR-001",
+      "title": "退货申请缺少操作主体",
+      "documentText": "退货申请\n\n订单签收后 7 日内可以发起退货申请。\n\n申请提交后，系统生成唯一退货单号并进入“待审核”状态。",
+      "expected": { "issueType": "missing", "terms": ["主体", "谁", "角色", "用户"], "paragraphs": [2], "summary": "未说明由谁发起退货申请。" },
+      "mutation": { "kind": "remove-actor", "description": "删除退货申请的角色主体。" }
+    },
+    {
+      "id": "MISSING-FAILURE-002",
+      "title": "退款渠道失败处理缺失",
+      "documentText": "退款处理\n\n退款审核通过后，系统调用原支付渠道退款。\n\n退款成功后将售后单更新为“已退款”，并记录渠道流水号。",
+      "expected": { "issueType": "missing", "terms": ["失败", "异常", "重试", "超时"], "paragraphs": [2], "summary": "未说明退款渠道调用失败或超时后的处理。" },
+      "mutation": { "kind": "remove-failure-path", "description": "只保留成功路径，删除渠道失败处置。" }
+    },
+    {
+      "id": "MISSING-PERMISSION-003",
+      "title": "退款金额修改权限缺失",
+      "documentText": "退款金额调整\n\n售后单进入“待退款”状态后，可以修改退款金额。\n\n修改结果保存后用于后续原路退款。",
+      "expected": { "issueType": "missing", "terms": ["权限", "角色", "谁", "授权"], "paragraphs": [2], "summary": "未说明哪些角色有权修改退款金额。" },
+      "mutation": { "kind": "remove-permission", "description": "删除金额修改的角色与授权边界。" }
+    },
+    {
+      "id": "MISSING-IDEMPOTENCY-004",
+      "title": "重复回调幂等规则缺失",
+      "documentText": "支付回调\n\n支付平台回调成功后，系统将退款单更新为“退款成功”。\n\n系统保存支付平台返回的退款流水号。",
+      "expected": { "issueType": "missing", "terms": ["重复", "幂等", "多次", "回调"], "paragraphs": [2], "summary": "未定义支付平台重复回调时的幂等处理。" },
+      "mutation": { "kind": "remove-idempotency", "description": "删除重复回调的幂等约束。" }
+    },
+    {
+      "id": "MISSING-SLA-005",
+      "title": "人工审核时限缺失",
+      "documentText": "人工审核\n\n高风险退款申请转入人工审核队列。\n\n审核通过进入“待退款”，审核拒绝进入“已拒绝”。",
+      "expected": { "issueType": "missing", "terms": ["时限", "时间", "多久", "超时", "SLA"], "paragraphs": [2], "summary": "未定义人工审核的完成时限或超时处理。" },
+      "mutation": { "kind": "remove-sla", "description": "删除人工审核时限与超时处置。" }
+    },
+    {
+      "id": "MISSING-STATE-EXIT-006",
+      "title": "审核中状态缺少出口",
+      "documentText": "售后单状态\n\n提交售后申请后，售后单进入“审核中”。\n\n用户可以在订单详情查看当前状态。",
+      "expected": { "issueType": "missing", "terms": ["状态", "出口", "流转", "审核通过", "审核拒绝"], "paragraphs": [2], "summary": "未定义审核中状态的后续事件和目标状态。" },
+      "mutation": { "kind": "remove-state-transition", "description": "删除审核中状态的出口迁移。" }
+    },
+    {
+      "id": "MISSING-AUDIT-007",
+      "title": "敏感操作审计要求缺失",
+      "documentText": "客服代客操作\n\n客服可以代用户取消售后申请。\n\n取消后售后单进入“已取消”，用户不能继续提交物流单号。",
+      "expected": { "issueType": "missing", "terms": ["审计", "日志", "记录", "操作人", "留痕"], "paragraphs": [2], "summary": "未定义客服代客取消这一敏感操作的审计留痕。" },
+      "mutation": { "kind": "remove-audit", "description": "删除代客操作的审计记录要求。" }
+    },
+    {
+      "id": "AMBIGUITY-PROMPT-001",
+      "title": "尽快处理不可量化",
+      "documentText": "响应要求\n\n用户提交退款申请后，系统应尽快完成风险校验。\n\n校验通过后进入自动审核流程。",
+      "expected": { "issueType": "ambiguity", "terms": ["尽快", "时限", "时间", "量化"], "paragraphs": [2], "summary": "“尽快”没有可验证的时间标准。" },
+      "mutation": { "kind": "replace-with-vague-time", "description": "将明确时限替换为“尽快”。" }
+    },
+    {
+      "id": "AMBIGUITY-AMOUNT-002",
+      "title": "大额退款阈值不明确",
+      "documentText": "风险分流\n\n大额退款必须进入人工审核。\n\n非大额退款由系统自动审核。",
+      "expected": { "issueType": "ambiguity", "terms": ["大额", "阈值", "金额", "标准"], "paragraphs": [2, 3], "summary": "“大额”缺少金额阈值。" },
+      "mutation": { "kind": "remove-threshold", "description": "用“大额”替代明确金额阈值。" }
+    },
+    {
+      "id": "AMBIGUITY-CONDITION-003",
+      "title": "必要时转人工条件不明确",
+      "documentText": "智能客服转人工\n\n智能客服在必要时将会话转交人工客服。\n\n转交后保留当前会话上下文。",
+      "expected": { "issueType": "ambiguity", "terms": ["必要时", "条件", "触发", "标准"], "paragraphs": [2], "summary": "“必要时”没有明确的触发条件。" },
+      "mutation": { "kind": "replace-with-vague-condition", "description": "将转人工条件替换为“必要时”。" }
+    },
+    {
+      "id": "AMBIGUITY-NORMAL-004",
+      "title": "正常情况下时限不明确",
+      "documentText": "物流同步\n\n正常情况下，退货物流状态应在当天同步到售后单。\n\n同步成功后展示承运商和运单轨迹。",
+      "expected": { "issueType": "ambiguity", "terms": ["正常情况", "定义", "条件", "异常"], "paragraphs": [2], "summary": "“正常情况下”的适用条件没有定义。" },
+      "mutation": { "kind": "add-vague-precondition", "description": "用“正常情况下”限定时限但不定义条件。" }
+    },
+    {
+      "id": "AMBIGUITY-RETRY-005",
+      "title": "适当重试次数不明确",
+      "documentText": "发票开具\n\n调用开票服务失败后，系统应适当重试。\n\n重试成功后保存发票号码和下载地址。",
+      "expected": { "issueType": "ambiguity", "terms": ["适当", "重试", "次数", "间隔"], "paragraphs": [2], "summary": "“适当重试”没有次数、间隔和终止条件。" },
+      "mutation": { "kind": "replace-retry-policy", "description": "用“适当重试”替代确定重试策略。" }
+    },
+    {
+      "id": "AMBIGUITY-QUALITY-006",
+      "title": "高质量回答不可验证",
+      "documentText": "AI 客服回答\n\nAI 客服应向用户提供高质量、专业的售后回答。\n\n回答内容展示在会话窗口中。",
+      "expected": { "issueType": "ambiguity", "terms": ["高质量", "专业", "标准", "可验证", "判定"], "paragraphs": [2], "summary": "“高质量、专业”缺少可测试的判定标准。" },
+      "mutation": { "kind": "replace-with-subjective-quality", "description": "用主观质量词替代可测试指标。" }
+    },
+    {
+      "id": "AMBIGUITY-MULTIPLE-007",
+      "title": "多次修改上限不明确",
+      "documentText": "退货地址\n\n仓库收货前，用户可以多次修改退货地址。\n\n仓库签收后不允许继续修改。",
+      "expected": { "issueType": "ambiguity", "terms": ["多次", "次数", "上限", "限制"], "paragraphs": [2], "summary": "“多次”没有次数上限或频率限制。" },
+      "mutation": { "kind": "remove-count-limit", "description": "用“多次”替代明确次数限制。" }
+    },
+    {
+      "id": "CONFLICT-SLA-001",
+      "title": "退款到账时限冲突",
+      "documentText": "退款到账\n\n退款审核通过后，款项应在 24 小时内退回原支付账户。\n\n退款服务说明：审核通过后的款项将在 48 小时内到账。",
+      "expected": { "issueType": "conflict", "terms": ["24", "48", "时限", "冲突"], "paragraphs": [2, 3], "summary": "同一退款到账时限同时规定为 24 小时和 48 小时。" },
+      "mutation": { "kind": "conflicting-sla", "description": "为同一事件注入两个不同完成时限。" }
+    },
+    {
+      "id": "CONFLICT-LIMIT-002",
+      "title": "自动退款金额上限冲突",
+      "documentText": "自动退款\n\n金额不超过 500 元的退款由系统自动审核。\n\n所有退款金额均可直接自动审核，不设金额限制。",
+      "expected": { "issueType": "conflict", "terms": ["500", "限制", "金额", "冲突"], "paragraphs": [2, 3], "summary": "自动退款一处限制为 500 元，一处声明不设金额限制。" },
+      "mutation": { "kind": "conflicting-boundary", "description": "注入互斥的金额边界规则。" }
+    },
+    {
+      "id": "CONFLICT-CANCEL-003",
+      "title": "已取消订单退款资格冲突",
+      "documentText": "订单退款资格\n\n订单取消后，用户仍可在订单详情申请退款。\n\n已取消订单不得创建任何退款申请。",
+      "expected": { "issueType": "conflict", "terms": ["取消", "不得", "仍可", "退款"], "paragraphs": [2, 3], "summary": "已取消订单同时被允许和禁止申请退款。" },
+      "mutation": { "kind": "conflicting-eligibility", "description": "注入互斥的退款资格规则。" }
+    },
+    {
+      "id": "CONFLICT-PERMISSION-004",
+      "title": "客服改价权限冲突",
+      "documentText": "退款金额权限\n\n普通客服可以修改退款金额。\n\n退款金额只能由主管修改，普通客服无修改权限。",
+      "expected": { "issueType": "conflict", "terms": ["普通客服", "主管", "权限", "修改"], "paragraphs": [2, 3], "summary": "普通客服修改退款金额的权限规定相互矛盾。" },
+      "mutation": { "kind": "conflicting-permission", "description": "注入互斥的角色权限规则。" }
+    },
+    {
+      "id": "CONFLICT-WINDOW-005",
+      "title": "退货申请期限冲突",
+      "documentText": "退货期限\n\n用户可在签收后 7 日内申请退货。\n\n退货政策允许用户在签收后 15 日内提交申请。",
+      "expected": { "issueType": "conflict", "terms": ["7", "15", "期限", "退货"], "paragraphs": [2, 3], "summary": "退货申请期限同时规定为 7 日和 15 日。" },
+      "mutation": { "kind": "conflicting-window", "description": "注入两个不同的退货时间窗口。" }
+    },
+    {
+      "id": "CONFLICT-TERMINAL-006",
+      "title": "已关闭工单能否重开冲突",
+      "documentText": "售后工单关闭\n\n工单进入“已关闭”后为终态，不允许再次流转。\n\n用户补充凭证后，可以将“已关闭”工单重新打开为“处理中”。",
+      "expected": { "issueType": "conflict", "terms": ["已关闭", "终态", "重新", "状态"], "paragraphs": [2, 3], "summary": "已关闭状态一处定义为不可流转终态，一处允许重新打开。" },
+      "mutation": { "kind": "conflicting-terminal-state", "description": "注入互斥的终态与重开规则。" }
+    }
+  ]
+}

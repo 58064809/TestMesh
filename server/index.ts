@@ -34,7 +34,12 @@ import { createDoclingClientFromEnvironment } from "./document-parsing/docling.j
 import { parseAnalysisSources } from "./document-parsing/parse-sources.js";
 import { z } from "zod";
 import { initializePhoenixTracing, resolvePhoenixTraceUrl } from "./observability/phoenix.js";
-import { assessProfileReadiness, assessQuality, type AiQualityProfile } from "./ai-quality/profile.js";
+import {
+  assessControlledBenchmarkReadiness,
+  assessProfileReadiness,
+  assessQuality,
+  type AiQualityProfile,
+} from "./ai-quality/profile.js";
 import { TestDesignService } from "./test-design/service.js";
 import { BaselineSnapshotSchema } from "./test-design/schema.js";
 import { KnowledgeService } from "./knowledge/service.js";
@@ -185,15 +190,65 @@ await aiQualityStore.seed({
   },
 });
 
+await aiQualityStore.seed({
+  id: "ai-after-sales-prd-candidate-v2",
+  name: "AI 售后系统 PRD 需求问题验收",
+  version: "candidate-v2",
+  targetName: "TestMesh AI 需求分析 Agent",
+  targetVersion: "0.1.0",
+  environment: "local",
+  sourceAnalysisId: "e37d8907-00ee-4f31-a033-6775cccdc154",
+  sourceFilename: "《AI售后系统产品方案 + PRD文档》.pdf",
+  sourceSha256: "b3dd9367494d11cc39d1bfd80d1ae4c5e125814741d141442a11d648605b95e0",
+  criteria: {
+    minimumOpenQuestions: 8,
+    requiredIssueTypes: ["missing", "ambiguity"],
+    requiredTopicGroups: [["退款", "退货"], ["物流", "快递"], ["发票", "开票"], ["售后", "转人工", "人工客服"]],
+    maximumAgentLatencyMs: 600_000,
+    maximumTotalTokens: 300_000,
+    minimumControlledRecall: 0.9,
+    minimumControlledRunSuccess: 1,
+    maximumOverreportingReviewRate: 0.5,
+  },
+  phoenix: {
+    endpoint: process.env.PHOENIX_ENDPOINT ?? "http://127.0.0.1:6006",
+    projectName: "Experiment-bec92a320e0f4bad27ab47ff",
+    datasetId: "RGF0YXNldDox",
+    experimentId: "RXhwZXJpbWVudDo1",
+    traceId: "87115e87a7c2160638b8d430ca5482aa",
+    controlledBenchmark: {
+      datasetId: "RGF0YXNldDoy",
+      datasetVersionId: "RGF0YXNldFZlcnNpb246Mg==",
+      experimentId: "RXhwZXJpbWVudDo3",
+      benchmarkVersion: "controlled-v0",
+      dataClass: "controlled-synthetic",
+      totalRuns: 20,
+      successfulRuns: 19,
+      detectedRuns: 19,
+      overreportingReviewRuns: 12,
+      averageOpenQuestions: 3.79,
+      latencyP50Ms: 15_171,
+      latencyP95Ms: 23_074,
+      totalTokens: 182_449,
+    },
+  },
+});
+
 async function qualityProfileView(profile: AiQualityProfile) {
   const endpoint = profile.phoenix.endpoint.replace(/\/$/, "");
   try {
     const { document } = await requirementAnalysisStore.getAnalysis(profile.sourceAnalysisId);
     const reviews = await requirementAnalysisStore.listReviews(profile.sourceAnalysisId);
+    const reviewReadiness = assessProfileReadiness(document, reviews);
+    const benchmarkBlockers = assessControlledBenchmarkReadiness(profile.criteria, profile.phoenix.controlledBenchmark);
     return {
       ...profile,
-      readiness: assessProfileReadiness(document, reviews),
-      assessment: assessQuality(document, reviews),
+      readiness: {
+        ...reviewReadiness,
+        ready: reviewReadiness.ready && benchmarkBlockers.length === 0,
+        blockers: [...reviewReadiness.blockers, ...benchmarkBlockers],
+      },
+      assessment: assessQuality(document, reviews, profile.phoenix.controlledBenchmark),
       phoenixLinks: {
         home: endpoint,
         datasets: `${endpoint}/datasets`,

@@ -46,8 +46,31 @@ interface QualityProfile {
     requiredTopicGroups: string[][];
     maximumAgentLatencyMs: number;
     maximumTotalTokens: number;
+    minimumControlledRecall?: number;
+    minimumControlledRunSuccess?: number;
+    maximumOverreportingReviewRate?: number;
   };
-  phoenix: { projectName: string; datasetId: string; experimentId: string; traceId: string };
+  phoenix: {
+    projectName: string;
+    datasetId: string;
+    experimentId: string;
+    traceId: string;
+    controlledBenchmark?: {
+      datasetId: string;
+      datasetVersionId: string;
+      experimentId: string;
+      benchmarkVersion: string;
+      dataClass: "controlled-synthetic";
+      totalRuns: number;
+      successfulRuns: number;
+      detectedRuns: number;
+      overreportingReviewRuns: number;
+      averageOpenQuestions: number;
+      latencyP50Ms: number;
+      latencyP95Ms: number;
+      totalTokens: number;
+    };
+  };
   phoenixLinks: { home: string; datasets: string; projects: string };
   readiness: { ready: boolean; totalOpenQuestions: number; reviewedOpenQuestions: number; blockers: string[] };
   assessment: null | {
@@ -258,8 +281,29 @@ export default function AiQuality() {
               <Tag color="blue">问题类型：{profile.criteria.requiredIssueTypes.join(" / ")}</Tag>
               <Tag color="blue">延迟 ≤ {Math.round(profile.criteria.maximumAgentLatencyMs / 1000)} 秒</Tag>
               <Tag color="blue">Token ≤ {profile.criteria.maximumTotalTokens.toLocaleString()}</Tag>
+              {profile.criteria.minimumControlledRecall !== undefined && <Tag color="purple">受控检出率 ≥ {profile.criteria.minimumControlledRecall * 100}%</Tag>}
+              {profile.criteria.minimumControlledRunSuccess !== undefined && <Tag color="purple">受控运行成功率 = {profile.criteria.minimumControlledRunSuccess * 100}%</Tag>}
+              {profile.criteria.maximumOverreportingReviewRate !== undefined && <Tag color="purple">过度报告复核率 ≤ {profile.criteria.maximumOverreportingReviewRate * 100}%</Tag>}
               {profile.criteria.requiredTopicGroups.map((group) => <Tag key={group.join("-")}>主题：{group.join(" / ")}</Tag>)}
             </Space>
+
+            {profile.phoenix.controlledBenchmark && (
+              <>
+                <Divider orientation="left">Phoenix 受控基准实验</Divider>
+                <Alert
+                  type="info"
+                  showIcon
+                  message={`${profile.phoenix.controlledBenchmark.benchmarkVersion} · 受控合成样本，不代表真实业务分布`}
+                  description={`20 次运行成功 ${profile.phoenix.controlledBenchmark.successfulRuns} 次，检出 ${profile.phoenix.controlledBenchmark.detectedRuns} 个预置缺陷；P50 ${Math.round(profile.phoenix.controlledBenchmark.latencyP50Ms / 1000)} 秒，P95 ${Math.round(profile.phoenix.controlledBenchmark.latencyP95Ms / 1000)} 秒，总 Token ${profile.phoenix.controlledBenchmark.totalTokens.toLocaleString()}。`}
+                />
+                <Descriptions size="small" column={{ xs: 1, lg: 2 }} className="controlled-evidence">
+                  <Descriptions.Item label="Controlled Dataset"><Text code copyable>{profile.phoenix.controlledBenchmark.datasetId}</Text></Descriptions.Item>
+                  <Descriptions.Item label="Dataset Version"><Text code copyable>{profile.phoenix.controlledBenchmark.datasetVersionId}</Text></Descriptions.Item>
+                  <Descriptions.Item label="Experiment"><Text code copyable>{profile.phoenix.controlledBenchmark.experimentId}</Text></Descriptions.Item>
+                  <Descriptions.Item label="平均问题数">{profile.phoenix.controlledBenchmark.averageOpenQuestions.toFixed(2)} / 单缺陷样本</Descriptions.Item>
+                </Descriptions>
+              </>
+            )}
 
             <Divider orientation="left">Phoenix 评测证据</Divider>
             <Descriptions size="small" column={{ xs: 1, lg: 2 }}>

@@ -9,6 +9,25 @@ export interface AiQualityCriteria {
   requiredTopicGroups: string[][];
   maximumAgentLatencyMs: number;
   maximumTotalTokens: number;
+  minimumControlledRecall?: number;
+  minimumControlledRunSuccess?: number;
+  maximumOverreportingReviewRate?: number;
+}
+
+export interface ControlledBenchmarkEvidence {
+  datasetId: string;
+  datasetVersionId: string;
+  experimentId: string;
+  benchmarkVersion: string;
+  dataClass: "controlled-synthetic";
+  totalRuns: number;
+  successfulRuns: number;
+  detectedRuns: number;
+  overreportingReviewRuns: number;
+  averageOpenQuestions: number;
+  latencyP50Ms: number;
+  latencyP95Ms: number;
+  totalTokens: number;
 }
 
 export interface PhoenixEvidence {
@@ -17,6 +36,7 @@ export interface PhoenixEvidence {
   datasetId: string;
   experimentId: string;
   traceId: string;
+  controlledBenchmark?: ControlledBenchmarkEvidence;
 }
 
 export interface AiQualityProfile {
@@ -88,6 +108,32 @@ export function assessProfileReadiness(
   };
 }
 
+export function assessControlledBenchmarkReadiness(
+  criteria: AiQualityCriteria,
+  controlled?: ControlledBenchmarkEvidence,
+): string[] {
+  const requiresControlledEvidence = criteria.minimumControlledRecall !== undefined
+    || criteria.minimumControlledRunSuccess !== undefined
+    || criteria.maximumOverreportingReviewRate !== undefined;
+  if (!requiresControlledEvidence) return [];
+  if (!controlled) return ["当前配置要求受控基准，但尚未关联 Phoenix 实验证据"];
+
+  const blockers: string[] = [];
+  const recall = controlled.detectedRuns / controlled.totalRuns;
+  const runSuccess = controlled.successfulRuns / controlled.totalRuns;
+  const overreporting = controlled.overreportingReviewRuns / controlled.totalRuns;
+  if (criteria.minimumControlledRecall !== undefined && recall < criteria.minimumControlledRecall) {
+    blockers.push(`受控缺陷检出率 ${(recall * 100).toFixed(1)}% 低于门槛 ${(criteria.minimumControlledRecall * 100).toFixed(1)}%`);
+  }
+  if (criteria.minimumControlledRunSuccess !== undefined && runSuccess < criteria.minimumControlledRunSuccess) {
+    blockers.push(`受控实验运行成功率 ${(runSuccess * 100).toFixed(1)}% 低于门槛 ${(criteria.minimumControlledRunSuccess * 100).toFixed(1)}%`);
+  }
+  if (criteria.maximumOverreportingReviewRate !== undefined && overreporting > criteria.maximumOverreportingReviewRate) {
+    blockers.push(`过度报告复核率 ${(overreporting * 100).toFixed(1)}% 高于门槛 ${(criteria.maximumOverreportingReviewRate * 100).toFixed(1)}%`);
+  }
+  return blockers;
+}
+
 /**
  * Builds an evidence profile for the current requirement-analysis benchmark.
  * It intentionally leaves recall, robustness and generalisation unknown until
@@ -96,6 +142,7 @@ export function assessProfileReadiness(
 export function assessQuality(
   document: RequirementAnalysis,
   reviews: AnalysisReviewRecord[],
+  controlled?: ControlledBenchmarkEvidence,
 ): QualityAssessment {
   const latestByItem = new Map(reviews.map((review) => [review.itemId, review]));
   const decided = document.open_questions
@@ -116,6 +163,9 @@ export function assessQuality(
   const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
   const fullyReviewed = decided.length === document.open_questions.length;
   const qualityEvidenceReady = fullyReviewed && decided.length > 0;
+  const controlledRecall = controlled ? controlled.detectedRuns / controlled.totalRuns : null;
+  const controlledRunSuccess = controlled ? controlled.successfulRuns / controlled.totalRuns : null;
+  const overreportingReviewRate = controlled ? controlled.overreportingReviewRuns / controlled.totalRuns : null;
 
   return {
     verdict: qualityEvidenceReady ? "candidate" : "insufficient-evidence",
@@ -151,24 +201,38 @@ export function assessQuality(
       {
         id: "defect-recall",
         name: "已知问题召回率",
-        status: "unknown",
-        value: "未知",
+        status: controlledRecall === null ? "unknown" : controlledRecall >= 0.9 ? "passed" : "warning",
+        value: controlledRecall === null ? "未知" : `${percent(controlledRecall)}（${controlled!.detectedRuns}/${controlled!.totalRuns}）`,
         target: "候选门槛 ≥ 90%",
-        explanation: "当前只评审 AI 找到的问题，没有登记人工发现但 AI 漏掉的问题，因此不能计算召回率。",
+        explanation: controlled
+          ? `基于 ${controlled.benchmarkVersion} 的受控单缺陷样本；这是合成基准召回率，不等于真实业务召回率。`
+          : "当前只评审 AI 找到的问题，没有登记人工发现但 AI 漏掉的问题，因此不能计算召回率。",
       },
       {
-        id: "robustness",
-        name: "扰动鲁棒性 / 缺陷检出率",
-        status: "unknown",
-        value: "未知",
-        target: "每类变异检出率 ≥ 90%",
-        explanation: "尚未对主体删除、数值边界、规则冲突、状态缺口等已知变异运行基准实验。",
+        id: "controlled-run-success",
+        name: "受控实验运行成功率",
+        status: controlledRunSuccess === null ? "unknown" : controlledRunSuccess === 1 ? "passed" : "warning",
+        value: controlledRunSuccess === null ? "未知" : `${percent(controlledRunSuccess)} 运行成功（${controlled!.successfulRuns}/${controlled!.totalRuns}）`,
+        target: "必须 100%",
+        explanation: controlled
+          ? `已覆盖 ${controlled.totalRuns} 种受控缺陷；其中 1 次被生产证据门禁拒绝，失败没有被降级为通过。`
+          : "尚未运行主体删除、数值边界、规则冲突、状态缺口等受控基准实验。",
+      },
+      {
+        id: "overreporting-review-rate",
+        name: "过度报告复核率",
+        status: overreportingReviewRate === null ? "unknown" : overreportingReviewRate <= 0.5 ? "passed" : "warning",
+        value: overreportingReviewRate === null ? "未知" : `${percent(overreportingReviewRate)}（${controlled!.overreportingReviewRuns}/${controlled!.totalRuns}）`,
+        target: "候选门槛 ≤ 50%",
+        explanation: controlled
+          ? `单缺陷样本平均报告 ${controlled.averageOpenQuestions.toFixed(2)} 个问题；超过 3 个即进入人工复核，不直接判定为误报。`
+          : "尚未在单缺陷样本上统计额外问题数量。",
       },
       {
         id: "sample-coverage",
         name: "样本覆盖度",
         status: "unknown",
-        value: "1 份中文售后 PRD",
+        value: controlled ? `1 份真实 PRD + ${controlled.totalRuns} 条受控样本` : "1 份中文售后 PRD",
         target: "起步 ≥ 20 个高质量样本，并覆盖主要文档类型与风险分层",
         explanation: "单一样本能验证集成链路，不能证明跨业务、跨格式和跨版本的稳定性。",
       },
@@ -179,15 +243,19 @@ export function assessQuality(
       "人工评审结果可计算确认率、驳回率和重复率，不再只看 AI 生成了多少条。",
     ],
     unknown: [
-      "AI 漏掉了多少真实问题（召回率）。",
+      controlled ? "受控样本召回率已知，但 AI 漏掉多少真实业务问题仍然未知。" : "AI 漏掉了多少真实问题（召回率）。",
       "换业务、换文档格式或改写表达后是否仍然稳定（泛化与鲁棒性）。",
       "新版本相对旧版本是否退化（缺少同一评估集上的重复实验）。",
       "生成的测试用例能否持续发现真实缺陷（尚无真实项目故障或缺陷回流）。",
     ],
     nextActions: [
       "把当前人工评审结果固化为 Phoenix Dataset 的第一个人工标注样本。",
-      "从现有 PRD 制作可追溯的缺陷变异集：缺主体、边界值变化、规则冲突、状态转移遗漏和不可验证表述。",
-      "同一 Agent 版本至少重复运行 3 次，记录召回率、确认率、重复率、引用完整率、Token 和时延分布。",
+      controlled
+        ? "人工复核受控样本中额外报告的问题，区分有效补充和真实误报，校准精确率门槛。"
+        : "从现有 PRD 制作可追溯的缺陷变异集：缺主体、边界值变化、规则冲突、状态转移遗漏和不可验证表述。",
+      controlled
+        ? "修复 AMBIGUITY-NORMAL-004 暴露的无来源条目问题后重跑同一 Dataset，不删除失败实验。"
+        : "同一 Agent 版本至少重复运行 3 次，记录召回率、确认率、重复率、引用完整率、Token 和时延分布。",
       "以后获得真实需求、线上失败或人工补充问题时，优先回流为评估样本，不把演示数据冒充生产结论。",
     ],
   };

@@ -26,6 +26,8 @@
     "demo:ui-target": "tsx examples/ui-automation/controlled-ui-target.ts",
     "test:ui-demo": "playwright test examples/ui-automation/after-sales.spec.ts --project=chromium --workers=1 --retries=0",
     "aq01:spike": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-aq01-spike.ps1",
+    "aq01:seed-benchmark": "tsx scripts/seed-quality-benchmark.ts",
+    "aq01:run-benchmark": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-controlled-quality-benchmark.ps1",
     "migrate:deepagents": "tsx scripts/migrate-deepagents.ts"
   },
   "engines": {
