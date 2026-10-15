@@ -9,6 +9,8 @@ import {
 import { Alert, App as AntdApp, Button, Card, Checkbox, Col, Empty, Flex, List, Row, Select, Space, Statistic, Tabs, Tag, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import type { ApprovedTestCaseVersionOption, ProjectRecord, RepositoryInspection, UiTestRunRecord } from "./types";
+import ExecutionDiagnosis from "./ExecutionDiagnosis";
+import ScriptCandidateScaffold from "./ScriptCandidateScaffold";
 
 const { Text } = Typography;
 
@@ -56,6 +58,7 @@ function RunResult({ run }: { run: UiTestRunRecord }) {
           children: run.artifacts.length ? <List dataSource={run.artifacts} renderItem={(artifact) => <List.Item><a href={`/api/ui-automation/runs/${run.id}/artifacts/${artifact.id}`}>{artifact.name}</a></List.Item>} /> : <Empty description="本次没有失败 Trace" />,
         },
       ]} />
+      {(run.status === "failed" || run.status === "error") && <ExecutionDiagnosis runKind="ui" runId={run.id} />}
     </Card>
   );
 }
@@ -72,6 +75,7 @@ export default function UiTesting() {
   const [testFile, setTestFile] = useState("");
   const [authorized, setAuthorized] = useState(false);
   const [runs, setRuns] = useState<UiTestRunRecord[]>([]);
+  const [runId, setRunId] = useState("");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -89,6 +93,7 @@ export default function UiTesting() {
       setProjects(loadedProjects);
       setVersions(loadedVersions);
       setRuns(loadedRuns);
+      setRunId(loadedRuns[0]?.id ?? "");
       setProjectId(loadedProjects[0]?.id ?? "");
       setEnvironmentId(loadedProjects[0]?.defaultUiEnvironmentId || loadedProjects[0]?.environments[0]?.id || "");
       setApprovedVersionId(loadedVersions[0]?.id ?? "");
@@ -123,6 +128,7 @@ export default function UiTesting() {
         body: JSON.stringify({ projectId, environmentId, approvedVersionId, approvedTestCaseIds, repoPath, testFile, authorized }),
       }));
       setRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
+      setRunId(run.id);
       setAuthorized(false);
       message.success(run.status === "passed" ? "Playwright UI 测试通过" : "Playwright UI 测试已完成");
     } catch (caught) {
@@ -131,6 +137,7 @@ export default function UiTesting() {
   }
 
   const missing = !projectId || !environmentId || !approvedVersionId || approvedTestCaseIds.length === 0 || !repoPath || inspection?.repoPath !== repoPath || !testFile;
+  const selectedRun = runs.find((item) => item.id === runId) ?? runs[0];
   return (
     <div className="engineering-page">
       <Alert type="info" showIcon message="成熟能力边界" description="测试规划、代码生成与失败修复复用 Playwright 官方 Test Agents；TestMesh 只负责 Approved TestCase 关联、人工授权、真实执行与 Trace 证据。" />
@@ -168,20 +175,21 @@ export default function UiTesting() {
                 <Select showSearch value={testFile || undefined} onChange={setTestFile} options={testFiles.map((file) => ({ label: file, value: file }))} placeholder="选择一个 spec/test 文件" disabled={inspection?.repoPath !== repoPath || running} optionFilterProp="label" />
               </Space>
             </Card>
+            <ScriptCandidateScaffold kind="ui" />
           </Space>
         </Col>
         <Col xs={24} xl={14}>
           <Space direction="vertical" size={16} className="engineering-main-stack">
             <Card title={<Space><SafetyCertificateOutlined />人工授权执行</Space>}>
               <Space direction="vertical" size={12} className="engineering-main-stack">
-                <Alert type="warning" showIcon message="所选测试代码会在本机以当前用户权限执行" description="请先审阅仓库 Diff 和测试文件；当前电脑没有 Docker，因此不提供容器隔离，也不会静默换用其他 Runner。" />
+                <Alert type="warning" showIcon message="所选测试代码会在本机以当前用户权限执行" description="请先审阅仓库 Diff 和测试文件；当前 UI Runner 不提供容器隔离，也不会静默换用其他 Runner。Docker Desktop 仅用于 FT01 可观测性受控栈。" />
                 <Checkbox checked={authorized} onChange={(event) => setAuthorized(event.target.checked)} disabled={running}>我已审阅所选代码，并明确授权 TestMesh 在本机执行。</Checkbox>
                 <Button type="primary" icon={<PlayCircleOutlined />} loading={running} disabled={missing || !authorized || running} onClick={() => void runTest()}>运行 UI 测试</Button>
                 <Text type="secondary"><ExperimentOutlined /> Playwright 1.64.0 · Chromium · single worker · retries 0 · failure trace</Text>
               </Space>
             </Card>
             {error && <Alert type="error" showIcon message="UI 自动化已停在失败点" description={error} />}
-            {runs.length ? <RunResult run={runs[0]} /> : <Card><Empty description="尚无 UI TestRun" /></Card>}
+            {selectedRun ? <><Card size="small" title="TestRun 历史"><Select value={selectedRun.id} onChange={setRunId} options={runs.map((item) => ({ value: item.id, label: `${new Date(item.startedAt).toLocaleString("zh-CN")} · ${item.status} · ${item.passed}/${item.passed + item.failed + item.skipped}` }))} /></Card><RunResult run={selectedRun} /></> : <Card><Empty description="尚无 UI TestRun" /></Card>}
           </Space>
         </Col>
       </Row>

@@ -1,5 +1,5 @@
 import { CheckCircleOutlined, DatabaseOutlined, ExperimentOutlined, LinkOutlined, SafetyCertificateOutlined, UploadOutlined } from "@ant-design/icons";
-import { Alert, App as AntdApp, Button, Card, Collapse, Descriptions, Empty, Flex, Input, Modal, Popconfirm, Segmented, Select, Space, Spin, Statistic, Tag, Typography, Upload } from "antd";
+import { Alert, App as AntdApp, Button, Card, Col, Collapse, Descriptions, Empty, Flex, Input, Modal, Popconfirm, Row, Segmented, Select, Space, Spin, Statistic, Tag, Typography, Upload } from "antd";
 import type { UploadFile } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DesignedTestCase, KnowledgeDocumentRecord, RequirementBaselineRecord, TestCaseReviewRecord, TestDesignRecord, TestTechnique } from "./types";
@@ -49,6 +49,8 @@ export default function TestDesign() {
   const [error, setError] = useState<string>();
   const [view, setView] = useState<"cases" | "conditions" | "points" | "risks" | "tools">("cases");
   const [reviewing, setReviewing] = useState<DesignedTestCase>();
+  const [editedCase, setEditedCase] = useState<DesignedTestCase>();
+  const [editedSteps, setEditedSteps] = useState("");
   const [reviewStatus, setReviewStatus] = useState<"accepted" | "rejected">("accepted");
   const [reviewer, setReviewer] = useState("");
   const [reviewReason, setReviewReason] = useState("");
@@ -131,6 +133,7 @@ export default function TestDesign() {
   }
 
   const reviews = useMemo(() => new Map((current?.reviews ?? []).map((item) => [item.testCaseId, item])), [current]);
+  const amendments = useMemo(() => new Map([...(current?.amendments ?? [])].reverse().map((item) => [item.testCaseId, item])), [current]);
   const reviewSummary = current ? {
     total: current.document.test_cases.length,
     pending: current.document.test_cases.filter((item) => !reviews.has(item.id)).length,
@@ -183,13 +186,15 @@ export default function TestDesign() {
   function startReview(testCase: DesignedTestCase) {
     const existing = reviews.get(testCase.id);
     setReviewing(testCase);
+    setEditedCase(structuredClone(testCase));
+    setEditedSteps((testCase.steps ?? []).map((step) => `${step.action} => ${step.expected}`).join("\n"));
     setReviewStatus(existing?.status ?? "accepted");
     setReviewer(existing?.reviewer ?? "");
     setReviewReason(existing?.reason ?? "");
   }
 
   async function saveReview() {
-    if (!current || !reviewing) return;
+    if (!current || !reviewing || !editedCase) return;
     if (!reviewer.trim()) {
       message.error("请填写评审人");
       return;
@@ -199,9 +204,21 @@ export default function TestDesign() {
       await readJson<TestCaseReviewRecord>(await fetch(`/api/test-designs/${encodeURIComponent(current.id)}/reviews/${encodeURIComponent(reviewing.id)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: reviewStatus, reviewer, reason: reviewReason }),
+        body: JSON.stringify({
+          status: reviewStatus,
+          reviewer,
+          reason: reviewReason,
+          amendedTestCase: {
+            ...editedCase,
+            steps: editedSteps.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line, index) => {
+              const separator = line.indexOf("=>");
+              return { order: index + 1, action: separator >= 0 ? line.slice(0, separator).trim() : line, expected: separator >= 0 ? line.slice(separator + 2).trim() : "" };
+            }),
+          },
+        }),
       }));
       setReviewing(undefined);
+      setEditedCase(undefined);
       await openDesign(current.id);
       await refresh();
       message.success(`${reviewing.id} 评审已保存，列表和状态已刷新`);
@@ -318,6 +335,7 @@ export default function TestDesign() {
             { key: "knowledge", label: "项目知识证据", children: testCase.knowledge_refs?.length ? <Space direction="vertical" size={6}>{testCase.knowledge_refs.map((id) => { const evidence = knowledgeEvidence.get(id); return <Card key={id} size="small"><Text strong>{evidence?.filename ?? id}</Text><br /><Text type="secondary">{[...(evidence?.headings ?? []), ...(evidence?.page_numbers ?? []).map((page) => `第 ${page} 页`), ...(evidence?.doc_items ?? [])].join(" · ") || id}</Text><Paragraph style={{ margin: "6px 0 0" }}>{evidence?.text ?? "冻结的知识证据不可用"}</Paragraph></Card>; })}</Space> : "无知识引用" },
           ]} />
           <pre style={{ margin: 0, padding: 14, overflow: "auto", background: "#0f172a", color: "#e2e8f0", borderRadius: 8, whiteSpace: "pre-wrap" }}>{testCase.gherkin}</pre>
+          {amendments.get(testCase.id) && <Collapse size="small" items={[{ key: "amendment", label: `人工修正 · ${amendments.get(testCase.id)?.editor} · ${new Date(amendments.get(testCase.id)?.createdAt ?? "").toLocaleString("zh-CN")}`, children: <><Paragraph>修改理由：{amendments.get(testCase.id)?.reason}</Paragraph><Row gutter={[12, 12]}><Col xs={24} md={12}><Text strong>修改前</Text><pre className="triage-evidence-content">{JSON.stringify(amendments.get(testCase.id)?.before, null, 2)}</pre></Col><Col xs={24} md={12}><Text strong>修改后</Text><pre className="triage-evidence-content">{JSON.stringify(amendments.get(testCase.id)?.after, null, 2)}</pre></Col></Row></> }]} />}
         </Space> };
       })} />}
 
@@ -330,16 +348,25 @@ export default function TestDesign() {
       {view === "tools" && <Space direction="vertical" size={12} style={{ width: "100%" }}>{current.document.tool_applications.map((tool) => <Alert key={tool.tool} type={tool.status === "applied" ? "success" : "info"} showIcon icon={tool.status === "applied" ? <CheckCircleOutlined /> : <SafetyCertificateOutlined />} message={<Space><Text strong>{toolLabels[tool.tool]}</Text><Tag color={tool.status === "applied" ? "green" : "default"}>{tool.status === "applied" ? "已应用" : "本次不适用"}</Tag></Space>} description={tool.reason} />)}</Space>}
     </>}
 
-    <Modal title={`TestCase 评审 · ${reviewing?.id ?? ""}`} open={Boolean(reviewing)} onCancel={() => setReviewing(undefined)} onOk={() => void saveReview()} okText="保存评审" confirmLoading={savingReview}>
-      <Space direction="vertical" size={12} style={{ width: "100%" }}>
-        <Text strong>{reviewing?.title}</Text>
+    <Modal title={`TestCase 修正与评审 · ${reviewing?.id ?? ""}`} open={Boolean(reviewing)} onCancel={() => { setReviewing(undefined); setEditedCase(undefined); }} onOk={() => void saveReview()} okText="校验并保存评审" confirmLoading={savingReview} width={860}>
+      {editedCase && <Space direction="vertical" size={12} style={{ width: "100%" }}>
+        <Alert type="info" showIcon message="可直接修正 AI 候选稿" description="保存时会重新执行 TestCase Schema、Cucumber/Gherkin、追溯、测试条件和覆盖率 Gate；修正与评审作为同一次事务留痕。" />
+        <Text>标题 *</Text><Input value={editedCase.title} onChange={(event) => setEditedCase({ ...editedCase, title: event.target.value })} />
+        <Text>业务模块 *</Text><Input value={editedCase.module ?? ""} onChange={(event) => setEditedCase({ ...editedCase, module: event.target.value })} />
+        <Text>测试目标 *</Text><Input.TextArea rows={2} value={editedCase.objective} onChange={(event) => setEditedCase({ ...editedCase, objective: event.target.value })} />
+        <Text>优先级 *</Text><Select value={editedCase.priority} onChange={(priority) => setEditedCase({ ...editedCase, priority })} options={["P0", "P1", "P2", "P3"].map((value) => ({ value, label: value }))} />
+        <Text>前置条件（每行一项）</Text><Input.TextArea rows={3} value={editedCase.preconditions.join("\n")} onChange={(event) => setEditedCase({ ...editedCase, preconditions: event.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) })} />
+        <Text>测试数据（每行一项）</Text><Input.TextArea rows={3} value={(editedCase.test_data ?? []).join("\n")} onChange={(event) => setEditedCase({ ...editedCase, test_data: event.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) })} />
+        <Text>步骤与预期（每行“动作 =&gt; 预期”）*</Text><Input.TextArea rows={5} value={editedSteps} onChange={(event) => setEditedSteps(event.target.value)} />
+        <Text>中文 Gherkin *</Text><Input.TextArea rows={10} value={editedCase.gherkin} onChange={(event) => setEditedCase({ ...editedCase, gherkin: event.target.value })} className="testcase-gherkin-editor" />
+        <Text type="secondary">用例 ID、基线追溯、测试条件和证据引用保持受控，不能在此随意改写。</Text>
         <Text><Text type="danger">* </Text>处理结果</Text>
         <Segmented block value={reviewStatus} onChange={(value) => setReviewStatus(value as typeof reviewStatus)} options={[{ label: "接受", value: "accepted" }, { label: "驳回", value: "rejected" }]} />
         <Text><Text type="danger">* </Text>评审人</Text>
         <Input value={reviewer} onChange={(event) => setReviewer(event.target.value)} placeholder="填写评审人" />
         <Text>理由或补充说明（选填）</Text>
         <Input.TextArea value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} rows={3} />
-      </Space>
+      </Space>}
     </Modal>
   </div>;
 }

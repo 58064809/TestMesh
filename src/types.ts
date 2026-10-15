@@ -99,6 +99,17 @@ export interface AnalysisReviewRecord {
   createdAt: string;
 }
 
+export interface AnalysisAmendmentRecord {
+  id: string;
+  analysisId: string;
+  itemId: string;
+  editor: string;
+  reason: string;
+  before: AnalysisItem | AnalysisOpenQuestion;
+  after: AnalysisItem | AnalysisOpenQuestion;
+  createdAt: string;
+}
+
 export interface RequirementBaselineRecord {
   id: string;
   analysisId: string;
@@ -217,6 +228,16 @@ export interface TestDesignRecord {
   createdAt: string;
   reviewSummary?: { total: number; pending: number; accepted: number; rejected: number };
   reviews?: TestCaseReviewRecord[];
+  amendments?: Array<{
+    id: string;
+    designId: string;
+    testCaseId: string;
+    editor: string;
+    reason: string;
+    before: DesignedTestCase;
+    after: DesignedTestCase;
+    createdAt: string;
+  }>;
   approvedVersion?: unknown;
   baselineSources?: Array<{
     id: string;
@@ -464,6 +485,68 @@ export interface UiTestRunRecord {
   error: string;
   results: UiTestResultRecord[];
   artifacts: UiTestArtifactRecord[];
+}
+
+export type FailureRunKind = "api_schema" | "api_scenario" | "ui";
+
+export interface FailureRunOption {
+  kind: FailureRunKind;
+  id: string;
+  projectId: string;
+  environmentId: string;
+  label: string;
+  status: "failed" | "error";
+  startedAt: string;
+  failed: number;
+}
+
+export interface FailureEvidence {
+  id: string;
+  category: "reporter" | "test_case" | "test_run" | "assertion" | "http" | "runner" | "artifact" | "telemetry" | "database" | "middleware" | "source_code";
+  title: string;
+  content: string;
+  locator: string;
+  direct: boolean;
+}
+
+export interface FailureTriageRecord {
+  id: string;
+  taskId: string;
+  input: {
+    projectId: string;
+    environmentId: string;
+    runKind: FailureRunKind;
+    runId: string;
+    approvedVersionId: string;
+    approvedTestCaseIds: string[];
+  };
+  evidence: FailureEvidence[];
+  result: {
+    status: "located" | "suspected" | "insufficient_evidence";
+    failure_layer: "test_script" | "frontend" | "gateway" | "backend" | "database" | "cache" | "message_queue" | "third_party" | "environment" | "unknown";
+    summary: string;
+    suspected_components: string[];
+    facts: Array<{ statement: string; evidence_refs: string[] }>;
+    hypotheses: Array<{ cause: string; confidence: "low" | "medium" | "high"; supporting_evidence_refs: string[]; contradicting_evidence_refs: string[] }>;
+    source_locations: Array<{ repository: string; commit: string; file: string; line: number | null; evidence_refs: string[] }>;
+    database_findings: Array<{ statement: string; query_summary: string; evidence_refs: string[] }>;
+    missing_evidence: string[];
+    next_checks: string[];
+    submission_draft: {
+      title: string;
+      severity: "blocker" | "critical" | "major" | "minor" | "trivial" | "undetermined";
+      steps: string[];
+      expected: string;
+      actual: string;
+      technical_analysis: string;
+      attachment_evidence_refs: string[];
+    };
+  };
+  model: string;
+  traceProvider: string;
+  traceProjectName: string;
+  traceId: string;
+  createdAt: string;
 }
 
 export interface AndroidTestResultRecord {

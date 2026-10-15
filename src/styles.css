@@ -885,3 +885,43 @@ body {
 .project-summary .ant-typography {
   margin-bottom: 8px;
 }
+
+.failure-triage-page {
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+.failure-triage-page > .ant-alert {
+  margin-bottom: 16px;
+}
+
+.failure-triage-grid {
+  margin-top: 16px;
+}
+
+.triage-history {
+  margin-top: 16px;
+}
+
+.triage-history-item {
+  cursor: pointer;
+}
+
+.triage-history-item:hover {
+  background: #f6f8fc;
+}
+
+.triage-trace {
+  margin-top: 12px;
+}
+
+.triage-evidence-content {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 10px;
+  margin-top: 8px;
+  background: #f6f8fc;
+  border-radius: 8px;
+}

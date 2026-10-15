@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import {
+  BaselineSnapshotSchema,
+  TestCaseSchema,
   TestDesignSchema,
   type ApprovedTestCaseVersionRecord,
   type TestCaseReviewRecord,
@@ -8,6 +10,7 @@ import {
   type TestDesign,
   type TestDesignRecord,
 } from "./schema.js";
+import { validateTestDesign } from "./validation.js";
 
 export class TestDesignPostgresStore {
   private readonly schema: string;
@@ -46,6 +49,19 @@ export class TestDesignPostgresStore {
     await this.pool.query(`
       CREATE INDEX IF NOT EXISTS test_case_review_events_latest
       ON ${this.schema}.test_case_review_events (design_id, test_case_id, sequence DESC)
+    `);
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS ${this.schema}.test_case_amendment_events (
+        sequence BIGSERIAL PRIMARY KEY,
+        id TEXT NOT NULL UNIQUE,
+        design_id TEXT NOT NULL REFERENCES ${this.schema}.test_designs(id) ON DELETE CASCADE,
+        test_case_id TEXT NOT NULL,
+        editor TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        before_json JSONB NOT NULL,
+        after_json JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
     `);
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS ${this.schema}.approved_test_case_versions (
@@ -137,22 +153,76 @@ export class TestDesignPostgresStore {
     return result.rows.map((row) => this.parseReview(row));
   }
 
+  async listAmendments(designId: string): Promise<Array<{
+    id: string; designId: string; testCaseId: string; editor: string; reason: string;
+    before: unknown; after: unknown; createdAt: string;
+  }>> {
+    await this.getDesign(designId);
+    const result = await this.pool.query(
+      `SELECT * FROM ${this.schema}.test_case_amendment_events WHERE design_id = $1 ORDER BY sequence DESC`,
+      [designId],
+    );
+    return result.rows.map((row) => ({
+      id: String(row.id), designId: String(row.design_id), testCaseId: String(row.test_case_id),
+      editor: String(row.editor), reason: String(row.reason), before: row.before_json, after: row.after_json,
+      createdAt: new Date(String(row.created_at)).toISOString(),
+    }));
+  }
+
   async recordReview(designId: string, testCaseId: string, input: {
     status: TestCaseReviewStatus;
     reviewer: string;
     reason: string;
+    amendedTestCase?: unknown;
   }): Promise<TestCaseReviewRecord> {
-    const design = await this.getDesign(designId);
-    if (design.status === "approved") throw new Error("已批准的 TestCase 版本不可覆盖");
-    if (!design.document.test_cases.some((item) => item.id === testCaseId)) throw new Error(`TestCase ${testCaseId} 不存在`);
     if (!input.reviewer.trim()) throw new Error("请填写评审人");
-    const result = await this.pool.query(
-      `INSERT INTO ${this.schema}.test_case_review_events
-        (id, design_id, test_case_id, status, reviewer, reason)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [randomUUID(), designId, testCaseId, input.status, input.reviewer.trim(), input.reason.trim()],
-    );
-    return this.parseReview(result.rows[0]);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query(
+        `SELECT design.*, baseline.snapshot_json AS baseline_snapshot
+         FROM ${this.schema}.test_designs design
+         JOIN ${this.schema}.requirement_baselines baseline ON baseline.id = design.baseline_id
+         WHERE design.id = $1 FOR UPDATE OF design`,
+        [designId],
+      );
+      if (result.rowCount !== 1) throw new Error(`测试设计 ${designId} 不存在`);
+      const design = this.parseDesign(result.rows[0]);
+      if (design.status === "approved") throw new Error("已批准的 TestCase 版本不可覆盖");
+      const current = design.document.test_cases.find((item) => item.id === testCaseId);
+      if (!current) throw new Error(`TestCase ${testCaseId} 不存在`);
+      const amended = input.amendedTestCase === undefined ? current : TestCaseSchema.parse(input.amendedTestCase);
+      if (amended.id !== testCaseId) throw new Error("人工修正不能改变 TestCase ID");
+      const changed = JSON.stringify(amended) !== JSON.stringify(current);
+      if (changed && !input.reason.trim()) throw new Error("人工修正 TestCase 时必须填写修改理由");
+      if (changed) {
+        const nextDocument = TestDesignSchema.parse({
+          ...design.document,
+          test_cases: design.document.test_cases.map((item) => item.id === testCaseId ? amended : item),
+        });
+        validateTestDesign(nextDocument, BaselineSnapshotSchema.parse(result.rows[0].baseline_snapshot));
+        await client.query(`UPDATE ${this.schema}.test_designs SET document_json = $2 WHERE id = $1`, [designId, nextDocument]);
+        await client.query(
+          `INSERT INTO ${this.schema}.test_case_amendment_events
+            (id, design_id, test_case_id, editor, reason, before_json, after_json)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [randomUUID(), designId, testCaseId, input.reviewer.trim(), input.reason.trim(), current, amended],
+        );
+      }
+      const review = await client.query(
+        `INSERT INTO ${this.schema}.test_case_review_events
+          (id, design_id, test_case_id, status, reviewer, reason)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [randomUUID(), designId, testCaseId, input.status, input.reviewer.trim(), input.reason.trim()],
+      );
+      await client.query("COMMIT");
+      return this.parseReview(review.rows[0]);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async approve(designId: string, approvedBy: string): Promise<ApprovedTestCaseVersionRecord> {

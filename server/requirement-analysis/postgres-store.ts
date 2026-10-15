@@ -16,6 +16,7 @@ export interface AnalysisReviewInput {
   decision: string;
   decisionBy: string;
   prdRevision: string;
+  amendment?: { description: string; sourceRefs: string[] };
 }
 
 export interface AnalysisReviewRecord extends AnalysisReviewInput {
@@ -112,6 +113,19 @@ export class RequirementAnalysisPostgresStore {
     await this.pool.query(`
       CREATE INDEX IF NOT EXISTS analysis_review_events_latest
       ON ${this.schema}.analysis_review_events (analysis_id, item_id, sequence DESC)
+    `);
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS ${this.schema}.analysis_amendment_events (
+        sequence BIGSERIAL PRIMARY KEY,
+        id TEXT NOT NULL UNIQUE,
+        analysis_id TEXT NOT NULL REFERENCES ${this.schema}.requirement_analyses(id) ON DELETE CASCADE,
+        item_id TEXT NOT NULL,
+        editor TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        before_json JSONB NOT NULL,
+        after_json JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
     `);
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS ${this.schema}.requirement_baselines (
@@ -324,23 +338,71 @@ export class RequirementAnalysisPostgresStore {
       decisionBy: normalized.decisionBy.trim(),
       prdRevision: normalized.prdRevision.trim(),
     };
+    const sourceIds = new Set(document.sources.map((source) => source.id));
+    const amended = input.amendment ? {
+      ...current.item,
+      description: input.amendment.description.trim(),
+      source_refs: [...new Set(input.amendment.sourceRefs)],
+    } : current.item;
+    if (!amended.description) throw new Error("人工修正后的内容不能为空");
+    const invalidSources = amended.source_refs.filter((id) => !sourceIds.has(id));
+    if (invalidSources.length) throw new Error(`人工修正引用了不存在的原文：${invalidSources.join("、")}`);
+    const changed = JSON.stringify(amended) !== JSON.stringify(current.item);
+    if (changed && !values.reviewer) throw new Error("人工修正需求内容时必须填写评审人");
+    if (changed && !values.reason) throw new Error("人工修正需求内容时必须填写修改理由");
+    const nextDocument = changed ? this.replaceReviewItem(document, current.section, amended) : document;
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const locked = await client.query(`SELECT status FROM ${this.schema}.requirement_analyses WHERE id = $1 FOR UPDATE`, [analysisId]);
+      if (locked.rowCount !== 1 || locked.rows[0].status === "baselined") throw new Error("此分析已建立基线，不能人工修正");
+      if (changed) {
+        await client.query(
+          `UPDATE ${this.schema}.requirement_analyses SET document_json = $2, summary = $3 WHERE id = $1`,
+          [analysisId, nextDocument, nextDocument.summary?.description ?? ""],
+        );
+        await client.query(
+          `INSERT INTO ${this.schema}.analysis_amendment_events
+            (id, analysis_id, item_id, editor, reason, before_json, after_json)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [randomUUID(), analysisId, itemId, values.reviewer, values.reason, current.item, amended],
+        );
+      }
+      const result = await client.query(
+        `INSERT INTO ${this.schema}.analysis_review_events
+          (id, analysis_id, item_id, status, reviewer, reason, issue_type,
+           merge_into, decision, decision_by, prd_revision)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         RETURNING *`,
+        [randomUUID(), analysisId, itemId, values.status, values.reviewer, values.reason,
+          values.issueType, values.mergeInto, values.decision, values.decisionBy, values.prdRevision],
+      );
+      await client.query(`UPDATE ${this.schema}.requirement_analyses SET status = 'reviewing' WHERE id = $1 AND status = 'candidate'`, [analysisId]);
+      await client.query("COMMIT");
+      return this.parseReviewRow(result.rows[0]);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listAmendments(analysisId: string, itemId?: string): Promise<Array<{
+    id: string; analysisId: string; itemId: string; editor: string; reason: string;
+    before: unknown; after: unknown; createdAt: string;
+  }>> {
+    await this.getAnalysis(analysisId);
     const result = await this.pool.query(
-      `INSERT INTO ${this.schema}.analysis_review_events
-        (id, analysis_id, item_id, status, reviewer, reason, issue_type,
-         merge_into, decision, decision_by, prd_revision)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING *`,
-      [
-        randomUUID(), analysisId, itemId, values.status, values.reviewer, values.reason,
-        values.issueType, values.mergeInto, values.decision, values.decisionBy, values.prdRevision,
-      ],
+      `SELECT * FROM ${this.schema}.analysis_amendment_events
+       WHERE analysis_id = $1 AND ($2::text IS NULL OR item_id = $2) ORDER BY sequence DESC`,
+      [analysisId, itemId ?? null],
     );
-    await this.pool.query(
-      `UPDATE ${this.schema}.requirement_analyses SET status = 'reviewing'
-       WHERE id = $1 AND status = 'candidate'`,
-      [analysisId],
-    );
-    return this.parseReviewRow(result.rows[0]);
+    return result.rows.map((row) => ({
+      id: String(row.id), analysisId: String(row.analysis_id), itemId: String(row.item_id),
+      editor: String(row.editor), reason: String(row.reason), before: row.before_json, after: row.after_json,
+      createdAt: this.iso(row.created_at),
+    }));
   }
 
   async listBaselines(): Promise<RequirementBaselineRecord[]> {
@@ -512,6 +574,21 @@ export class RequirementAnalysisPostgresStore {
       ...(document.summary ? [{ section: "summary", item: document.summary }] : []),
       ...sections.flatMap((section) => document[section].map((item) => ({ section, item }))),
     ];
+  }
+
+  private replaceReviewItem(
+    document: RequirementAnalysis,
+    section: string,
+    item: RequirementAnalysis["actors"][number],
+  ): RequirementAnalysis {
+    if (section === "summary") return RequirementAnalysisSchema.parse({ ...document, summary: item });
+    const keys = ["requirements", "actors", "business_rules", "flows", "states", "constraints", "exceptions", "open_questions"] as const;
+    const key = keys.find((candidate) => candidate === section);
+    if (!key) throw new Error(`不支持修正分析章节 ${section}`);
+    return RequirementAnalysisSchema.parse({
+      ...document,
+      [key]: document[key].map((current) => current.id === item.id ? item : current),
+    });
   }
 
   private parseAnalysisRow(row: Record<string, unknown>): RequirementAnalysisRecord {

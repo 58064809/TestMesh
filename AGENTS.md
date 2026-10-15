@@ -120,9 +120,23 @@
 - 用户明确批准在 AT01 缺少真实公司契约与 URL 时继续 AT02；这是阶段顺序例外，不改变 AT01 仍缺真实业务验收的事实。
 - 唯一 UI 引擎是 `@playwright/test` 1.64.0 + Chromium。测试规划、生成和失败修复复用 Playwright 官方 planner/generator/healer Test Agents；不得自研第二套 UI Agent、浏览器控制、录制、Reporter 或 Trace Viewer。
 - TestMesh 只保留 Project/Environment/Approved TestCase/测试文件映射、人工授权、执行结果和失败 Trace。目标仓库、API 默认环境、UI 默认环境统一维护在项目配置，不得在自动化页面重复保存。
-- 当前电脑没有 Docker。旧 Playwright 1.62.1 Docker-only 路径已删除；唯一 Runner 是人工审阅授权后的本机 Node 子进程，页面必须明确提示会以当前用户权限执行仓库代码，不得宣称存在容器隔离。
+- UI 自动化唯一 Runner 是人工审阅授权后的本机 Node 子进程。后续安装的 Docker Desktop 仅服务于 FT01 可观测性受控栈，不代表 UI Runner 已获得容器隔离；页面必须明确提示会以当前用户权限执行仓库代码。
 - 无真实业务前端仓库、URL 和账号时，只能使用 `examples/ui-automation/` 本机受控演示，必须标注非业务验收。当前通过运行 2/2，失败验证生成 2 份 Trace；真实业务验收仍待企业资产。
 - Playwright 官方 healer 可能把持续失败用例标记为 `fixme()`；TestMesh 的运行判定必须把任何 `skipped/fixme` 视为未通过，禁止用跳过状态绕过 Approved TestCase 验收。
+
+## 当前失败诊断规则（2026-10-15）
+
+- FT01 不是独立缺陷录入或人工描述页面，而是 Schemathesis、Hurl、Playwright 失败 TestRun 的下游诊断节点。左侧不得恢复平行“缺陷定位”产品入口。
+- 唯一追溯链是 `Requirement Baseline → Approved TestCase → API/UI 脚本与 TestRun → 失败断言 → FailureTriage`。诊断请求只接收 `run_kind + run_id`，项目、环境、用例、预期、实际和失败证据必须由服务端追溯，不能让用户重复填写或覆盖。
+- 预期结果来自冻结 Approved TestCase；实际结果来自 Schemathesis/Hurl/Playwright 的失败断言、请求响应、Runner 和 Trace。无关联或无证据时必须停止，不得由模型补造。
+- OpenTelemetry + SkyWalking/BanyanDB + SkyWalking MCP 是业务系统 Trace/日志/指标/拓扑的单一路径；数据库与中间件仅在失败信号需要时通过受治理的只读工具查询；源码必须与部署 Commit 对齐后只读检索。
+- Phoenix 只观测 FailureTriage Agent 自身；SkyWalking 观测被测业务系统，两者不能互相替代。没有真实 telemetry/database/middleware/source_code 证据时只能输出候选或证据不足，不能声明确定根因。
+
+## 当前人工修正规则（2026-10-15）
+
+- LLM 产物统一遵循“候选稿 → 人工修正 → 确定性校验 → Diff/修改记录 → 人工批准 → 冻结版本”。人工评审不能只有接受/驳回，必须允许在冻结前修正业务内容。
+- 人工修正不能绕过既有 Schema、来源引用、Gherkin、覆盖率、契约或 Runner 校验；修改人、理由、修改前后内容和时间必须留痕。已冻结版本不可覆盖，后续变化必须形成新候选/新版本。
+- 当前仅处于搭架阶段时，尚未具备真实资产的 API/UI 生成界面可以使用隔离假数据验证交互，但必须显著标识“演示数据/不可用于验收”，不得写入正式业务结果或声称真实闭环；进入功能验收前必须删除假数据路径。
 
 ## P01 实现约束
 

@@ -68,7 +68,8 @@ DI01 调研 Docling、PaddleOCR、MinerU、Unstructured 和 Apache Tika 后，�
 | KR01 | 通用企业知识检索：Docling 分块、Qdrant 检索与证据回链 | 已完成（中文真实入库/检索/删除验收；77 项测试、lint、build 通过） | 作为 TD01 的知识补充层，不形成平行业务入口 |
 | AT01 | Approved TestCase 到 API 自动化与真实 Runner 证据 | 进行中（Schemathesis 与 Hurl 平台闭环、可重复本机演示和刷新恢复均已通过；等待真实业务契约、场景与环境） | 真实业务验收通过后进入 AT02 |
 | AT02 | Approved TestCase 到 UI 自动化与 Playwright 证据 | 进行中（官方 Playwright 平台闭环已通过；等待真实前端资产） | 真实业务验收通过后进入 FT01 |
-| FT01 | 测试失败后的辅助缺陷定位调研与最小闭环 | 已规划 | 调研结果另行评审 |
+| FT01 | API/UI 失败执行后的智能诊断与辅助缺陷定位 | 进行中（已撤回独立缺陷入口并内嵌执行结果；FT01-B 等待重启） | 重启后启动 Docker Desktop，继续 SkyWalking 受控全链路验收 |
+| HR01 | AI 候选稿人工修正、校验、Diff 与冻结 | 进行中（需求分析与 TestCase 已接入；API/UI 脚本待生成阶段复用） | 完成 API/UI 脚本生成后做真实修订验收 |
 
 详细任务和依赖见 `docs/DEVELOPMENT_TASKS.md`。APP、性能和安全测试暂不进入新主线；既有实现作为历史能力保留。
 

@@ -41,10 +41,13 @@ import {
   type AiQualityProfile,
 } from "./ai-quality/profile.js";
 import { TestDesignService } from "./test-design/service.js";
-import { BaselineSnapshotSchema } from "./test-design/schema.js";
+import { BaselineSnapshotSchema, TestCaseSchema } from "./test-design/schema.js";
 import { KnowledgeService } from "./knowledge/service.js";
 import { QdrantKnowledgeIndex } from "./knowledge/qdrant.js";
 import { ProjectAutomationConfigInputSchema, ProjectEnvironmentInputSchema, ProjectInputSchema } from "./project-config/schema.js";
+import { FailureDiagnosisRequestSchema } from "./failure-triage/schema.js";
+import { listFailureRuns } from "./failure-triage/evidence.js";
+import { FailureTriageService } from "./failure-triage/service.js";
 
 initializePhoenixTracing();
 
@@ -58,10 +61,12 @@ const aiQualityStore = analysisResources.aiQualityStore;
 const testDesignStore = analysisResources.testDesignStore;
 const knowledgeStore = analysisResources.knowledgeStore;
 const projectConfigStore = analysisResources.projectConfigStore;
+const failureTriageStore = analysisResources.failureTriageStore;
 const requirementAnalysisService = new RequirementAnalysisService(analysisResources);
 const documentParser = createDoclingClientFromEnvironment();
 const knowledgeService = new KnowledgeService(knowledgeStore, documentParser, new QdrantKnowledgeIndex());
 const testDesignService = new TestDesignService(requirementAnalysisStore, testDesignStore, documentParser, knowledgeService);
+const failureTriageService = new FailureTriageService(store, failureTriageStore, testDesignStore);
 
 app.use(express.json({ limit: "256kb" }));
 
@@ -137,6 +142,10 @@ const AnalysisReviewInputSchema = z.object({
   decision: z.string().default(""),
   decisionBy: z.string().default(""),
   prdRevision: z.string().default(""),
+  amendment: z.object({
+    description: z.string().trim().min(1),
+    sourceRefs: z.array(z.string().min(1)),
+  }).strict().optional(),
 }).strict();
 
 const AiQualityApprovalSchema = z.object({
@@ -158,6 +167,7 @@ const TestCaseReviewInputSchema = z.object({
   status: z.enum(["accepted", "rejected"]),
   reviewer: z.string().trim().min(1),
   reason: z.string().default(""),
+  amendedTestCase: TestCaseSchema.optional(),
 }).strict();
 
 const TestCaseApprovalSchema = z.object({
@@ -565,6 +575,17 @@ app.get("/api/analyses/:id/reviews/:itemId/history", async (request, response) =
   }
 });
 
+app.get("/api/analyses/:id/amendments", async (request, response) => {
+  try {
+    response.json(await requirementAnalysisStore.listAmendments(
+      request.params.id,
+      typeof request.query.itemId === "string" ? request.query.itemId : undefined,
+    ));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "人工修正记录不存在" });
+  }
+});
+
 app.get("/api/analyses/:id/source-files", async (request, response) => {
   try {
     response.json(await requirementAnalysisStore.listSourceFiles(request.params.id));
@@ -691,12 +712,13 @@ app.post("/api/test-designs", async (request, response) => {
 app.get("/api/test-designs/:id", async (request, response) => {
   try {
     const design = await testDesignStore.getDesign(request.params.id);
-    const [reviews, approved, baseline] = await Promise.all([
+    const [reviews, amendments, approved, baseline] = await Promise.all([
       testDesignStore.listReviews(design.id),
+      testDesignStore.listAmendments(design.id),
       testDesignStore.getApprovedVersion(design.id),
       requirementAnalysisStore.getBaseline(design.baselineId),
     ]);
-    response.json({ ...design, reviews, approvedVersion: approved, baselineSources: BaselineSnapshotSchema.parse(baseline.snapshot).sourceRefs });
+    response.json({ ...design, reviews, amendments, approvedVersion: approved, baselineSources: BaselineSnapshotSchema.parse(baseline.snapshot).sourceRefs });
   } catch (error) {
     response.status(404).json({ error: error instanceof Error ? error.message : "测试设计不存在" });
   }
@@ -978,6 +1000,48 @@ app.get("/api/ui-automation/runs/:id/artifacts/:artifactId", (request, response)
     response.download(artifact.path, artifact.name);
   } catch (error) {
     response.status(404).json({ error: error instanceof Error ? error.message : "Trace Evidence 不存在" });
+  }
+});
+
+app.get("/api/failure-triage/runs", (_request, response) => {
+  try {
+    response.json(listFailureRuns(store));
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "无法读取失败 TestRun" });
+  }
+});
+
+app.get("/api/failure-triages", async (_request, response) => {
+  try {
+    response.json(await failureTriageStore.list());
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "无法读取缺陷定位记录" });
+  }
+});
+
+app.get("/api/failure-triages/:id", async (request, response) => {
+  try {
+    response.json(await failureTriageStore.get(request.params.id));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "缺陷定位记录不存在" });
+  }
+});
+
+app.post("/api/failure-triages", async (request, response) => {
+  try {
+    const parsed = FailureDiagnosisRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: parsed.error.issues[0]?.message ?? "缺陷定位输入不合法" });
+      return;
+    }
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      response.status(503).json({ error: "服务端未配置 OPENAI_API_KEY，缺陷定位已停止" });
+      return;
+    }
+    response.status(201).json(await failureTriageService.analyze({ request: parsed.data, apiKey }));
+  } catch (error) {
+    response.status(422).json({ error: error instanceof Error ? error.message : "缺陷定位失败" });
   }
 });
 

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { mergedSourceEntries, renderReviewMarkdown, reviewEntries, unresolvedDecisionEntries, visibleReviewEntries, type ReviewEntry, type ReviewView } from "./review-report";
 import { issueTypeLabels, locatorLabels } from "./analysis-report";
 import { pdfPageRange, sourceFileUrl, visualEvidence } from "./evidence-preview";
-import { PENDING_PRD_REVISION, type AnalysisResponse, type AnalysisReviewRecord, type AnalysisReviewStatus, type AnalysisIssueType, type RequirementBaselineRecord } from "./types";
+import { PENDING_PRD_REVISION, type AnalysisAmendmentRecord, type AnalysisResponse, type AnalysisReviewRecord, type AnalysisReviewStatus, type AnalysisIssueType, type RequirementBaselineRecord } from "./types";
 
 const { Text, Paragraph } = Typography;
 const reviewStatusLabels: Record<AnalysisReviewStatus, string> = {
@@ -46,6 +46,7 @@ type StoredSourceFile = { sourceFileId: string; mimeType: string; provenance: st
 export default function RequirementReviewView({ response, sourceFiles, onReviewSaved }: { response: AnalysisResponse; sourceFiles: StoredSourceFile[]; onReviewSaved?: () => Promise<void> | void }) {
   const { message: toast } = AntdApp.useApp();
   const [reviews, setReviews] = useState<AnalysisReviewRecord[]>([]);
+  const [amendments, setAmendments] = useState<AnalysisAmendmentRecord[]>([]);
   const [baselines, setBaselines] = useState<RequirementBaselineRecord[]>([]);
   const [view, setView] = useState<ReviewView>("pending");
   const [selected, setSelected] = useState<ReviewEntry>();
@@ -61,15 +62,18 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   const [reviewErrors, setReviewErrors] = useState<Partial<Record<ReviewField, string>>>({});
+  const [amendedDescription, setAmendedDescription] = useState("");
+  const [amendedSourceRefs, setAmendedSourceRefs] = useState<string[]>([]);
   const [baselineErrors, setBaselineErrors] = useState<Partial<Record<BaselineField, string>>>({});
 
   useEffect(() => {
     let active = true;
     void Promise.all([
       fetch(`/api/analyses/${encodeURIComponent(response.analysisId)}/reviews`).then((res) => readJson<AnalysisReviewRecord[]>(res)),
+      fetch(`/api/analyses/${encodeURIComponent(response.analysisId)}/amendments`).then((res) => readJson<AnalysisAmendmentRecord[]>(res)),
       fetch("/api/requirement-baselines").then((res) => readJson<RequirementBaselineRecord[]>(res)),
-    ]).then(([loadedReviews, loadedBaselines]) => {
-      if (active) { setReviews(loadedReviews); setBaselines(loadedBaselines); setError(undefined); }
+    ]).then(([loadedReviews, loadedAmendments, loadedBaselines]) => {
+      if (active) { setReviews(loadedReviews); setAmendments(loadedAmendments); setBaselines(loadedBaselines); setError(undefined); }
     }).catch((caught) => { if (active) setError(caught instanceof Error ? caught.message : "评审资料读取失败"); });
     return () => { active = false; };
   }, [response.analysisId]);
@@ -108,6 +112,8 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
 
   function openReview(entry: ReviewEntry) {
     setSelected(entry);
+    setAmendedDescription(entry.item.description);
+    setAmendedSourceRefs([...entry.item.source_refs]);
     const firstVisual = entry.item.source_refs.map((id) => sources.get(id)).find((source) => {
       const file = source && storedById.get(source.source_file_id);
       return source && file && visualEvidence(source, file.mimeType);
@@ -142,8 +148,8 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
     setError(undefined);
     try {
       const payload = selected.section === "open_questions" && draft.status === "accepted" && !draft.prdRevision
-        ? { ...draft, prdRevision: PENDING_PRD_REVISION }
-        : draft;
+        ? { ...draft, prdRevision: PENDING_PRD_REVISION, amendment: { description: amendedDescription, sourceRefs: amendedSourceRefs } }
+        : { ...draft, amendment: { description: amendedDescription, sourceRefs: amendedSourceRefs } };
       const savedReview = await readJson<AnalysisReviewRecord>(await fetch(
         `/api/analyses/${encodeURIComponent(response.analysisId)}/reviews/${encodeURIComponent(selected.item.id)}`,
         { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
@@ -164,6 +170,7 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
         )),
       ]);
       setReviews(refreshedReviews);
+      setAmendments(await readJson<AnalysisAmendmentRecord[]>(await fetch(`/api/analyses/${encodeURIComponent(response.analysisId)}/amendments`, { cache: "no-store" })));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "评审保存失败");
     } finally { setSaving(false); }
@@ -222,7 +229,7 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
 
   return (
     <Card size="small" className="requirement-review" title={<Space><FileDoneOutlined />人工评审与需求基线</Space>}>
-      <Paragraph type="secondary">AI 原始分析保持不变；这里记录人工去留和业务决策。不同文件规则冲突时默认不设来源优先级，查看双方原文后由产品决策；如决定“PRD 优先”，请将适用范围写入决策和获批 PRD。待评审视图隐藏已接受、驳回和合并的条目。</Paragraph>
+      <Paragraph type="secondary">AI 输出是候选稿；人工可在评审时修正内容和原文引用，系统保存修改前后 Diff 并重新校验。不同文件规则冲突时默认不设来源优先级，查看双方原文后由产品决策；冻结基线后不可覆盖。</Paragraph>
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} />}
       {unresolvedDecisions.length > 0 && <Alert
         type="warning"
@@ -290,6 +297,9 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
         {selected && <Space direction="vertical" size={12} style={{ width: "100%" }}>
           {error && <Alert type="error" showIcon message="评审保存失败" description={error} />}
           <Paragraph>{selected.item.description}</Paragraph>
+          <Alert type="info" showIcon message="可直接修正 AI 候选内容" description="保存时会校验来源 ID，并与评审作为同一次事务留痕；已冻结基线不可修改。修改内容时必须填写评审人和修改理由。" />
+          {requiredLabel("修正后的内容")}<Input.TextArea rows={4} value={amendedDescription} onChange={(event) => setAmendedDescription(event.target.value)} />
+          <Text>保留的原文引用</Text><Select mode="multiple" value={amendedSourceRefs} onChange={setAmendedSourceRefs} options={response.result.sources.map((source) => ({ value: source.id, label: `${source.id} · ${source.source_file_name} · ${source.excerpt.slice(0, 48)}` }))} optionFilterProp="label" />
           {"issue_type" in selected.item && <Tag color="gold">AI 问题分类：{issueTypeLabels[selected.item.issue_type as AnalysisIssueType]}</Tag>}
           {selected.item.source_refs.length > 0 && <><Text strong>关联原文（先核对原文件和图片，再登记接受）</Text>
             {selected.item.source_refs.map((id) => {
@@ -397,6 +407,7 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
 
       <Modal title={`评审历史 · ${history?.itemId ?? ""}`} open={Boolean(history)} onCancel={() => setHistory(undefined)} footer={null}>
         {history && (history.events.length ? <Space direction="vertical" style={{ width: "100%" }}>
+          {amendments.filter((event) => event.itemId === history.itemId).map((event) => <Card size="small" key={event.id} title="人工修正 Diff"><Space wrap><Text>{event.editor}</Text><Text type="secondary">{new Date(event.createdAt).toLocaleString("zh-CN")}</Text></Space><Paragraph>修改理由：{event.reason}</Paragraph><Text strong>修改前</Text><pre className="triage-evidence-content">{JSON.stringify(event.before, null, 2)}</pre><Text strong>修改后</Text><pre className="triage-evidence-content">{JSON.stringify(event.after, null, 2)}</pre></Card>)}
           {history.events.map((event) => <Card size="small" key={event.id}>
             <Space wrap><Tag>{reviewStatusLabels[event.status]}</Tag><Text>{event.reviewer}</Text><Text type="secondary">{new Date(event.createdAt).toLocaleString("zh-CN")}</Text></Space>
             {event.reason && <Paragraph>理由：{event.reason}</Paragraph>}

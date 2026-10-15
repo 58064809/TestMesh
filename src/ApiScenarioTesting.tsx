@@ -1,14 +1,15 @@
-import { CloudUploadOutlined, PlayCircleOutlined } from "@ant-design/icons";
+import { PlayCircleOutlined } from "@ant-design/icons";
 import {
   Alert, App as AntdApp, Button, Card, Col, Empty, Flex, Input, List, Row, Select,
-  Space, Statistic, Tag, Typography, Upload, type UploadFile,
+  Space, Statistic, Tag, Typography,
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { ApiScenarioRunRecord, ApiScenarioSuiteRecord, ApprovedTestCaseVersionOption, ProjectRecord } from "./types";
+import ExecutionDiagnosis from "./ExecutionDiagnosis";
+import ScriptCandidateScaffold from "./ScriptCandidateScaffold";
 
 const { Text } = Typography;
-const { Dragger } = Upload;
 
 export default function ApiScenarioTesting() {
   const { message } = AntdApp.useApp();
@@ -20,13 +21,11 @@ export default function ApiScenarioTesting() {
   const [environmentId, setEnvironmentId] = useState("");
   const [versionId, setVersionId] = useState("");
   const [testCaseIds, setTestCaseIds] = useState<string[]>([]);
-  const [file, setFile] = useState<UploadFile>();
   const [suiteId, setSuiteId] = useState("");
   const [authType, setAuthType] = useState<"none" | "bearer" | "basic">("none");
   const [token, setToken] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [run, setRun] = useState<ApiScenarioRunRecord>();
@@ -67,32 +66,8 @@ export default function ApiScenarioTesting() {
   const selectedSuite = useMemo(() => suites.find((item) => item.id === suiteId), [suites, suiteId]);
   const suiteRuns = useMemo(() => runs.filter((item) => item.suiteId === suiteId), [runs, suiteId]);
 
-  async function saveSuite() {
-    const scenario = file?.originFileObj;
-    if (!projectId || !environmentId || !versionId || !scenario || testCaseIds.length === 0) {
-      message.warning("项目、环境、Approved 版本、关联用例和 .hurl 文件均为必填项");
-      return;
-    }
-    setSaving(true); setError("");
-    try {
-      const form = new FormData();
-      form.append("scenario", scenario, file.name);
-      form.append("projectId", projectId); form.append("environmentId", environmentId);
-      form.append("approvedVersionId", versionId); form.append("approvedTestCaseIds", JSON.stringify(testCaseIds));
-      const response = await fetch("/api/api-automation/scenario-suites", { method: "POST", body: form });
-      const body = await response.json() as ApiScenarioSuiteRecord | { error?: string };
-      if (!response.ok) throw new Error("error" in body ? body.error || "Hurl 场景导入失败" : "Hurl 场景导入失败");
-      const saved = body as ApiScenarioSuiteRecord;
-      setSuites((current) => [saved, ...current]); setSuiteId(saved.id); setRun(undefined);
-      message.success("业务场景已保存并关联 Approved TestCase");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Hurl 场景导入失败");
-      message.error("场景导入失败，流程已停止");
-    } finally { setSaving(false); }
-  }
-
   async function execute() {
-    if (!suiteId) { message.warning("请先导入或选择一个 Hurl 场景集"); return; }
+    if (!suiteId) { message.warning("当前项目还没有已审核的 Hurl 场景候选"); return; }
     setRunning(true); setError(""); setRun(undefined);
     try {
       const response = await fetch("/api/api-automation/scenario-runs", {
@@ -111,21 +86,21 @@ export default function ApiScenarioTesting() {
   }
 
   return <div className="api-testing-page"><Row gutter={[16, 16]}>
-    <Col xs={24} xl={9}><Card title={<Space><CloudUploadOutlined />导入业务场景</Space>}>
+    <Col xs={24} xl={9}><Card title="业务场景生成上下文">
       <Space direction="vertical" size={14} className="api-main-stack">
         <Alert type="info" showIcon message="Hurl 执行确定性业务链路" description="请求链、变量捕获和断言由 Hurl 8.0.1 执行；TestMesh 只绑定环境、Approved TestCase 和结果证据。" />
         <Field title="项目 *"><Select value={projectId || undefined} onChange={(value) => { const selected = projects.find((item) => item.id === value); setProjectId(value); setEnvironmentId(selected?.defaultApiEnvironmentId || selected?.environments[0]?.id || ""); }} options={projects.map((item) => ({ value: item.id, label: item.name }))} /></Field>
         <Field title="测试环境 *"><Select value={environmentId || undefined} placeholder="请先在项目配置中添加环境" onChange={setEnvironmentId} options={(project?.environments ?? []).map((item) => ({ value: item.id, label: `${item.name} · ${item.baseUrl}` }))} /></Field>
         <Field title="Approved TestCase 版本 *"><Select value={versionId || undefined} onChange={(value) => { setVersionId(value); setTestCaseIds([]); }} options={versions.map((item) => ({ value: item.id, label: `v${item.version} · ${item.testCases.length} 条` }))} /></Field>
         <Field title="关联 Approved TestCase *"><Select mode="multiple" value={testCaseIds} onChange={setTestCaseIds} placeholder="选择该场景实际验证的用例" options={(version?.testCases ?? []).map((item) => ({ value: item.id, label: `${item.id} · ${item.title}` }))} /></Field>
-        <Dragger accept=".hurl" maxCount={1} fileList={file ? [file] : []} beforeUpload={() => false} onChange={({ fileList }) => setFile(fileList[0])} onRemove={() => { setFile(undefined); return true; }}><p className="ant-upload-drag-icon"><CloudUploadOutlined /></p><p className="ant-upload-text">选择 .hurl 业务场景文件 *</p><p className="ant-upload-hint">请求地址必须以 {"{{baseUrl}}"} 开头；Token 使用 {"{{token}}"}</p></Dragger>
-        <Button block type="primary" loading={saving} onClick={() => void saveSuite()}>保存场景集</Button>
+        <Alert type="info" showIcon message="目标流程" description="Approved TestCase + 完整 OpenAPI → AI 生成 Hurl 候选 → 人工修正 → Hurl 校验 → 批准后执行。执行页不再上传 .hurl 文件。" />
+        <ScriptCandidateScaffold kind="api" />
       </Space>
     </Card></Col>
     <Col xs={24} xl={15}><Space direction="vertical" size={16} className="api-main-stack">
       {error && <Alert type="error" showIcon message="流程已停止" description={error} />}
       <Card title={<Space><PlayCircleOutlined />执行已审核场景</Space>}><Space direction="vertical" size={14} className="api-main-stack">
-        <Field title="场景集 *"><Select value={suiteId || undefined} placeholder="请先导入 .hurl 场景" onChange={(value) => {
+        <Field title="已审核场景集 *"><Select value={suiteId || undefined} placeholder="等待 AI 生成并人工批准 Hurl 场景" onChange={(value) => {
           const selected = suites.find((item) => item.id === value);
           setSuiteId(value);
           setRun(runs.find((item) => item.suiteId === value));
@@ -145,7 +120,7 @@ export default function ApiScenarioTesting() {
         <Button block size="large" type="primary" icon={<PlayCircleOutlined />} disabled={!suiteId} loading={running} onClick={() => void execute()}>运行 Hurl 业务场景</Button>
         <Text type="secondary">Hurl 8.0.1 · chained requests / captures / asserts · JUnit evidence · zero retry</Text>
       </Space></Card>
-      {run ? <Card title="业务场景 TestRun"><Field title="运行历史"><Select value={run.id} onChange={(value) => setRun(suiteRuns.find((item) => item.id === value))} options={suiteRuns.map((item) => ({ value: item.id, label: `${new Date(item.startedAt).toLocaleString("zh-CN")} · ${item.status} · ${item.passed}/${item.passed + item.failed}` }))} /></Field><Flex justify="space-between"><Tag color={run.status === "passed" ? "green" : "red"}>{run.status === "passed" ? "通过" : "失败"}</Tag><Text type="secondary">{run.targetBaseUrl}</Text></Flex><Row gutter={12} className="metric-row"><Col span={12}><Statistic title="通过" value={run.passed} /></Col><Col span={12}><Statistic title="失败" value={run.failed} /></Col></Row><List dataSource={run.items} renderItem={(item) => <List.Item><Card size="small" className="api-operation-card"><Flex justify="space-between"><Text strong>{item.name}</Text><Tag color={item.status === "passed" ? "green" : "red"}>{item.status}</Tag></Flex>{item.detail && <pre>{item.detail}</pre>}</Card></List.Item>} /></Card> : <Empty description="执行后展示 Hurl JUnit 证据" image={Empty.PRESENTED_IMAGE_SIMPLE} />}
+      {run ? <Card title="业务场景 TestRun"><Field title="运行历史"><Select value={run.id} onChange={(value) => setRun(suiteRuns.find((item) => item.id === value))} options={suiteRuns.map((item) => ({ value: item.id, label: `${new Date(item.startedAt).toLocaleString("zh-CN")} · ${item.status} · ${item.passed}/${item.passed + item.failed}` }))} /></Field><Flex justify="space-between"><Tag color={run.status === "passed" ? "green" : "red"}>{run.status === "passed" ? "通过" : "失败"}</Tag><Text type="secondary">{run.targetBaseUrl}</Text></Flex><Row gutter={12} className="metric-row"><Col span={12}><Statistic title="通过" value={run.passed} /></Col><Col span={12}><Statistic title="失败" value={run.failed} /></Col></Row><List dataSource={run.items} renderItem={(item) => <List.Item><Card size="small" className="api-operation-card"><Flex justify="space-between"><Text strong>{item.name}</Text><Tag color={item.status === "passed" ? "green" : "red"}>{item.status}</Tag></Flex>{item.detail && <pre>{item.detail}</pre>}</Card></List.Item>} />{(run.status === "failed" || run.status === "error") && <ExecutionDiagnosis runKind="api_scenario" runId={run.id} />}</Card> : <Empty description="执行后展示 Hurl JUnit 证据" image={Empty.PRESENTED_IMAGE_SIMPLE} />}
     </Space></Col>
   </Row></div>;
 }

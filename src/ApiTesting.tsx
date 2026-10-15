@@ -1,7 +1,5 @@
 import {
-  ApiOutlined,
   CheckCircleOutlined,
-  CloudUploadOutlined,
   LinkOutlined,
   PlayCircleOutlined,
   SafetyCertificateOutlined,
@@ -24,11 +22,10 @@ import {
   Tabs,
   Tag,
   Typography,
-  Upload,
-  type UploadFile,
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import ApiScenarioTesting from "./ApiScenarioTesting";
+import ExecutionDiagnosis from "./ExecutionDiagnosis";
 import type {
   ApprovedTestCaseVersionOption,
   OpenApiSpecRecord,
@@ -38,7 +35,6 @@ import type {
 } from "./types";
 
 const { Title, Text } = Typography;
-const { Dragger } = Upload;
 
 function methodColor(method: string): string {
   return ({ GET: "green", POST: "blue", PUT: "gold", PATCH: "purple", DELETE: "red" } as Record<string, string>)[
@@ -98,7 +94,6 @@ function FailureDetails({ run }: { run: TestRunRecord }) {
 
 function ContractApiTesting() {
   const { message } = AntdApp.useApp();
-  const [specFile, setSpecFile] = useState<UploadFile>();
   const [spec, setSpec] = useState<OpenApiSpecRecord>();
   const [specs, setSpecs] = useState<OpenApiSpecRecord[]>([]);
   const [approvedVersions, setApprovedVersions] = useState<ApprovedTestCaseVersionOption[]>([]);
@@ -110,7 +105,6 @@ function ContractApiTesting() {
   const [token, setToken] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [importing, setImporting] = useState(false);
   const [running, setRunning] = useState(false);
   const [run, setRun] = useState<TestRunRecord>();
   const [runs, setRuns] = useState<TestRunRecord[]>([]);
@@ -172,37 +166,6 @@ function ContractApiTesting() {
     [runs, spec?.id],
   );
 
-  async function importSpec() {
-    const file = specFile?.originFileObj;
-    if (!file || !approvedVersionId || !projectId || !environmentId) {
-      message.warning(!projectId || !environmentId ? "请先选择项目和测试环境" : !approvedVersionId ? "请先选择 Approved TestCase 版本" : "请选择 OpenAPI JSON/YAML 文件");
-      return;
-    }
-    setImporting(true);
-    setError(undefined);
-    setRun(undefined);
-    try {
-      const form = new FormData();
-      form.append("spec", file, specFile.name);
-      form.append("approvedVersionId", approvedVersionId);
-      form.append("projectId", projectId);
-      form.append("environmentId", environmentId);
-      const response = await fetch("/api/api-automation/openapi", { method: "POST", body: form });
-      const body = (await response.json()) as OpenApiSpecRecord | { error?: string };
-      if (!response.ok) throw new Error("error" in body && body.error ? body.error : "OpenAPI 导入失败");
-      const imported = body as OpenApiSpecRecord;
-      setSpec(imported);
-      setSpecs((current) => [imported, ...current]);
-      message.success("OpenAPI 已导入，请关联需要执行的 Approved TestCase");
-    } catch (caught) {
-      const detail = caught instanceof Error ? caught.message : "OpenAPI 导入失败";
-      setError(detail);
-      message.error("OpenAPI 导入失败，流程已停止");
-    } finally {
-      setImporting(false);
-    }
-  }
-
   async function updateLinks(
     testCase: TestCaseRecord,
     ids: string[],
@@ -232,7 +195,7 @@ function ContractApiTesting() {
 
   async function executeRun() {
     if (!spec) {
-      message.warning("请先选择项目环境并导入 OpenAPI");
+      message.warning("当前项目尚未发现可执行的 OpenAPI 契约");
       return;
     }
     if (mappedCount === 0) {
@@ -277,13 +240,13 @@ function ContractApiTesting() {
     <div className="api-testing-page">
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={9}>
-          <Card className="api-config-card" title={<Space><CloudUploadOutlined />导入与运行</Space>}>
+          <Card className="api-config-card" title="契约发现与运行">
             <div className="api-field">
-              <Text strong>已保存的 OpenAPI</Text>
+              <Text strong>项目中已发现的 OpenAPI</Text>
               <Select
                 allowClear
                 value={spec?.id}
-                placeholder="选择历史契约，或清空后导入新契约"
+                placeholder="等待从项目知识库或契约源发现 OpenAPI"
                 onChange={(value) => {
                   const selected = specs.find((item) => item.id === value);
                   setSpec(selected);
@@ -299,7 +262,7 @@ function ContractApiTesting() {
                   label: `${item.name} · ${item.filename}`,
                 }))}
               />
-              <Text type="secondary">刷新页面后会恢复最近契约、映射和 TestRun；清空选择即可导入新的契约。</Text>
+              <Text type="secondary">执行页不再上传 API 文档；这里只选择项目契约源中已发现并保留完整原文件、哈希和版本的 OpenAPI。</Text>
             </div>
             <div className="api-field">
               <Text strong>项目</Text>
@@ -342,24 +305,7 @@ function ContractApiTesting() {
               />
               <Text type="secondary">只允许不可覆盖的 Approved 版本进入自动化；RAG 不是执行前置条件。</Text>
             </div>
-            <Dragger
-              accept=".json,.yaml,.yml"
-              maxCount={1}
-              fileList={specFile ? [specFile] : []}
-              beforeUpload={() => false}
-              onChange={({ fileList }) => setSpecFile(fileList[0])}
-              onRemove={() => {
-                setSpecFile(undefined);
-                return true;
-              }}
-            >
-              <p className="ant-upload-drag-icon"><ApiOutlined /></p>
-              <p className="ant-upload-text">选择 OpenAPI JSON/YAML</p>
-              <p className="ant-upload-hint">导入后识别 operation，再与批准用例建立人工映射</p>
-            </Dragger>
-            <Button block type="primary" onClick={() => void importSpec()} loading={importing} className="api-import-button">
-              导入 OpenAPI
-            </Button>
+            <Alert type="warning" showIcon message="契约自动发现仍在搭架" description="后续从项目知识库定位 API 文档，再读取完整原始 OpenAPI 进行 Schema 校验。当前不会用 RAG 分块拼接可执行契约；已有历史契约仍可继续验证执行链路。" />
 
             {environment && <Alert type="success" showIcon message={`${project?.name} / ${environment.name}`} description={`${environment.baseUrl} · ${environment.headers.length} 条公共 Header`} />}
             <div className="api-field">
@@ -406,7 +352,7 @@ function ContractApiTesting() {
 
             <Card title={<Space><LinkOutlined />Approved TestCase 与 API operation 映射</Space>}>
               {!spec ? (
-                <Empty description="导入 OpenAPI 后显示 API 测试定义" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                <Empty description="项目中尚未发现可执行 OpenAPI 契约" image={Empty.PRESENTED_IMAGE_SIMPLE} />
               ) : (
                 <>
                   <Flex justify="space-between" align="center" gap={12} wrap className="api-spec-heading">
@@ -493,6 +439,7 @@ function ContractApiTesting() {
                   <Col xs={8}><Statistic title="失败" value={run.failed} /></Col>
                 </Row>
                 <FailureDetails run={run} />
+                {(run.status === "failed" || run.status === "error") && <ExecutionDiagnosis runKind="api_schema" runId={run.id} />}
               </Card>
             )}
           </Space>
