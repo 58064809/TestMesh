@@ -1,5 +1,9 @@
 # TestMesh Roadmap
 
+## 2026-11-17 KR02 项目知识混合检索
+
+用户批准继续复用成熟框架补齐 TestMesh RAG。现有 Docling、PostgreSQL、OpenAI Embedding、Qdrant、Deep Agents 和 Phoenix 架构保持不变；Qdrant 升级到 1.20.1，并以 multilingual BM25 + Dense + 原生 RRF 作为唯一检索路径。模型生成只检索当前项目显式绑定的已索引文档。LlamaIndex/Haystack/Ragas 因会形成平行工作流或评测面而不引入。真实本机升级、索引与混合查询已通过；下一步先建立检索标注 Dataset，再以 Recall@K/MRR/nDCG 决定是否需要重排。详见 `docs/PHASES/KR02.md`。
+
 ## 2026-11-12 AI 应用测试 Dataset 设计
 
 AIAT07 将 AI 应用测试页面按 Dataset 设计与样本、Evaluator 校准、Experiment 分步展示。Dataset Specification 从 Approved AI TestCase 和 TestCondition 派生，真实样本经人工审核后冻结并同步 Phoenix。详见 `docs/PHASES/AIAT07.md`。

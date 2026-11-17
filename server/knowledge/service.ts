@@ -64,10 +64,10 @@ export class KnowledgeService {
     }
   }
 
-  async search(query: string, apiKey: string, limit = 6): Promise<KnowledgeSearchHit[]> {
+  async search(query: string, apiKey: string, limit = 6, documentIds: string[] = []): Promise<KnowledgeSearchHit[]> {
     const indexed = (await this.store.list()).some((item) => item.status === "indexed");
     if (!indexed) return [];
     const embeddings = new OpenAIEmbeddings({ apiKey, model: KNOWLEDGE_EMBEDDING_MODEL });
-    return this.index.search(await embeddings.embedQuery(query), limit);
+    return this.index.search(query, await embeddings.embedQuery(query), limit, documentIds);
   }
 }

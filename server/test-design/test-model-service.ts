@@ -3,6 +3,7 @@ import type { DocumentParser } from "../document-parsing/docling.js";
 import type { RequirementAnalysisPostgresStore } from "../requirement-analysis/postgres-store.js";
 import { MODEL } from "../requirement-analysis/config.js";
 import type { KnowledgeService } from "../knowledge/service.js";
+import type { ProjectConfigPostgresStore } from "../project-config/postgres-store.js";
 import { resolvePhoenixTraceUrl } from "../observability/phoenix.js";
 import { createOpenAITestDesignModel } from "./agent.js";
 import { BaselineSnapshotSchema } from "./schema.js";
@@ -16,9 +17,10 @@ export class TestModelService {
     private readonly store: TestModelPostgresStore,
     private readonly documentParser: DocumentParser,
     private readonly knowledgeService: KnowledgeService,
+    private readonly projectStore: ProjectConfigPostgresStore,
   ) {}
 
-  async generate(input: { baselineId: string; apiKey: string; requestedBy?: string }) {
+  async generate(input: { baselineId: string; projectId?: string; apiKey: string; requestedBy?: string }) {
     const { record: baselineRecord, snapshot, file } = await this.requirementStore.getBaseline(input.baselineId);
     const baseline = BaselineSnapshotSchema.parse(snapshot);
     const parsedPrd = await this.documentParser.parse({
@@ -27,7 +29,11 @@ export class TestModelService {
       bytes: file,
     });
     if (!parsedPrd.markdown.trim()) throw new Error("Docling 未返回获批 PRD 正文，测试建模已停止");
-    const hasKnowledge = (await this.knowledgeService.list()).some((item) => item.status === "indexed");
+    const boundDocumentIds = input.projectId
+      ? (await this.projectStore.listKnowledgeBindings(input.projectId))
+        .filter((item) => item.documentStatus === "indexed")
+        .map((item) => item.documentId)
+      : [];
     let candidate: Awaited<ReturnType<typeof runTestModelAgent>>;
     try {
       candidate = await runTestModelAgent({
@@ -36,7 +42,9 @@ export class TestModelService {
         prdMarkdown: parsedPrd.markdown,
         model: createOpenAITestDesignModel(input.apiKey),
         requestedBy: input.requestedBy,
-        knowledgeSearch: hasKnowledge ? (query) => this.knowledgeService.search(query, input.apiKey) : undefined,
+        knowledgeSearch: boundDocumentIds.length > 0
+          ? (query) => this.knowledgeService.search(query, input.apiKey, 6, boundDocumentIds)
+          : undefined,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "未知错误";

@@ -11,8 +11,9 @@ async function readJson<T>(response: Response): Promise<T> {
   return payload;
 }
 
-export default function TestModeling({ baselineId, value, onChange, simplified = false, simulationReference = false }: {
+export default function TestModeling({ baselineId, projectId, value, onChange, simplified = false, simulationReference = false }: {
   baselineId?: string;
+  projectId?: string;
   value?: string;
   onChange: (approvedVersionId?: string) => void;
   simplified?: boolean;
@@ -67,7 +68,7 @@ export default function TestModeling({ baselineId, value, onChange, simplified =
     try {
       const result = await readJson<{ record: TestModelRecord }>(await fetch("/api/test-models", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baselineId }),
+        body: JSON.stringify({ baselineId, ...(projectId ? { projectId } : {}) }),
       }));
       message.success(simplified ? "测试模型已生成，请核对后批准" : "测试模型候选已建立，请先人工修正并批准，再生成 TestCase");
       await refresh();

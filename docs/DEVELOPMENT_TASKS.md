@@ -183,6 +183,16 @@ DI01 已完成，下一阶段进入 TD01。
 | FT01-03 | 选择日志/数据库/代码检索成熟能力 | 推荐 SkyWalking MCP、DBHub/Bytebase MCP、只读 Git/GitHub/Sourcegraph MCP；不自研检索基础设施 | 已完成，等待方案评审 |
 | FT01-04 | 最小闭环 | 诊断已内嵌 Schemathesis/Hurl/Playwright 失败结果；自动追溯 Approved TestCase、断言和运行证据，不再手填缺陷现象 | FT01-A 已按主链路重构；重启后进入 SkyWalking 受控全链路验收 |
 
+## KR02 — 项目知识混合检索
+
+| 任务 | 内容 | 验收结果 | 状态 |
+| --- | --- | --- | --- |
+| KR02-01 | 评审成熟 RAG 框架与现有架构重叠 | 保留 LangChain/Deep Agents + Docling + Qdrant + Phoenix 单一路径，不引入 LlamaIndex/Haystack/Ragas 平行运行时 | 已完成 |
+| KR02-02 | 接入 Qdrant 原生 Hybrid Search | 1.20.1 multilingual BM25 + Dense + RRF，原集合无损升级并完成真实查询 | 已完成 |
+| KR02-03 | 项目知识隔离 | 检索只允许当前项目显式绑定且已索引的 document_id | 已完成 |
+| KR02-04 | 检索质量基准 | 在 Phoenix 建立带相关 chunk ID 标注的 Dataset，统计 Recall@K、MRR、nDCG 并比较 Dense/BM25/Hybrid | 待实施 |
+| KR02-05 | 数据驱动重排选型 | 仅在 KR02-04 证明 Hybrid 排序仍不足时评审 Qdrant 多阶段检索或成熟 Reranker | 等待评测结论 |
+
 ## 本轮排除项
 
 - APP 自动化的新开发。

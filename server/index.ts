@@ -96,7 +96,7 @@ const qualityManagementStore = analysisResources.qualityManagementStore;
 const requirementAnalysisService = new RequirementAnalysisService(analysisResources);
 const documentParser = createDoclingClientFromEnvironment();
 const knowledgeService = new KnowledgeService(knowledgeStore, documentParser, new QdrantKnowledgeIndex());
-const testModelService = new TestModelService(requirementAnalysisStore, testModelStore, documentParser, knowledgeService);
+const testModelService = new TestModelService(requirementAnalysisStore, testModelStore, documentParser, knowledgeService, projectConfigStore);
 const testDesignService = new TestDesignService(requirementAnalysisStore, testDesignStore, documentParser, testModelStore, testConditionStore);
 const aiDatasetExportService = new AiDatasetExportService(testDesignStore, aiQualityStore);
 const aiExperimentReadinessService = new AiExperimentReadinessService(testDesignStore, aiQualityStore);
@@ -198,6 +198,7 @@ const TestDesignRequestSchema = z.object({
 
 const TestModelRequestSchema = z.object({
   baselineId: z.string().trim().min(1),
+  projectId: z.string().trim().optional(),
   requestedBy: z.string().trim().default(""),
 }).strict();
 
@@ -212,6 +213,7 @@ const TestConditionCreateSchema = z.object({ baselineId: z.string().trim().min(1
 const TestConditionApprovalSchema = z.object({ approvedBy: z.string().trim().min(1) }).strict();
 
 const KnowledgeSearchSchema = z.object({
+  projectId: z.string().trim().min(1),
   query: z.string().trim().min(2),
   limit: z.number().int().min(1).max(10).default(6),
 }).strict();
@@ -636,7 +638,12 @@ app.post("/api/knowledge-search", async (request, response) => {
     if (!parsed.success) throw new Error("请输入至少 2 个字符的知识检索问题");
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error("服务端未配置 OPENAI_API_KEY，知识检索已停止");
-    response.json(await knowledgeService.search(parsed.data.query, apiKey, parsed.data.limit));
+    const documentIds = (await projectConfigStore.listKnowledgeBindings(parsed.data.projectId))
+      .filter((item) => item.documentStatus === "indexed")
+      .map((item) => item.documentId);
+    response.json(documentIds.length > 0
+      ? await knowledgeService.search(parsed.data.query, apiKey, parsed.data.limit, documentIds)
+      : []);
   } catch (error) {
     response.status(422).json({ error: error instanceof Error ? error.message : "项目知识检索失败" });
   }

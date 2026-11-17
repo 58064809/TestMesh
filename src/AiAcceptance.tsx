@@ -206,7 +206,7 @@ export default function AiAcceptance() {
 
       {step === "model" && <section>
         <Alert type="info" showIcon message="先把需求基线转换为测试模型" description="这里分别建立 M-01～M-04 四个行为模型，并补充风险、AI 评测对象和覆盖目标。模型生成使用独立版本化 Prompt；批准动作本身不调用模型。" style={{ marginBottom: 16 }} />
-        <TestModeling baselineId={baselineId} value={approvedTestModelVersionId} onChange={setApprovedTestModelVersionId} simplified simulationReference={isSimulation} />
+        <TestModeling baselineId={baselineId} projectId={projectId} value={approvedTestModelVersionId} onChange={setApprovedTestModelVersionId} simplified simulationReference={isSimulation} />
         <Flex justify="flex-end"><Button type="primary" disabled={!approvedTestModelVersionId} onClick={next}>下一步：建立测试条件</Button></Flex>
       </section>}
 

@@ -22,6 +22,8 @@ Project + Release
 
 TestMesh 负责质量计划、业务 ID、关系、人工决策与证据索引；Docling、Deep Agents、Cucumber、Schemathesis、Hurl、Playwright、Phoenix 和 OPA 继续各自承担成熟能力。统一质量资产模型是关系层，不复制 Phoenix Trace/Eval、Runner 结果或外部测试管理模型。
 
+项目知识检索复用 Qdrant 1.20 的成熟检索能力：Docling 或结构化文本分块后写入 Dense 向量和原始 `text` payload，Qdrant 使用 multilingual BM25 全文索引与 Dense 查询原生 RRF 融合。PostgreSQL 保存原文件、状态和项目绑定，查询必须按项目绑定的 `document_id` 过滤；TestMesh 不实现 BM25、分词、融合或独立 RAG Pipeline。
+
 当前唯一 Agent Harness 是 Deep Agents `createDeepAgent`，人工中断/恢复复用 LangGraph Functional API 和 PostgresSaver；下方早期 `createAgent`、Stage Profile 和自研 Completion Gate 描述仅作历史，不得恢复为运行路径。
 
 ## 架构原则
