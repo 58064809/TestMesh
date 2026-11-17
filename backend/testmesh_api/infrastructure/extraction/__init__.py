@@ -1,0 +1,1 @@
+"""Response extraction adapters."""

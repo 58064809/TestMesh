@@ -40,6 +40,17 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    const reviewMatch = /^\/returns\/([^/]+)\/review$/.exec(request.url ?? "");
+    if (request.method === "GET" && reviewMatch) {
+      const item = returns.get(decodeURIComponent(reviewMatch[1]));
+      if (!item) {
+        json(response, 404, { code: "RETURN_NOT_FOUND" });
+        return;
+      }
+      json(response, 200, { returnId: item.id, queue: "manual_review", status: item.status });
+      return;
+    }
+
     const match = /^\/returns\/([^/]+)$/.exec(request.url ?? "");
     if (request.method === "GET" && match) {
       const item = returns.get(decodeURIComponent(match[1]));

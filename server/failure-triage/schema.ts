@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const FailureRunKindSchema = z.enum(["api_schema", "api_scenario", "ui"]);
+export const FailureRunKindSchema = z.enum(["api_schema", "api_scenario", "fastapi_yaml", "ui"]);
 export type FailureRunKind = z.infer<typeof FailureRunKindSchema>;
 
 export const FailureDiagnosisRequestSchema = z.object({

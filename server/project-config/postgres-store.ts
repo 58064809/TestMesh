@@ -1,6 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
-import type { ProjectAutomationConfigInput, ProjectEnvironmentInput, ProjectInput } from "./schema.js";
+import type { ProjectAutomationConfigInput, ProjectEnvironmentInput, ProjectInput, ProjectKnowledgeBindingInput } from "./schema.js";
+
+export interface ProjectKnowledgeBindingRecord extends ProjectKnowledgeBindingInput {
+  id: string;
+  projectId: string;
+  filename: string;
+  mimeType: string;
+  sha256: string;
+  documentStatus: string;
+  chunkCount: number;
+  createdAt: string;
+}
 
 export interface ProjectEnvironmentRecord extends ProjectEnvironmentInput {
   id: string;
@@ -46,6 +57,7 @@ export class ProjectConfigPostgresStore {
         name TEXT NOT NULL,
         base_url TEXT NOT NULL,
         headers_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+        variables_json JSONB NOT NULL DEFAULT '[]'::jsonb,
         config_provider TEXT NOT NULL DEFAULT 'testmesh_non_secret',
         infisical_environment_slug TEXT NOT NULL DEFAULT '',
         infisical_secret_path TEXT NOT NULL DEFAULT '/',
@@ -53,10 +65,20 @@ export class ProjectConfigPostgresStore {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         UNIQUE(project_id, name)
       );
+      CREATE TABLE IF NOT EXISTS ${this.schema}.project_knowledge_bindings (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES ${this.schema}.projects(id) ON DELETE CASCADE,
+        document_id TEXT NOT NULL REFERENCES ${this.schema}.knowledge_documents(id) ON DELETE RESTRICT,
+        role TEXT NOT NULL CHECK (role IN ('openapi','agent_contract','business_rules','test_data')),
+        bound_by TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(project_id, document_id, role)
+      );
     `);
     await this.pool.query(`ALTER TABLE ${this.schema}.projects ADD COLUMN IF NOT EXISTS default_api_environment_id TEXT NOT NULL DEFAULT ''`);
     await this.pool.query(`ALTER TABLE ${this.schema}.projects ADD COLUMN IF NOT EXISTS default_ui_environment_id TEXT NOT NULL DEFAULT ''`);
     await this.pool.query(`ALTER TABLE ${this.schema}.projects ADD COLUMN IF NOT EXISTS ui_repository_path TEXT NOT NULL DEFAULT ''`);
+    await this.pool.query(`ALTER TABLE ${this.schema}.project_environments ADD COLUMN IF NOT EXISTS variables_json JSONB NOT NULL DEFAULT '[]'::jsonb`);
   }
 
   async listProjects(): Promise<ProjectRecord[]> {
@@ -66,7 +88,7 @@ export class ProjectConfigPostgresStore {
              p.created_at, p.updated_at,
              COALESCE(json_agg(json_build_object(
                'id', e.id, 'projectId', e.project_id, 'name', e.name,
-               'baseUrl', e.base_url, 'headers', e.headers_json,
+               'baseUrl', e.base_url, 'headers', e.headers_json, 'variables', e.variables_json,
                'configProvider', e.config_provider,
                'infisicalEnvironmentSlug', e.infisical_environment_slug,
                'infisicalSecretPath', e.infisical_secret_path,
@@ -134,9 +156,9 @@ export class ProjectConfigPostgresStore {
     try {
       await this.pool.query(
         `INSERT INTO ${this.schema}.project_environments
-         (id, project_id, name, base_url, headers_json, config_provider, infisical_environment_slug, infisical_secret_path)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)`,
-        [id, projectId, input.name, input.baseUrl, JSON.stringify(input.headers), "testmesh_non_secret", "", "/"],
+         (id, project_id, name, base_url, headers_json, variables_json, config_provider, infisical_environment_slug, infisical_secret_path)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9)`,
+        [id, projectId, input.name, input.baseUrl, JSON.stringify(input.headers), JSON.stringify(input.variables), "testmesh_non_secret", "", "/"],
       );
     } catch (error) {
       if (isUniqueViolation(error)) throw new Error(`环境名称 ${input.name} 已存在`, { cause: error });
@@ -149,10 +171,10 @@ export class ProjectConfigPostgresStore {
     try {
       const result = await this.pool.query(
         `UPDATE ${this.schema}.project_environments
-         SET name = $3, base_url = $4, headers_json = $5::jsonb, config_provider = $6,
-             infisical_environment_slug = $7, infisical_secret_path = $8, updated_at = NOW()
+         SET name = $3, base_url = $4, headers_json = $5::jsonb, variables_json = $6::jsonb, config_provider = $7,
+             infisical_environment_slug = $8, infisical_secret_path = $9, updated_at = NOW()
          WHERE project_id = $1 AND id = $2`,
-        [projectId, id, input.name, input.baseUrl, JSON.stringify(input.headers),
+        [projectId, id, input.name, input.baseUrl, JSON.stringify(input.headers), JSON.stringify(input.variables),
           "testmesh_non_secret", "", "/"],
       );
       if (result.rowCount === 0) throw new Error(`环境 ${id} 不存在`);
@@ -165,13 +187,61 @@ export class ProjectConfigPostgresStore {
 
   async getEnvironment(projectId: string, id: string): Promise<ProjectEnvironmentRecord> {
     const result = await this.pool.query(
-      `SELECT id, project_id, name, base_url, headers_json, config_provider,
+      `SELECT id, project_id, name, base_url, headers_json, variables_json, config_provider,
               infisical_environment_slug, infisical_secret_path, created_at, updated_at
        FROM ${this.schema}.project_environments WHERE project_id = $1 AND id = $2`,
       [projectId, id],
     );
     if (!result.rows[0]) throw new Error(`环境 ${id} 不存在或不属于所选项目`);
     return mapEnvironment(result.rows[0]);
+  }
+
+  async listKnowledgeBindings(projectId: string): Promise<ProjectKnowledgeBindingRecord[]> {
+    await this.getProject(projectId);
+    const result = await this.pool.query(`
+      SELECT b.id, b.project_id, b.document_id, b.role, b.bound_by, b.created_at,
+             d.filename, d.mime_type, d.sha256, d.status, d.chunk_count
+      FROM ${this.schema}.project_knowledge_bindings b
+      JOIN ${this.schema}.knowledge_documents d ON d.id = b.document_id
+      WHERE b.project_id = $1 ORDER BY b.created_at DESC
+    `, [projectId]);
+    return result.rows.map((row) => ({
+      id: String(row.id), projectId: String(row.project_id), documentId: String(row.document_id),
+      role: row.role as ProjectKnowledgeBindingInput["role"], boundBy: String(row.bound_by),
+      filename: String(row.filename), mimeType: String(row.mime_type), sha256: String(row.sha256),
+      documentStatus: String(row.status), chunkCount: Number(row.chunk_count),
+      createdAt: new Date(String(row.created_at)).toISOString(),
+    }));
+  }
+
+  async bindKnowledge(projectId: string, input: ProjectKnowledgeBindingInput): Promise<ProjectKnowledgeBindingRecord> {
+    await this.getProject(projectId);
+    const document = await this.pool.query(
+      `SELECT status FROM ${this.schema}.knowledge_documents WHERE id = $1`, [input.documentId],
+    );
+    if (!document.rows[0]) throw new Error("知识文档不存在");
+    if (document.rows[0].status !== "indexed") throw new Error("只有已完成索引的知识文档可以绑定项目");
+    const id = randomUUID();
+    try {
+      await this.pool.query(
+        `INSERT INTO ${this.schema}.project_knowledge_bindings (id, project_id, document_id, role, bound_by)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [id, projectId, input.documentId, input.role, input.boundBy],
+      );
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new Error("该知识文档已按相同用途绑定到项目", { cause: error });
+      throw error;
+    }
+    const rows = await this.listKnowledgeBindings(projectId);
+    return rows.find((item) => item.id === id)!;
+  }
+
+  async unbindKnowledge(projectId: string, bindingId: string): Promise<void> {
+    const result = await this.pool.query(
+      `DELETE FROM ${this.schema}.project_knowledge_bindings WHERE id = $1 AND project_id = $2`,
+      [bindingId, projectId],
+    );
+    if (result.rowCount !== 1) throw new Error("项目知识绑定不存在");
   }
 }
 
@@ -196,6 +266,7 @@ function mapEnvironment(row: Record<string, unknown>): ProjectEnvironmentRecord 
     id: String(row.id), projectId: String(row.projectId ?? row.project_id), name: String(row.name),
     baseUrl: String(row.baseUrl ?? row.base_url),
     headers: Array.isArray(row.headers ?? row.headers_json) ? (row.headers ?? row.headers_json) as Array<{ name: string; value: string }> : [],
+    variables: Array.isArray(row.variables ?? row.variables_json) ? (row.variables ?? row.variables_json) as Array<{ name: string; value: string }> : [],
     configProvider: String(row.configProvider ?? row.config_provider) === "infisical" ? "infisical" : "testmesh_non_secret",
     infisicalEnvironmentSlug: String(row.infisicalEnvironmentSlug ?? row.infisical_environment_slug ?? ""),
     infisicalSecretPath: String(row.infisicalSecretPath ?? row.infisical_secret_path ?? "/"),

@@ -37,6 +37,15 @@ export interface PhoenixEvidence {
   experimentId: string;
   traceId: string;
   controlledBenchmark?: ControlledBenchmarkEvidence;
+  /** Phoenix is the source of truth; TestMesh only stores immutable business linkage. */
+  testCaseEvaluation?: {
+    approvedTestCaseVersionId: string;
+    datasetVersionId: string;
+    evaluatedTestCaseIds: string[];
+    evaluatorNames: string[];
+    status: "passed" | "failed";
+    completedAt: string;
+  };
 }
 
 export interface AiQualityProfile {

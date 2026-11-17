@@ -1,4 +1,7 @@
 node_modules/
+.venv/
+__pycache__/
+*.py[cod]
 dist/
 .env
 .env.*
@@ -10,6 +13,7 @@ tmp/
 integrations/**/target/
 .schemathesis/
 .hurl/
+.opa/
 test-results/
 playwright-report/
 *.log

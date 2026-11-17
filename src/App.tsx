@@ -7,7 +7,6 @@ import {
   SettingOutlined,
   DesktopOutlined,
   FileSearchOutlined,
-  ExperimentOutlined,
   FolderOpenOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -36,7 +35,6 @@ import {
   theme,
   type UploadFile,
 } from "antd";
-import TextArea from "antd/es/input/TextArea";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AnalysisResponse, RequirementAnalysis } from "./types";
 import ApiTesting from "./ApiTesting";
@@ -45,9 +43,9 @@ import AppTesting from "./AppTesting";
 import PerformanceTesting from "./PerformanceTesting";
 import SecurityTesting from "./SecurityTesting";
 import RequirementAnalysisView from "./RequirementAnalysisView";
-import AiQuality from "./AiQuality";
-import TestDesign from "./TestDesign";
-import ProjectConfig from "./ProjectConfig";
+import AiAcceptance from "./AiAcceptance";
+import QualityManagement from "./QualityManagement";
+import QualityOverview from "./QualityOverview";
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -57,9 +55,7 @@ const MAX_FILES = 6;
 const MAX_FILE_MB = 8;
 const ACCEPT = ".pdf,.txt,.md,.json,.xml,.html,.htm,.png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp,.docx,.odt,.pptx,.xlsx,.ods,.csv";
 
-type Message =
-  | { id: string; role: "user"; text: string }
-  | { id: string; role: "assistant"; analysis: AnalysisResponse };
+type AnalysisResult = { id: string; analysis: AnalysisResponse };
 
 type SavedAnalysis = {
   id: string;
@@ -155,11 +151,10 @@ function UploadPanel({
 function Workbench() {
   const { message: toast } = AntdApp.useApp();
   const [collapsed, setCollapsed] = useState(false);
-  const [activePage, setActivePage] = useState<"chat" | "test-design" | "quality" | "project-config" | "api" | "ui" | "app" | "performance" | "security">("chat");
-  const [prompt, setPrompt] = useState("帮我分析这个需求");
+  const [activePage, setActivePage] = useState<"overview" | "chat" | "acceptance" | "project-config" | "api" | "ui" | "app" | "performance" | "security">("overview");
   const [attachments, setAttachments] = useState<UploadFile[]>([]);
   const [knowledge, setKnowledge] = useState<UploadFile[]>([]);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [analyses, setAnalyses] = useState<AnalysisResult[]>([]);
   const [savedAnalyses, setSavedAnalyses] = useState<SavedAnalysis[]>([]);
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string>();
   const [openingAnalysisId, setOpeningAnalysisId] = useState<string>();
@@ -167,9 +162,21 @@ function Workbench() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
 
+  useEffect(() => {
+    const navigate = (event: Event) => {
+      const page = (event as CustomEvent<string>).detail;
+      const normalized = page === "test-design" || page === "quality" ? "acceptance" : page;
+      if (["overview", "chat", "acceptance", "project-config", "api", "ui", "app", "performance", "security"].includes(normalized)) {
+        setActivePage(normalized as typeof activePage);
+      }
+    };
+    window.addEventListener("testmesh:navigate", navigate);
+    return () => window.removeEventListener("testmesh:navigate", navigate);
+  }, []);
+
   const totalFiles = attachments.length + knowledge.length;
   const remaining = Math.max(0, MAX_FILES - totalFiles);
-  const lastResponse = [...messages].reverse().find((item) => item.role === "assistant");
+  const lastResponse = analyses.at(-1);
 
   const refreshSavedAnalyses = useCallback(async () => {
     const response = await fetch("/api/analyses", { cache: "no-store" });
@@ -188,7 +195,7 @@ function Workbench() {
 
   async function openSavedAnalysis(item: SavedAnalysis) {
     setSelectedAnalysisId(item.id);
-    setMessages([]);
+    setAnalyses([]);
     setError(undefined);
     setSavedAnalysisError(undefined);
     if (item.protocol === "incompatible") {
@@ -212,7 +219,7 @@ function Workbench() {
           traceUrl: item.traceUrl,
         } : undefined,
       };
-      setMessages([{ id: item.id, role: "assistant", analysis }]);
+      setAnalyses([{ id: item.id, analysis }]);
     } catch (caught) {
       setSavedAnalysisError(caught instanceof Error ? caught.message : "读取报告失败");
     } finally {
@@ -222,22 +229,17 @@ function Workbench() {
 
   const subtitle = useMemo(() => {
     if (loading) return "OpenAI 正在读取资料并生成结构化分析";
-    if (lastResponse?.role === "assistant") return `最近一次分析使用 ${lastResponse.analysis.model}`;
+    if (lastResponse) return `最近一次分析使用 ${lastResponse.analysis.model}`;
     return "上传 PRD 或截图，获得可追溯的需求分析";
   }, [lastResponse, loading]);
 
   async function submit() {
-    if (!prompt.trim()) {
-      toast.warning("请输入分析指令");
-      return;
-    }
     if (totalFiles === 0) {
       toast.warning("请至少上传一份 PRD、文档或图片");
       return;
     }
 
     const formData = new FormData();
-    formData.append("message", prompt.trim());
     for (const file of attachments) {
       const nativeFile = fileObject(file);
       if (nativeFile) formData.append("attachments", nativeFile, file.name);
@@ -247,11 +249,9 @@ function Workbench() {
       if (nativeFile) formData.append("knowledge", nativeFile, file.name);
     }
 
-    const userMessage: Message = { id: crypto.randomUUID(), role: "user", text: prompt.trim() };
     setSavedAnalysisError(undefined);
     setOpeningAnalysisId(undefined);
     setSelectedAnalysisId(undefined);
-    setMessages((current) => [...current, userMessage]);
     setLoading(true);
     setError(undefined);
 
@@ -262,9 +262,9 @@ function Workbench() {
         throw new Error("error" in body && body.error ? body.error : `请求失败（HTTP ${response.status}）`);
       }
       const analysis = body as AnalysisResponse;
-      setMessages((current) => [
+      setAnalyses((current) => [
         ...current,
-        { id: crypto.randomUUID(), role: "assistant", analysis },
+        { id: crypto.randomUUID(), analysis },
       ]);
       setSelectedAnalysisId(analysis.analysisId);
       void refreshSavedAnalyses().catch((caught) => setError(caught instanceof Error ? caught.message : "刷新已保存报告失败"));
@@ -299,7 +299,7 @@ function Workbench() {
             {!collapsed && (
               <div>
                 <div className="brand-name">TestMesh</div>
-                <div className="brand-caption">AI 测试工程平台</div>
+                <div className="brand-caption">AI 质量工程平台</div>
               </div>
             )}
           </div>
@@ -308,14 +308,13 @@ function Workbench() {
             mode="inline"
             selectedKeys={[activePage]}
             onClick={({ key }) => {
-              if (key === "chat" || key === "test-design" || key === "quality" || key === "project-config" || key === "api" || key === "ui" || key === "app" || key === "performance" || key === "security") setActivePage(key);
+              if (key === "overview" || key === "chat" || key === "acceptance" || key === "project-config" || key === "api" || key === "ui" || key === "app" || key === "performance" || key === "security") setActivePage(key);
             }}
             items={[
-              { key: "overview", icon: <BulbOutlined />, label: "工作台概览", disabled: true },
+              { key: "overview", icon: <BulbOutlined />, label: "质量报告" },
               { key: "chat", icon: <MessageOutlined />, label: "AI 需求分析" },
-              { key: "test-design", icon: <AuditOutlined />, label: "智能测试设计" },
-              { key: "quality", icon: <ExperimentOutlined />, label: "AI 质量评估" },
-              { key: "project-config", icon: <SettingOutlined />, label: "项目配置" },
+              { key: "acceptance", icon: <AuditOutlined />, label: "AI 应用验收" },
+              { key: "project-config", icon: <SettingOutlined />, label: "项目质量管理" },
               { key: "api", icon: <ApiOutlined />, label: "API 自动化" },
               { key: "ui", icon: <DesktopOutlined />, label: "UI 测试" },
               { key: "app", icon: <AndroidOutlined />, label: "APP 测试" },
@@ -327,12 +326,12 @@ function Workbench() {
             <div className="phase-card">
               <Flex justify="space-between" align="center">
                 <Text className="phase-label">当前阶段</Text>
-                <Tag color={activePage === "api" || activePage === "project-config" ? "processing" : "success"} bordered={false}>
-                  {activePage === "api" || activePage === "ui" || activePage === "project-config" ? "进行中" : "已完成"}
+                <Tag color={activePage === "api" || activePage === "acceptance" || activePage === "project-config" || activePage === "overview" ? "processing" : "success"} bordered={false}>
+                  {activePage === "api" || activePage === "ui" || activePage === "acceptance" || activePage === "project-config" || activePage === "overview" ? "进行中" : "已完成"}
                 </Tag>
               </Flex>
-              <Text className="phase-title">{activePage === "project-config" ? "项目配置" : activePage === "api" ? "AT01 · API 自动化" : activePage === "ui" ? "AT02 · UI 自动化" : activePage === "test-design" ? "TD01 · 智能测试设计" : "RA01 · AI 需求分析"}</Text>
-              <Text className="phase-copy">{activePage === "project-config" ? "统一维护项目、API/UI 默认环境和 Playwright 仓库；敏感凭据不落库" : activePage === "api" ? "执行 API 测试；失败后基于断言和链路证据智能诊断" : activePage === "ui" ? "执行 Playwright 测试；失败后基于用例、Trace 和系统证据智能诊断" : activePage === "test-design" ? "72 条用例已人工通过并冻结为 Approved TestCase v1" : "单一需求分析入口：发现缺失、歧义与冲突，并提供可核对的原文证据"}</Text>
+              <Text className="phase-title">{activePage === "overview" ? "项目质量总览" : activePage === "project-config" ? "QM01 · 项目质量管理" : activePage === "acceptance" ? "AI 应用验收" : activePage === "api" ? "AT01 · API 自动化" : activePage === "ui" ? "AT02 · UI 自动化" : "RA01 · AI 需求分析"}</Text>
+              <Text className="phase-copy">{activePage === "overview" ? "集中查看发布结论、核心指标、证据缺口与历史归档报告" : activePage === "project-config" ? "以质量计划统筹质量资产、分层指标、正式发布准入和持续改进" : activePage === "acceptance" ? "从冻结需求到测试模型、测试条件、用例、Dataset、执行和结论" : activePage === "api" ? "执行 API 测试；失败后基于断言和链路证据智能诊断" : activePage === "ui" ? "执行 Playwright 测试；失败后基于用例、Trace 和系统证据智能诊断" : "单一需求分析入口：发现缺失、歧义与冲突，并提供可核对的原文证据"}</Text>
             </div>
           )}
         </Sider>
@@ -348,17 +347,17 @@ function Workbench() {
                 />
                 <div>
                   <Title level={4}>
-                    {activePage === "chat" ? "AI 需求分析" : activePage === "test-design" ? "智能测试设计" : activePage === "quality" ? "AI 质量评估" : activePage === "project-config" ? "项目配置" : activePage === "api" ? "API 自动化" : activePage === "ui" ? "UI 测试" : activePage === "app" ? "APP 测试" : activePage === "performance" ? "性能测试" : "安全测试"}
+                    {activePage === "overview" ? "质量报告" : activePage === "chat" ? "AI 需求分析" : activePage === "acceptance" ? "AI 应用验收" : activePage === "project-config" ? "项目质量管理" : activePage === "api" ? "API 自动化" : activePage === "ui" ? "UI 测试" : activePage === "app" ? "APP 测试" : activePage === "performance" ? "性能测试" : "安全测试"}
                   </Title>
                   <Text type="secondary">
-                    {activePage === "chat"
+                    {activePage === "overview"
+                      ? "发布结论、质量指标、证据缺口和历史报告的统一决策视图"
+                      : activePage === "chat"
                       ? subtitle
-                      : activePage === "test-design"
-                        ? "从获批需求基线生成风险、测试点与中文 Gherkin TestCase"
-                      : activePage === "quality"
-                        ? "用真实业务样本、人工标准与 Phoenix 实验证据验证 Agent 质量"
+                      : activePage === "acceptance"
+                        ? "按版本化 Schema 完成测试建模、条件、用例、Dataset 和执行验收"
                       : activePage === "project-config"
-                        ? "集中管理项目与测试环境，自动化模块只引用配置，不再重复填写"
+                        ? "用质量计划统一项目配置、质量资产、指标、发布准入与持续改进"
                       : activePage === "api"
                         ? "选择 Approved TestCase，执行契约生成测试或确定性业务 API 场景"
                         : activePage === "ui"
@@ -375,16 +374,16 @@ function Workbench() {
               </Space>
               <Space>
                 <Tag color="blue">
-                  {activePage === "chat"
+                  {activePage === "overview"
+                    ? "Quality Report + OPA"
+                    : activePage === "chat"
                     ? "LangGraph Harness"
-                    : activePage === "test-design"
-                      ? "Deep Agents + Cucumber"
-                    : activePage === "quality"
-                      ? "Phoenix Eval"
+                    : activePage === "acceptance"
+                      ? "Acceptance Flow"
                     : activePage === "project-config"
-                      ? "Infisical-ready"
+                      ? "Quality Plan + OPA"
                     : activePage === "api"
-                      ? "Schemathesis 4.29.3 + Hurl 8.0.1"
+                      ? "Schemathesis 4.29.3 + FastAPI YAML"
                       : activePage === "ui"
                           ? "Playwright 1.64.0"
                       : activePage === "app"
@@ -399,7 +398,9 @@ function Workbench() {
           </Header>
 
           <Content className={`app-content ${activePage === "chat" ? "app-content--fixed" : "app-content--scrollable"}`}>
-            {activePage === "chat" ? (
+            {activePage === "overview" ? (
+              <QualityOverview />
+            ) : activePage === "chat" ? (
               <div className="workspace-grid">
               <section className="chat-panel">
                 <div className="chat-feed">
@@ -431,7 +432,7 @@ function Workbench() {
                       description={savedAnalysisError}
                     />
                   )}
-                  {messages.length === 0 && (
+                  {analyses.length === 0 && (
                     <div className="welcome-state">
                       <div className="welcome-orbit">
                         <FileSearchOutlined />
@@ -449,21 +450,14 @@ function Workbench() {
                     </div>
                   )}
 
-                  {messages.map((item) =>
-                    item.role === "user" ? (
-                      <div className="message-row user-message" key={item.id}>
-                        <div className="message-bubble">{item.text}</div>
-                        <Avatar className="user-avatar">U</Avatar>
+                  {analyses.map((item) => (
+                    <div className="message-row assistant-message" key={item.id}>
+                      <Avatar className="ai-avatar">AI</Avatar>
+                      <div className="assistant-bubble">
+                        <AnalysisView response={item.analysis} onReviewSaved={refreshSavedAnalyses} />
                       </div>
-                    ) : (
-                      <div className="message-row assistant-message" key={item.id}>
-                        <Avatar className="ai-avatar">AI</Avatar>
-                        <div className="assistant-bubble">
-                          <AnalysisView response={item.analysis} onReviewSaved={refreshSavedAnalyses} />
-                        </div>
-                      </div>
-                    ),
-                  )}
+                    </div>
+                  ))}
 
                   {loading && (
                     <div className="message-row assistant-message">
@@ -503,20 +497,10 @@ function Workbench() {
                       ))}
                     </Space>
                   </div>
-                  <div className="composer">
-                    <TextArea
-                      value={prompt}
-                      onChange={(event) => setPrompt(event.target.value)}
-                      onPressEnter={(event) => {
-                        if (!event.shiftKey) {
-                          event.preventDefault();
-                          void submit();
-                        }
-                      }}
-                      autoSize={{ minRows: 2, maxRows: 6 }}
-                      placeholder="输入分析指令，例如：帮我分析这个需求"
-                      disabled={loading}
-                    />
+                  <div className="composer analysis-action">
+                    <Text type="secondary">
+                      使用固定需求分析协议检查功能边界、业务规则、异常路径、缺失、歧义与冲突。
+                    </Text>
                     <Button
                       type="primary"
                       size="large"
@@ -528,7 +512,7 @@ function Workbench() {
                     </Button>
                   </div>
                   <Text type="secondary" className="composer-hint">
-                    Enter 发送 · Shift + Enter 换行 · 单次最多 {MAX_FILES} 个文件
+                    单次最多 {MAX_FILES} 个文件 · 结论必须回链真实原文证据
                   </Text>
                 </div>
               </section>
@@ -540,8 +524,8 @@ function Workbench() {
                 </div>
 
                 <UploadPanel
-                  title="Chat Attachment"
-                  description="跟随当前对话的 PRD 与截图"
+                  title="需求原始资料"
+                  description="本次分析使用的 PRD 与截图"
                   icon={<PaperClipOutlined />}
                   files={attachments}
                   onChange={setAttachments}
@@ -575,12 +559,10 @@ function Workbench() {
                 </Card>
               </aside>
               </div>
-            ) : activePage === "test-design" ? (
-              <TestDesign />
-            ) : activePage === "quality" ? (
-              <AiQuality />
+            ) : activePage === "acceptance" ? (
+              <AiAcceptance />
             ) : activePage === "project-config" ? (
-              <ProjectConfig />
+              <QualityManagement />
             ) : activePage === "api" ? (
               <ApiTesting />
             ) : activePage === "ui" ? (

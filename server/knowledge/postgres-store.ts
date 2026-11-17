@@ -75,6 +75,12 @@ export class KnowledgePostgresStore {
     return result.rows[0] ? mapRow(result.rows[0]) : null;
   }
 
+  async getFile(id: string): Promise<{ record: KnowledgeDocumentRecord; bytes: Buffer }> {
+    const result = await this.pool.query(`SELECT * FROM ${this.schema}.knowledge_documents WHERE id = $1`, [id]);
+    if (!result.rows[0]) throw new Error("知识文档不存在");
+    return { record: mapRow(result.rows[0]), bytes: result.rows[0].file_bytes as Buffer };
+  }
+
   async delete(id: string): Promise<void> {
     const result = await this.pool.query(`DELETE FROM ${this.schema}.knowledge_documents WHERE id = $1`, [id]);
     if (result.rowCount !== 1) throw new Error("知识文档不存在");

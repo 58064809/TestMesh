@@ -1,0 +1,51 @@
+format: testmesh-api/v1
+name: 模拟智能导购三轮约束继承与商品真实性
+ai_application:
+  target_id: smart-shopping-simulated
+  target_version: fixture-v1
+  interaction: agent
+  session_id_variable: session_id
+  trace_id_variable: trace_id
+  require_trace: true
+  observability_standard: openinference
+  evaluation_provider: phoenix
+  evaluator_names: [shopping-slot-code, shopping-tool-code, shopping-groundedness-code]
+steps:
+  - kind: request
+    name: 首轮识别品类和数量
+    request:
+      method: POST
+      path: /agent/invoke
+      json: {message: "${dataset_input.conversation[0].content}"}
+    expected_status: 200
+    captures:
+      - {name: session_id, type: header, expression: x-session-id}
+      - {name: trace_id, type: header, expression: x-trace-id}
+    assertions:
+      - {type: jsonpath, expression: $.intent, operator: "==", expected: product_recommendation}
+      - {type: jsonpath, expression: $.slots.quantity, operator: "==", expected: 3}
+  - kind: request
+    name: 第二轮继承并增加预算
+    request:
+      method: POST
+      path: /agent/invoke
+      json: {message: "${dataset_input.conversation[1].content}", session_id: "${session_id}"}
+    expected_status: 200
+    assertions:
+      - {type: jsonpath, expression: $.slots.max_price, operator: "==", expected: 300}
+      - {type: jsonpath, expression: $.slots.quantity, operator: "==", expected: 3}
+  - kind: request
+    name: 第三轮继承全部约束并只推荐真实商品
+    request:
+      method: POST
+      path: /agent/invoke
+      json: {message: "${dataset_input.conversation[2].content}", session_id: "${session_id}"}
+    expected_status: 200
+    assertions:
+      - {type: jsonpath, expression: $.slots.weight_min, operator: "==", expected: 80}
+      - {type: jsonpath, expression: $.slots.weight_max, operator: "==", expected: 85}
+      - {type: jsonpath, expression: "$.tool_calls[0].arguments.filters.max_price", operator: "==", expected: 300}
+      - {type: jsonpath, expression: "$.tool_calls[0].arguments.filters.weight_min", operator: "==", expected: 80}
+      - {type: jsonpath, expression: "$.tool_calls[0].arguments.filters.weight_max", operator: "==", expected: 85}
+      - {type: jsonpath, expression: $.recommended_product_ids, operator: "==", expected: [P001, P002]}
+      - {type: jsonpath, expression: $.answer, operator: contains, expected: 只有2款}

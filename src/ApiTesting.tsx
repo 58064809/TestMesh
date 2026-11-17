@@ -455,7 +455,7 @@ export default function ApiTesting() {
       defaultActiveKey="contract"
       items={[
         { key: "contract", label: "契约生成测试 · Schemathesis", children: <ContractApiTesting /> },
-        { key: "scenario", label: "业务场景执行 · Hurl", children: <ApiScenarioTesting /> },
+        { key: "scenario", label: "业务场景执行 · FastAPI YAML", children: <ApiScenarioTesting /> },
       ]}
     />
   );

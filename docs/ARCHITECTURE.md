@@ -1,5 +1,29 @@
 # TestMesh 架构
 
+## 当前质量管理架构（2026-10-16，优先于下方历史描述）
+
+```text
+Project + Release
+  └─ Quality Plan（版本化、批准后冻结）
+       ├─ Requirement Baseline
+       ├─ Approved TestCase
+       │    ├─ 业务行为测试
+       │    └─ Testing for AI（oracle / evaluator / threshold）
+       ├─ API/UI TestRun
+       ├─ Phoenix AI Quality Profile / Dataset / Experiment / Trace / Eval
+       ├─ Layered Quality Metrics
+       └─ OPA/Rego Release Gate
+             ├─ allow
+             ├─ review → 有审计记录的风险接受
+             └─ deny → 修复并重新评估
+                    ↓
+             Improvement Action → 验证证据 → 下一轮计划
+```
+
+TestMesh 负责质量计划、业务 ID、关系、人工决策与证据索引；Docling、Deep Agents、Cucumber、Schemathesis、Hurl、Playwright、Phoenix 和 OPA 继续各自承担成熟能力。统一质量资产模型是关系层，不复制 Phoenix Trace/Eval、Runner 结果或外部测试管理模型。
+
+当前唯一 Agent Harness 是 Deep Agents `createDeepAgent`，人工中断/恢复复用 LangGraph Functional API 和 PostgresSaver；下方早期 `createAgent`、Stage Profile 和自研 Completion Gate 描述仅作历史，不得恢复为运行路径。
+
 ## 架构原则
 
 TestMesh 采用“统一工作台 + 薄领域层 + 成熟 Harness/Agent/测试引擎适配”的演进方式。2026-09-17 起先建设 H00 Harness Foundation，再迁移需求分析、测试设计和 API/UI 自动化。历史 P01–P06 保留为实现与验收记录，不再决定新主线顺序。

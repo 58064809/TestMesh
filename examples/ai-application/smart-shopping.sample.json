@@ -1,0 +1,23 @@
+{
+  "sample_id": "sim-shopping-three-turn-v1",
+  "data_class": "simulated",
+  "input": {
+    "conversation": [
+      { "role": "user", "content": "帮我推荐3款羽毛球拍" },
+      { "role": "user", "content": "300元以内" },
+      { "role": "user", "content": "要轻一点的，80到85克" }
+    ]
+  },
+  "expected": {
+    "intent": "product_recommendation",
+    "slots": { "category": "badminton_racket", "quantity": 3, "max_price": 300, "weight_min": 80, "weight_max": 85 },
+    "tool_name": "search_products",
+    "recommended_product_ids": ["P001", "P002"],
+    "answer_must_explain_only_two_products": true
+  },
+  "metadata": {
+    "fixture_version": "simulated-smart-shopping-v1",
+    "evaluation_subject": "target_application",
+    "evaluation_layers": ["agent_decision", "tool_execution", "business_outcome", "final_response"]
+  }
+}

@@ -221,7 +221,7 @@ export function buildSourceInput(message: string, sources: SourceFile[]): Source
   assertUniqueSources(sources);
   const content: SourceInputContent[] = [{
     type: "input_text",
-    text: [`用户请求：${message}`, "", "来源目录：", sourceCatalog(sources)].join("\n"),
+    text: [`固定分析任务：${message}`, "", "来源目录：", sourceCatalog(sources)].join("\n"),
   }];
 
   for (const source of sources) {
@@ -243,7 +243,7 @@ export function buildRequirementSourceContent(
   assertUniqueSources(sources);
   const blocks: RequirementSourceContentBlock[] = [{
     type: "text",
-    text: [`用户请求：${message}`, "", "来源目录：", sourceCatalog(sources)].join("\n"),
+    text: [`固定分析任务：${message}`, "", "来源目录：", sourceCatalog(sources)].join("\n"),
   }];
   for (const source of sources) {
     if (requiresDocumentParser(source.name) && source.parser !== "docling") {

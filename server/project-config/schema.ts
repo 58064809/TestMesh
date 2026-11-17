@@ -21,6 +21,21 @@ export const EnvironmentHeaderSchema = z.object({
   }
 });
 
+export const EnvironmentVariableSchema = z.object({
+  name: z.string().trim().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "变量名只能使用字母、数字和下划线，且不能以数字开头"),
+  value: z.string().max(10_000),
+}).strict().superRefine((variable, context) => {
+  if (variable.name === "baseUrl") {
+    context.addIssue({ code: "custom", message: "baseUrl 是 TestMesh 保留变量，由环境 Base URL 自动提供" });
+  }
+  if (SENSITIVE_HEADER.test(variable.name)) {
+    context.addIssue({
+      code: "custom",
+      message: `${variable.name} 可能包含凭据，不能保存到 TestMesh；请在执行时临时输入，或接入 Infisical`,
+    });
+  }
+});
+
 export const ProjectEnvironmentInputSchema = z.object({
   name: z.string().trim().min(1, "请填写环境名称").max(50),
   baseUrl: z.string().trim().min(1, "请填写 Base URL").transform((value, context) => {
@@ -32,6 +47,7 @@ export const ProjectEnvironmentInputSchema = z.object({
     }
   }),
   headers: z.array(EnvironmentHeaderSchema).max(30).default([]),
+  variables: z.array(EnvironmentVariableSchema).max(50).default([]),
 }).strict();
 
 export const ProjectAutomationConfigInputSchema = z.object({
@@ -40,7 +56,14 @@ export const ProjectAutomationConfigInputSchema = z.object({
   uiRepositoryPath: z.string().trim().max(1_000).default(""),
 }).strict();
 
+export const ProjectKnowledgeBindingInputSchema = z.object({
+  documentId: z.string().trim().min(1),
+  role: z.enum(["openapi", "agent_contract", "business_rules", "test_data"]),
+  boundBy: z.string().trim().min(1).max(100),
+}).strict();
+
 export type ProjectInput = z.infer<typeof ProjectInputSchema>;
 export type ProjectEnvironmentInput = z.infer<typeof ProjectEnvironmentInputSchema>;
 export type ProjectAutomationConfigInput = z.infer<typeof ProjectAutomationConfigInputSchema>;
+export type ProjectKnowledgeBindingInput = z.infer<typeof ProjectKnowledgeBindingInputSchema>;
 

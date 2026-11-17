@@ -24,7 +24,10 @@ export class TestDesignPostgresStore {
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS ${this.schema}.test_designs (
         id TEXT PRIMARY KEY,
-        baseline_id TEXT NOT NULL UNIQUE REFERENCES ${this.schema}.requirement_baselines(id) ON DELETE RESTRICT,
+        baseline_id TEXT NOT NULL REFERENCES ${this.schema}.requirement_baselines(id) ON DELETE RESTRICT,
+        approved_test_model_version_id TEXT NOT NULL REFERENCES ${this.schema}.approved_test_model_versions(id) ON DELETE RESTRICT,
+        approved_test_condition_version_id TEXT REFERENCES ${this.schema}.approved_test_condition_versions(id) ON DELETE RESTRICT,
+        version INTEGER NOT NULL DEFAULT 1,
         status TEXT NOT NULL CHECK (status IN ('draft', 'approved')),
         model TEXT NOT NULL,
         document_json JSONB NOT NULL,
@@ -33,6 +36,14 @@ export class TestDesignPostgresStore {
         trace_id TEXT NOT NULL DEFAULT '',
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `);
+    await this.pool.query(`
+      ALTER TABLE ${this.schema}.test_designs ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE ${this.schema}.test_designs ADD COLUMN IF NOT EXISTS approved_test_model_version_id TEXT;
+      ALTER TABLE ${this.schema}.test_designs ADD COLUMN IF NOT EXISTS approved_test_condition_version_id TEXT;
+      ALTER TABLE ${this.schema}.test_designs DROP CONSTRAINT IF EXISTS test_designs_baseline_id_key;
+      CREATE UNIQUE INDEX IF NOT EXISTS test_designs_baseline_version_unique
+      ON ${this.schema}.test_designs (baseline_id, version);
     `);
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS ${this.schema}.test_case_review_events (
@@ -77,6 +88,8 @@ export class TestDesignPostgresStore {
 
   async createDesign(input: {
     baselineId: string;
+    approvedTestModelVersionId: string;
+    approvedTestConditionVersionId: string;
     model: string;
     document: TestDesign;
     trace?: { provider: string; projectName: string; traceId: string };
@@ -84,14 +97,17 @@ export class TestDesignPostgresStore {
     const id = randomUUID();
     const result = await this.pool.query(
       `INSERT INTO ${this.schema}.test_designs
-        (id, baseline_id, status, model, document_json, trace_provider, trace_project_name, trace_id)
-       VALUES ($1, $2, 'draft', $3, $4, $5, $6, $7) RETURNING *`,
-      [id, input.baselineId, input.model, input.document, input.trace?.provider ?? "", input.trace?.projectName ?? "", input.trace?.traceId ?? ""],
+        (id, baseline_id, approved_test_model_version_id, approved_test_condition_version_id, version, status, model, document_json, trace_provider, trace_project_name, trace_id)
+       SELECT $1, $2, $3, $4, COALESCE(MAX(version), 0) + 1, 'draft', $5, $6, $7, $8, $9
+       FROM ${this.schema}.test_designs WHERE baseline_id = $2 RETURNING *`,
+      [id, input.baselineId, input.approvedTestModelVersionId, input.approvedTestConditionVersionId, input.model, input.document, input.trace?.provider ?? "", input.trace?.projectName ?? "", input.trace?.traceId ?? ""],
     );
     return this.parseDesign(result.rows[0]);
   }
 
   async replaceDraft(id: string, input: {
+    approvedTestModelVersionId: string;
+    approvedTestConditionVersionId: string;
     model: string;
     document: TestDesign;
     trace?: { provider: string; projectName: string; traceId: string };
@@ -112,10 +128,10 @@ export class TestDesignPostgresStore {
       if (reviews.rowCount) throw new Error("已有人工评审的草稿不可重新生成，请先建立新的需求基线");
       const updated = await client.query(
         `UPDATE ${this.schema}.test_designs
-         SET model = $2, document_json = $3, trace_provider = $4,
-             trace_project_name = $5, trace_id = $6, created_at = NOW()
+         SET approved_test_model_version_id = $2, approved_test_condition_version_id = $3, model = $4, document_json = $5, trace_provider = $6,
+             trace_project_name = $7, trace_id = $8, created_at = NOW()
          WHERE id = $1 RETURNING *`,
-        [id, input.model, input.document, input.trace?.provider ?? "", input.trace?.projectName ?? "", input.trace?.traceId ?? ""],
+        [id, input.approvedTestModelVersionId, input.approvedTestConditionVersionId, input.model, input.document, input.trace?.provider ?? "", input.trace?.projectName ?? "", input.trace?.traceId ?? ""],
       );
       await client.query("COMMIT");
       return this.parseDesign(updated.rows[0]);
@@ -133,7 +149,7 @@ export class TestDesignPostgresStore {
   }
 
   async findByBaseline(baselineId: string): Promise<TestDesignRecord | null> {
-    const result = await this.pool.query(`SELECT * FROM ${this.schema}.test_designs WHERE baseline_id = $1`, [baselineId]);
+    const result = await this.pool.query(`SELECT * FROM ${this.schema}.test_designs WHERE baseline_id = $1 ORDER BY version DESC LIMIT 1`, [baselineId]);
     return result.rowCount ? this.parseDesign(result.rows[0]) : null;
   }
 
@@ -250,11 +266,18 @@ export class TestDesignPostgresStore {
       const acceptedCases = design.document.test_cases.filter((testCase) => byCase.get(testCase.id)?.status === "accepted");
       if (!acceptedCases.length) throw new Error("至少需要接受一条 TestCase 才能批准版本");
       const id = randomUUID();
+      const versionResult = await client.query(
+        `SELECT COALESCE(MAX(approved.version), 0) + 1 AS version
+         FROM ${this.schema}.approved_test_case_versions approved
+         JOIN ${this.schema}.test_designs design ON design.id = approved.design_id
+         WHERE design.baseline_id = $1`,
+        [design.baselineId],
+      );
       const inserted = await client.query(
         `INSERT INTO ${this.schema}.approved_test_case_versions
           (id, design_id, version, approved_by, snapshot_json)
-         VALUES ($1, $2, 1, $3, $4) RETURNING *`,
-        [id, designId, approvedBy.trim(), { ...design.document, test_cases: acceptedCases, reviews }],
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [id, designId, Number(versionResult.rows[0].version), approvedBy.trim(), { ...design.document, test_cases: acceptedCases, reviews }],
       );
       await client.query(`UPDATE ${this.schema}.test_designs SET status = 'approved' WHERE id = $1`, [designId]);
       await client.query("COMMIT");
@@ -306,6 +329,9 @@ export class TestDesignPostgresStore {
     return {
       id: String(row.id),
       baselineId: String(row.baseline_id),
+      approvedTestModelVersionId: String(row.approved_test_model_version_id),
+      approvedTestConditionVersionId: String(row.approved_test_condition_version_id ?? ""),
+      version: Number(row.version),
       status: row.status as TestDesignRecord["status"],
       model: String(row.model),
       document: TestDesignSchema.parse(row.document_json),

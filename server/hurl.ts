@@ -108,8 +108,13 @@ function resolveBinary(): string {
   return binary;
 }
 
-function runtimeVariables(targetBaseUrl: string, auth: RunnerAuth): Record<string, string> {
+function runtimeVariables(
+  targetBaseUrl: string,
+  environmentVariables: Array<{ name: string; value: string }>,
+  auth: RunnerAuth,
+): Record<string, string> {
   const variables: Record<string, string> = { HURL_VARIABLE_baseUrl: targetBaseUrl.replace(/\/$/, "") };
+  for (const variable of environmentVariables) variables[`HURL_VARIABLE_${variable.name}`] = variable.value;
   if (auth.type === "bearer") {
     if (!auth.token?.trim()) throw new Error("Bearer Token 不能为空");
     variables.HURL_VARIABLE_token = auth.token.trim();
@@ -178,6 +183,7 @@ export async function runHurlScenario(
     suiteId: string;
     targetBaseUrl: string;
     headers: Array<{ name: string; value: string }>;
+    variables: Array<{ name: string; value: string }>;
     auth: RunnerAuth;
   },
   store: DomainStore,
@@ -213,7 +219,7 @@ export async function runHurlScenario(
   for (const header of input.headers) args.push("--header", `${header.name}: ${header.value}`);
   let execution: { exitCode: number; output: string };
   try {
-    execution = await execute(resolveBinary(), args, runDirectory, runtimeVariables(input.targetBaseUrl, input.auth));
+    execution = await execute(resolveBinary(), args, runDirectory, runtimeVariables(input.targetBaseUrl, input.variables, input.auth));
   } catch (error) {
     const message = redact(error instanceof Error ? error.message : "Hurl Runner 启动失败", input.auth);
     return store.finishApiScenarioRun({

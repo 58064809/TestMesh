@@ -122,7 +122,11 @@ export interface RequirementBaselineRecord {
   approvedAt: string;
 }
 
-export type TestTechnique = "scenario" | "equivalence_partition" | "boundary_value" | "decision_table" | "state_transition" | "combinatorial" | "property_based";
+export type TestTechnique = "scenario" | "equivalence_partition" | "boundary_value" | "decision_table" | "state_transition" | "combinatorial" | "property_based" | "ai_evaluation";
+export type AiTestDimension = "intent_recognition" | "multi_turn_context" | "constraint_adherence" | "response_correctness" | "groundedness_hallucination" | "safety_refusal" | "parameter_extraction" | "tool_selection" | "tool_invocation" | "robustness_consistency";
+export type AiEvaluationSubject = "testmesh" | "target_application";
+export type AiEvaluationLayer = "agent_decision" | "tool_execution" | "business_outcome" | "final_response";
+export type ParameterExtractionAspect = "parameter_identification" | "value_accuracy" | "completeness" | "no_redundancy" | "type_conformance" | "semantic_normalization" | "ambiguity_handling" | "negation_exclusion" | "multi_value" | "conflict_resolution" | "context_inheritance" | "context_override" | "required_missing_clarification" | "business_constraint" | "noise_robustness" | "tool_parameter_mapping" | "repeatability" | "prompt_injection_resistance";
 
 export interface TestRisk {
   id: string;
@@ -156,7 +160,7 @@ export interface DesignedTestCase {
   primary_trace_ref?: string;
   primary_test_condition_ref?: string;
   test_condition_refs?: string[];
-  scenario_type?: "normal" | "exception" | "boundary" | "rule_combination" | "state_transition" | "cross_business";
+  scenario_type?: "normal" | "exception" | "boundary" | "rule_combination" | "state_transition" | "cross_business" | "ai_behavior";
   technique?: TestTechnique;
   priority: "P0" | "P1" | "P2" | "P3";
   preconditions: string[];
@@ -168,6 +172,35 @@ export interface DesignedTestCase {
   test_point_refs: string[];
   source_refs: string[];
   knowledge_refs: string[];
+  ai_evaluation?: {
+    dimension: AiTestDimension;
+    evaluation_subjects?: AiEvaluationSubject[];
+    evaluation_layers?: AiEvaluationLayer[];
+    oracle_type: "exact_match" | "contains" | "regex" | "reference_answer" | "code_evaluator" | "llm_judge" | "human_review";
+    expected_behavior: string;
+    evaluator: string;
+    threshold: string;
+    dataset_requirements: string[];
+    evidence_requirements: string[];
+    parameter_extraction?: {
+      layer: "semantic_extraction" | "structure_business_validation" | "tool_parameter_mapping";
+      aspect: ParameterExtractionAspect;
+      slot_name: string;
+      expected_presence: boolean;
+      expected_value_json: string;
+      expected_type: "string" | "integer" | "number" | "boolean" | "date" | "time" | "datetime" | "currency" | "array" | "object" | "missing" | "null";
+      match_type: "exact" | "normalized" | "range" | "set" | "semantic" | "schema" | "context_state" | "tool_mapping" | "absence" | "human_review";
+      normalization_rule: string;
+      tolerance: string;
+      expected_action: "extract" | "clarify" | "reject" | "execute";
+      state_target: "slot_delta" | "merged_slots" | "tool_arguments" | "not_applicable";
+      reference_datetime: string;
+      timezone: string;
+      locale: string;
+      schema_version: string;
+      risk_level: "P0" | "P1" | "P2" | "P3";
+    };
+  };
 }
 
 export interface TestDesignDocument {
@@ -184,10 +217,11 @@ export interface TestDesignDocument {
     rationale: string;
     source_refs: string[];
     knowledge_refs: string[];
+    ai_dimension?: AiTestDimension;
   }>;
   test_cases: DesignedTestCase[];
   tool_applications: Array<{
-    tool: "cucumber_gherkin" | "fast_check" | "nist_acts" | "graphwalker";
+    tool: "cucumber_gherkin" | "fast_check" | "nist_acts" | "graphwalker" | "phoenix_evals";
     status: "applied" | "not_applicable";
     reason: string;
   }>;
@@ -203,6 +237,14 @@ export interface TestDesignDocument {
     page_numbers: number[];
     doc_items: string[];
   }>;
+  parameter_extraction_assessment?: {
+    status: "applicable" | "not_applicable" | "blocked";
+    implementation_pattern: "traditional_nlu" | "structured_output" | "function_calling" | "agent_workflow" | "unknown";
+    reason: string;
+    source_refs: string[];
+    schema_version: string;
+    aspects: Array<{ aspect: ParameterExtractionAspect; status: "planned" | "not_applicable"; condition_refs: string[]; reason: string }>;
+  };
 }
 
 export interface TestCaseReviewRecord {
@@ -218,6 +260,9 @@ export interface TestCaseReviewRecord {
 export interface TestDesignRecord {
   id: string;
   baselineId: string;
+  approvedTestModelVersionId: string;
+  approvedTestConditionVersionId: string;
+  version: number;
   status: "draft" | "approved";
   model: string;
   document: TestDesignDocument;
@@ -238,7 +283,7 @@ export interface TestDesignRecord {
     after: DesignedTestCase;
     createdAt: string;
   }>;
-  approvedVersion?: unknown;
+  approvedVersion?: Omit<ApprovedTestCaseVersionOption, "testCases"> | null;
   baselineSources?: Array<{
     id: string;
     source_file_name: string;
@@ -247,6 +292,112 @@ export interface TestDesignRecord {
     excerpt: string;
     description: string;
   }>;
+}
+
+export interface TestConditionSetRecord {
+  id: string;
+  baselineId: string;
+  approvedTestModelVersionId: string;
+  version: number;
+  status: "draft" | "approved";
+  document: {
+    schemaVersion: "test-condition-set/v1";
+    baselineId: string;
+    approvedTestModelVersionId: string;
+    objective: string;
+    conditions: NonNullable<TestDesignDocument["test_conditions"]>;
+    generation: { mode: "prompt" | "approved_model_projection"; promptVersion: string | null; note: string };
+  };
+  createdAt: string;
+  approvedBy: string;
+  approvedAt: string | null;
+}
+
+export interface ApprovedTestConditionVersion {
+  record: {
+    id: string;
+    testConditionSetId: string;
+    baselineId: string;
+    approvedTestModelVersionId: string;
+    version: number;
+    approvedBy: string;
+    approvedAt: string;
+  };
+  snapshot: TestConditionSetRecord["document"];
+}
+
+export interface TestModelDocument {
+  objective: string;
+  quality_model: { objectives: string[]; risk_refs: string[]; coverage_targets: string[] };
+  business_model: Record<"actors" | "business_rules" | "flows" | "states" | "constraints" | "exceptions", Array<{
+    id: string; description: string; source_refs: string[];
+  }>>;
+  ai_model: {
+    applicable: boolean;
+    evaluation_subjects: AiEvaluationSubject[];
+    evaluation_layers: AiEvaluationLayer[];
+    dimensions: AiTestDimension[];
+  };
+  behavior_models?: {
+    semantic_parameter: {
+      model_id: "M-01"; name: string;
+      intents: Array<{ id: string; description: string; in_scope: boolean; required_slots: string[]; source_refs: string[] }>;
+      slots: Array<{ name: string; value_type: "string" | "integer" | "number" | "boolean" | "enum" | "object" | "array"; required: boolean; default_value_json: string; allowed_range: string; canonical_unit: string; enum_values: string[]; normalization_rules: string[]; validation_rules: string[]; source_refs: string[] }>;
+      cross_parameter_constraints: Array<{ id: string; expression: string; invalid_action: string; source_refs: string[] }>;
+    };
+    business_decision: {
+      model_id: "M-02"; name: string;
+      rules: Array<{ id: string; conditions: string[]; actions: string[]; priority: number; source_refs: string[] }>;
+    };
+    dialogue_state: {
+      model_id: "M-03"; name: string;
+      states: Array<{ id: string; description: string; terminal: boolean; source_refs: string[] }>;
+      transitions: Array<{ id: string; from: string; event: string; guard: string; actions: string[]; to: string; search_allowed: boolean; source_refs: string[] }>;
+      context_rules: Array<{ id: string; trigger: string; operation: "retain" | "replace" | "merge" | "clear" | "clarify" | "cancel" | "retry"; targets: string[]; outcome: string; source_refs: string[] }>;
+    };
+    agent_interaction: {
+      model_id: "M-04"; name: string;
+      tools: Array<{ name: string; description: string; request_contract: string; response_contract: string; source_refs: string[] }>;
+      interaction_rules: Array<{ id: string; trigger: string; preconditions: string[]; tool: string; argument_mapping: string[]; success_outcome: string; empty_outcome: string; failure_outcome: string; evidence_requirements: string[]; source_refs: string[] }>;
+    };
+  };
+  test_analysis: {
+    objective: string;
+    risks: TestRisk[];
+    test_points: TestPoint[];
+    test_conditions: NonNullable<TestDesignDocument["test_conditions"]>;
+    tool_applications: TestDesignDocument["tool_applications"];
+    coverage_exclusions: TestDesignDocument["coverage_exclusions"];
+    parameter_extraction_assessment?: TestDesignDocument["parameter_extraction_assessment"];
+  };
+  knowledge_evidence: TestDesignDocument["knowledge_evidence"];
+}
+
+export interface TestModelRecord {
+  id: string;
+  baselineId: string;
+  version: number;
+  status: "draft" | "approved";
+  model: string;
+  document: TestModelDocument;
+  traceProvider: string;
+  traceProjectName: string;
+  traceId: string;
+  createdAt: string;
+  approvedBy: string;
+  approvedAt: string | null;
+}
+
+export interface ApprovedTestModelVersion {
+  record: {
+    id: string;
+    testModelId: string;
+    baselineId: string;
+    version: number;
+    approvedBy: string;
+    approvedAt: string;
+  };
+  snapshot: TestModelDocument;
 }
 
 export interface KnowledgeDocumentRecord {
@@ -344,6 +495,7 @@ export interface ProjectEnvironmentRecord {
   name: string;
   baseUrl: string;
   headers: Array<{ name: string; value: string }>;
+  variables: Array<{ name: string; value: string }>;
   configProvider: "testmesh_non_secret" | "infisical";
   infisicalEnvironmentSlug: string;
   infisicalSecretPath: string;
@@ -361,6 +513,110 @@ export interface ProjectRecord {
   defaultUiEnvironmentId: string;
   uiRepositoryPath: string;
   environments: ProjectEnvironmentRecord[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type QualityCharacteristic =
+  | "functional_suitability" | "performance_efficiency" | "compatibility" | "interaction_capability"
+  | "reliability" | "security" | "maintainability" | "flexibility" | "safety"
+  | "ai_validity_reliability" | "ai_transparency_traceability" | "ai_intent_recognition"
+  | "ai_multi_turn_context" | "ai_constraint_adherence" | "ai_response_correctness"
+  | "ai_groundedness_hallucination" | "ai_safety_refusal" | "ai_parameter_extraction" | "ai_tool_use_correctness" | "ai_robustness_consistency";
+
+export interface QualityPlanRecord {
+  id: string;
+  projectId: string;
+  version: number;
+  status: "draft" | "approved" | "closed";
+  name: string;
+  release: string;
+  owner: string;
+  objectives: string[];
+  qualityCharacteristics: QualityCharacteristic[];
+  risks: Array<{ id: string; title: string; probability: "low" | "medium" | "high"; impact: "low" | "medium" | "high"; treatment: string; owner: string }>;
+  scope: string;
+  exclusions: string[];
+  strategies: string[];
+  entryCriteria: string[];
+  exitCriteria: string[];
+  requiredEvidence: string[];
+  approvers: string[];
+  baselineId: string;
+  approvedTestModelVersionId: string;
+  approvedTestCaseVersionId: string;
+  aiQualityProfileId: string;
+  gateRules: {
+    requireApprovedBaseline: boolean;
+    requireApprovedTestModel: boolean;
+    requireApprovedTestCases: boolean;
+    minimumRequirementCoveragePct: number;
+    minimumTraceabilityCompletenessPct: number;
+    minimumTestDataSpecificationCoveragePct: number;
+    minimumAssertionDesignCoveragePct: number;
+    minimumExecutionCompletenessPct: number;
+    minimumExecutionPassRatePct: number;
+    minimumFailureTriageCoveragePct: number;
+    maximumFailedTests: number;
+    requireApiExecution: boolean;
+    requireUiExecution: boolean;
+    requireApprovedAiQualityProfile: boolean;
+    maximumOpenImprovementActions: number;
+  };
+  approvedBy: string;
+  approvalNote: string;
+  approvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QualitySnapshot {
+  plan: QualityPlanRecord;
+  metrics: { requirementCoveragePct: number; approvedTestCases: number; executionCount: number; executionPassRatePct: number; executionCompletenessPct: number; passedTests: number; failedTests: number; apiExecutionCount: number; uiExecutionCount: number; aiTestCases: number; aiDimensions: number; requiredAiDimensions: number; aiDimensionCoveragePct: number; aiEvaluationCoveragePct: number; missingAiDimensions: string[]; aiEvaluatedTestCases: number; missingAiEvaluationTestCaseIds: string[]; requirementReviewCount: number; requirementDecisionRatePct: number; requirementAmendmentCount: number; testCaseReviewCount: number; testCaseAcceptanceRatePct: number; testCaseAmendmentCount: number; testDataSpecificationCoveragePct: number; assertionDesignCoveragePct: number; traceabilityCompletenessPct: number; failedRunsRequiringTriage: number; failureTriageCoveragePct: number; locatedFailureRatePct: number; triageEvidenceCategories: string[]; openImprovementActions: number };
+  metricCatalog: Array<{ id: string; name: string; category: string; status: "available" | "unavailable"; value: number | null; unit: string; numerator: number | null; denominator: number | null; formula: string; evidence: string; note: string }>;
+  latestGate: ReleaseGateRecord | null;
+  gateFresh: boolean;
+  layers: {
+    governance: { planApproved: boolean; baselineApproved: boolean; testModelApproved: boolean; approvedTestCases: boolean };
+    coverage: { requirementCoveragePct: number; approvedTestCases: number };
+    humanReview: { requirementReviewCount: number; requirementDecisionRatePct: number; requirementAmendmentCount: number; testCaseReviewCount: number; testCaseAcceptanceRatePct: number; testCaseAmendmentCount: number };
+    testDesign: { testDataSpecificationCoveragePct: number; assertionDesignCoveragePct: number; traceabilityCompletenessPct: number };
+    execution: { executionCount: number; executionPassRatePct: number; passedTests: number; failedTests: number; failedRunsRequiringTriage: number };
+    diagnosis: { failureTriageCoveragePct: number; locatedFailureRatePct: number; evidenceCategories: string[] };
+    aiQuality: { profileApproved: boolean; evaluationEvidenceLinked: boolean; aiTestCases: number; aiEvaluatedTestCases: number; aiDimensions: number; requiredAiDimensions: number; aiDimensionCoveragePct: number; missingAiDimensions: string[]; missingAiEvaluationTestCaseIds: string[] };
+    improvement: { openActions: number };
+  };
+  assets: { nodes: Array<{ id: string; type: string; label: string; status: string }>; links: Array<{ from: string; to: string; relation: string }> };
+  improvements: QualityImprovementRecord[];
+}
+
+export interface ReleaseGateRecord {
+  id: string;
+  planId: string;
+  projectId: string;
+  policyVersion: string;
+  opaVersion: string;
+  status: "allow" | "review" | "deny";
+  facts: unknown;
+  result: { status: "allow" | "review" | "deny"; reasons: string[]; checks: Array<{ id: string; passed: boolean }> };
+  riskAcceptance: { acceptedBy: string; reason: string; expiresAt: string | null; acceptedAt: string } | null;
+  evaluatedAt: string;
+}
+
+export interface QualityImprovementRecord {
+  id: string;
+  planId: string;
+  projectId: string;
+  sourceType: "release_gate" | "failure_triage" | "retrospective" | "manual";
+  sourceId: string;
+  title: string;
+  rootCauseCategory: "requirement" | "design" | "code" | "test" | "environment" | "data" | "process" | "ai_quality" | "unknown";
+  action: string;
+  owner: string;
+  dueDate: string;
+  status: "open" | "in_progress" | "verified" | "closed";
+  verificationEvidence: string;
+  updatedBy: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -409,6 +665,8 @@ export interface ApiScenarioSuiteRecord {
   environmentId: string;
   approvedVersionId: string;
   filename: string;
+  sourceFormat: "testmesh-hurl/v1";
+  sourceContent: string;
   approvedTestCaseIds: string[];
   createdAt: string;
 }
@@ -487,7 +745,7 @@ export interface UiTestRunRecord {
   artifacts: UiTestArtifactRecord[];
 }
 
-export type FailureRunKind = "api_schema" | "api_scenario" | "ui";
+export type FailureRunKind = "api_schema" | "api_scenario" | "fastapi_yaml" | "ui";
 
 export interface FailureRunOption {
   kind: FailureRunKind;

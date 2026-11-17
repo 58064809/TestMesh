@@ -42,7 +42,14 @@ export function renderReviewMarkdown(document: RequirementAnalysis, reviews: Ana
     const refs = [...new Set([...entry.item.source_refs, ...merged.flatMap((other) => other.item.source_refs)])];
     lines.push(`## ${entry.label} · ${entry.item.id}`, "", entry.item.description, "",
       `结论来源：${originLabels[entry.item.origin]}${"issue_type" in entry.item ? `；AI 问题分类：${issueTypeLabels[entry.item.issue_type as AnalysisIssueType]}` : ""}；人工评审：${entry.review ? reviewLabels[entry.review.status] : "待评审"}${entry.review?.issueType ? `；人工问题分类：${issueTypeLabels[entry.review.issueType]}` : ""}`, "");
-    if (entry.review?.decision) lines.push(`评审决策：${entry.review.decision}（${entry.review.decisionBy}；PRD ${entry.review.prdRevision}）`, "");
+    if (entry.review?.decision) lines.push(
+      "### 正式评审决策",
+      "",
+      entry.review.decision.trim(),
+      "",
+      `决策人：${entry.review.decisionBy}；回写 PRD：${entry.review.prdRevision}`,
+      "",
+    );
     if (merged.length) lines.push(`合并来源：${merged.map((other) => other.item.id).join("、")}`, "");
     for (const id of refs) {
       const source = sources.get(id);

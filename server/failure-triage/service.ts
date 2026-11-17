@@ -4,9 +4,9 @@ import type { TestDesignPostgresStore } from "../test-design/postgres-store.js";
 import { MODEL } from "../requirement-analysis/config.js";
 import { resolvePhoenixTraceUrl } from "../observability/phoenix.js";
 import { createOpenAIFailureTriageModel, runFailureTriageAgent } from "./agent.js";
-import { buildFailureEvidence, resolveFailureContext } from "./evidence.js";
+import { buildApiYamlFailureEvidence, buildFailureEvidence, listFailureRuns, resolveFailureContext } from "./evidence.js";
 import type { FailureTriagePostgresStore } from "./postgres-store.js";
-import type { FailureDiagnosisRequest, FailureEvidence } from "./schema.js";
+import type { FailureDiagnosisContext, FailureDiagnosisRequest, FailureEvidence, FailureRunOption } from "./schema.js";
 
 export class FailureTriageService {
   constructor(
@@ -15,10 +15,32 @@ export class FailureTriageService {
     private readonly testDesignStore: TestDesignPostgresStore,
   ) {}
 
+  async listFailureRuns(): Promise<FailureRunOption[]> {
+    const fastApiRuns = (await this.triageStore.listApiYamlFailureRuns()).map((run) => ({
+      kind: "fastapi_yaml" as const, id: run.id, projectId: run.projectId, environmentId: run.environmentId,
+      label: `FastAPI YAML · ${run.scenarioName} · ${run.failed} 个失败`, status: run.status,
+      startedAt: run.startedAt, failed: run.failed,
+    }));
+    return [...listFailureRuns(this.runStore), ...fastApiRuns]
+      .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+  }
+
   async analyze(input: { request: FailureDiagnosisRequest; apiKey: string; requestedBy?: string }) {
     const taskId = randomUUID();
-    const context = resolveFailureContext(this.runStore, input.request);
-    const evidence = buildFailureEvidence(this.runStore, context);
+    let context: FailureDiagnosisContext;
+    let evidence: FailureEvidence[];
+    if (input.request.runKind === "fastapi_yaml") {
+      const run = await this.triageStore.getApiYamlRun(input.request.runId);
+      if (run.status !== "failed" && run.status !== "error") throw new Error("所选 FastAPI YAML TestRun 尚未失败");
+      context = {
+        ...input.request, projectId: run.projectId, environmentId: run.environmentId,
+        approvedVersionId: run.approvedVersionId, approvedTestCaseIds: run.approvedTestCaseIds,
+      };
+      evidence = buildApiYamlFailureEvidence(run);
+    } else {
+      context = resolveFailureContext(this.runStore, input.request);
+      evidence = buildFailureEvidence(this.runStore, context);
+    }
     await this.appendApprovedTestCases(context.approvedVersionId, context.approvedTestCaseIds, evidence);
     const candidate = await runFailureTriageAgent({
       taskId,

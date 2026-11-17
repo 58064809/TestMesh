@@ -1,0 +1,73 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "智能导购模拟接口",
+    "version": "sim-v1",
+    "description": "仅用于 TestMesh 本地和云端工程调试，不代表真实业务契约。"
+  },
+  "paths": {
+    "/agent/invoke": {
+      "post": {
+        "operationId": "invokeSmartShoppingSimulation",
+        "summary": "执行一轮模拟导购对话",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["message"],
+                "properties": {
+                  "message": { "type": "string", "minLength": 1 },
+                  "session_id": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "模拟对话结果",
+            "headers": {
+              "x-trace-id": {
+                "description": "合成关联 ID，不代表真实 OpenInference Span。",
+                "schema": { "type": "string" }
+              },
+              "x-session-id": { "schema": { "type": "string" } }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["fixture", "intent", "slots", "state", "tool_calls", "recommended_product_ids", "answer"],
+                  "properties": {
+                    "fixture": { "type": "string", "enum": ["simulated-smart-shopping-v1"] },
+                    "intent": { "type": "string", "enum": ["product_recommendation"] },
+                    "slots": { "type": "object", "additionalProperties": true },
+                    "state": { "type": "string", "enum": ["CLARIFYING", "COMPLETED"] },
+                    "tool_calls": { "type": "array", "items": { "type": "object" } },
+                    "tool_response": { "type": "object" },
+                    "recommended_product_ids": { "type": "array", "items": { "type": "string" } },
+                    "answer": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求格式错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": { "error": { "type": "string" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -6,26 +6,27 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { ChatOpenAI } from "@langchain/openai";
 import { traceAgent } from "@arizeai/phoenix-otel";
 import { CompositeBackend, createDeepAgent, FilesystemBackend, registerHarnessProfile, StateBackend } from "deepagents";
-import { createMiddleware, MiddlewareError, providerStrategy, tool } from "langchain";
-import { z } from "zod";
+import { MiddlewareError, providerStrategy } from "langchain";
 import { MAX_OUTPUT_TOKENS, MODEL } from "../requirement-analysis/config.js";
 import { currentPhoenixTraceReference, type PhoenixTraceReference } from "../observability/phoenix.js";
-import { TEST_DESIGN_INSTRUCTIONS } from "./prompt.js";
+import { TEST_CASE_INSTRUCTIONS } from "./prompt.js";
+import { PROMPT_VERSIONS } from "./asset-contracts.js";
 import { normalizeChineseGherkin, validateChineseGherkin } from "./gherkin.js";
 import {
   createTestCaseBatchSchema,
-  TestDesignPlanSchema,
   TestDesignSchema,
   type BaselineSnapshot,
   type TestCase,
   type TestDesign,
+  type TestModelDocument,
 } from "./schema.js";
 import { selectTestDesignSkills, type TestDesignSkillDecision } from "./skill-selection.js";
-import { validateTestDesign, validateTestDesignPlan } from "./validation.js";
+import { validateTestDesign, validateTestModel } from "./validation.js";
 import type { KnowledgeSearchHit } from "../knowledge/qdrant.js";
 
 const SKILL_ROOT = fileURLToPath(new URL("./skills/", import.meta.url));
 const TEST_DESIGN_MAX_OUTPUT_TOKENS = 60_000;
+const TEST_CASE_BATCH_MAX_ATTEMPTS = 3;
 
 registerHarnessProfile("openai", {
   generalPurposeSubagent: { enabled: false },
@@ -42,12 +43,15 @@ export interface TestDesignAgentResult {
 }
 
 export function createOpenAITestDesignModel(apiKey: string): ChatOpenAI {
+  const timeout = Number(process.env.OPENAI_REQUEST_TIMEOUT_MS ?? 900_000);
+  if (!Number.isFinite(timeout) || timeout <= 0) throw new Error("OPENAI_REQUEST_TIMEOUT_MS 必须是正数");
   return new ChatOpenAI({
     apiKey,
     model: MODEL,
     useResponsesApi: true,
     maxRetries: 0,
     maxTokens: Math.max(MAX_OUTPUT_TOKENS, TEST_DESIGN_MAX_OUTPUT_TOKENS),
+    timeout,
     zdrEnabled: true,
   });
 }
@@ -58,8 +62,8 @@ async function runTestDesignAgentImpl(input: {
   baseline: BaselineSnapshot;
   prdMarkdown: string;
   model: BaseChatModel;
+  approvedModel: TestModelDocument;
   requestedBy?: string;
-  knowledgeSearch?: (query: string) => Promise<KnowledgeSearchHit[]>;
 }): Promise<TestDesignAgentResult> {
   const taskId = input.taskId ?? randomUUID();
   const observability = currentPhoenixTraceReference();
@@ -68,24 +72,19 @@ async function runTestDesignAgentImpl(input: {
     .map((entry) => entry.item.id);
   const skillActivations = selectTestDesignSkills(input.baseline);
   const skills = skillActivations.filter((item) => item.applicable).map((item) => `/skills/${item.skill_id}/`);
-  const retrievedKnowledge = new Map<string, KnowledgeSearchHit>();
-  const knowledgeTool = input.knowledgeSearch ? tool(async ({ query }) => {
-    const hits = await input.knowledgeSearch!(query);
-    for (const hit of hits) retrievedKnowledge.set(hit.chunkId, hit);
-    return JSON.stringify(hits.map((hit) => ({
-      chunk_id: hit.chunkId,
-      score: hit.score,
-      filename: hit.filename,
-      headings: hit.headings,
-      page_numbers: hit.pageNumbers,
-      doc_items: hit.docItems,
-      text: hit.text,
-    })));
-  }, {
-    name: "search_project_knowledge",
-    description: "检索已索引的企业架构、接口契约、数据字典、历史缺陷和业务规则。只返回可引用的真实知识片段；它们仅作 PRD 与批准基线的补充证据。",
-    schema: z.object({ query: z.string().min(2).describe("围绕具体业务规则、依赖、异常或数据约束的检索问题") }),
-  }) : undefined;
+  validateTestModel(input.approvedModel, input.baseline);
+  const plan = input.approvedModel.test_analysis;
+  const retrievedKnowledge = new Map<string, KnowledgeSearchHit>(input.approvedModel.knowledge_evidence.map((item) => [item.chunk_id, {
+    id: item.chunk_id,
+    score: item.score,
+    documentId: item.document_id,
+    filename: item.filename,
+    chunkId: item.chunk_id,
+    text: item.text,
+    headings: item.headings,
+    pageNumbers: item.page_numbers,
+    docItems: item.doc_items,
+  }]));
   const common = {
     model: input.model,
     backend: new CompositeBackend(new StateBackend(), {
@@ -96,37 +95,20 @@ async function runTestDesignAgentImpl(input: {
       { operations: ["read" as const], paths: skills.map((skill) => `${skill}**`) },
       { operations: ["read" as const, "write" as const], paths: ["/**"], mode: "deny" as const },
     ],
-    tools: knowledgeTool ? [knowledgeTool] : [],
-    systemPrompt: TEST_DESIGN_INSTRUCTIONS,
+    tools: [],
+    systemPrompt: TEST_CASE_INSTRUCTIONS,
   };
-  const planAgent = createDeepAgent({
-    ...common,
-    name: "test_design_planner",
-    responseFormat: providerStrategy(TestDesignPlanSchema),
-    middleware: [createMiddleware({
-      name: "TestConditionPlanValidation",
-      afterAgent: (state) => validateTestDesignPlan(TestDesignPlanSchema.parse(
-        (state as typeof state & { structuredResponse?: unknown }).structuredResponse,
-      ), input.baseline, new Set(retrievedKnowledge.keys())),
-    })],
-  });
-  const planResponse = await invokeAgent(planAgent, {
-    messages: [new HumanMessage({
-      content: `第一阶段只完成专业测试分析与 TestCondition 规划，不生成 TestCase。基线 ID：${input.baselineId}\n\n必须规划的基线 ID：\n${requiredCoverage.join("、")}\n\n每个未排除 ID 至少拆成正常/有效与反向/异常两个不同条件，存在更多业务分支时继续增加。先完整阅读 PRD，识别模块、流程、角色、规则、状态、数据、外部依赖和失败后果，再以批准基线限定结论。${knowledgeTool ? "项目知识库可用；针对 PRD 中涉及的系统依赖、接口、数据、企业规则或历史故障，按需调用 search_project_knowledge，不要泛搜。" : "当前没有已索引项目知识，所有 knowledge_refs 必须为空数组。"}\n\n获批原始 PRD（Docling Markdown）：\n${input.prdMarkdown}\n\n批准基线 JSON：\n${JSON.stringify(input.baseline)}`,
-    })],
-  }, taskId, "plan", input.requestedBy);
-  const plan = TestDesignPlanSchema.parse(planResponse.structuredResponse);
   const allowedKnowledgeRefs = new Set(retrievedKnowledge.keys());
-  validateTestDesignPlan(plan, input.baseline, allowedKnowledgeRefs);
 
   const obligations = plan.test_conditions.map((condition, index) => ({
     condition,
     conditionId: condition.id,
     caseId: `TC-${String(index + 1).padStart(3, "0")}`,
     traceRef: condition.primary_trace_ref,
+    aiDimension: condition.ai_dimension,
   }));
   const testCases: TestCase[] = [];
-  const responses = [planResponse];
+  const responses: Array<{ messages: BaseMessage[]; structuredResponse?: unknown }> = [];
   for (let offset = 0; offset < obligations.length; offset += 12) {
     const batch = obligations.slice(offset, offset + 12);
     const batchSchema = createTestCaseBatchSchema(batch);
@@ -140,39 +122,51 @@ async function runTestDesignAgentImpl(input: {
     const evidence = input.baseline.sourceRefs.filter((source) => sourceIds.has(source.id));
     const traceIds = new Set(batch.map(({ condition }) => condition.primary_trace_ref));
     const accepted = input.baseline.accepted.filter((entry) => traceIds.has(entry.item.id));
-    const batchResponse = await invokeAgent(batchAgent, {
-      messages: [new HumanMessage({
-        content: `第二阶段只为下面固定 TestCondition 逐一生成原子 TestCase。cases 对象的每个固定键都必须返回，键 ${batch.map(({ conditionId }) => conditionId).join("、")} 不得省略；TestCase ID 和 primary_test_condition_ref 已由 Schema 固定。每条只写一个可独立判定的中文 Gherkin 场景。knowledge_refs 只能从对应 TestCondition 的 knowledge_refs 中选择。\n\n固定任务：\n${JSON.stringify(batch.map(({ condition, caseId }) => ({ caseId, condition })))}\n\n相关 TestPoint：\n${JSON.stringify(plan.test_points.filter((point) => point.trace_refs.some((id) => traceIds.has(id))))}\n\n相关 Risk：\n${JSON.stringify(plan.risks.filter((risk) => risk.trace_refs.some((id) => traceIds.has(id))))}\n\n相关批准基线：\n${JSON.stringify(accepted)}\n\n相关原文证据：\n${JSON.stringify(evidence)}\n\n已检索且允许引用的知识片段：\n${JSON.stringify([...retrievedKnowledge.values()].filter((hit) => batch.some(({ condition }) => condition.knowledge_refs.includes(hit.chunkId))).map((hit) => ({ chunk_id: hit.chunkId, filename: hit.filename, headings: hit.headings, page_numbers: hit.pageNumbers, text: hit.text })))}`,
-      })],
-    }, taskId, `cases-${Math.floor(offset / 12) + 1}`, input.requestedBy);
-    responses.push(batchResponse);
-    const parsedBatch = batchSchema.parse(batchResponse.structuredResponse);
-    const normalizedCases = batch.map(({ conditionId }) => ({
-      ...parsedBatch.cases[conditionId],
-      gherkin: normalizeChineseGherkin(parsedBatch.cases[conditionId].gherkin),
-    }));
-    for (const testCase of normalizedCases) validateChineseGherkin(testCase.gherkin);
+    const batchPrompt = `第二阶段只为下面固定 TestCondition 逐一生成原子 TestCase。cases 对象的每个固定键都必须返回，键 ${batch.map(({ conditionId }) => conditionId).join("、")} 不得省略；TestCase ID 和 primary_test_condition_ref 已由 Schema 固定。每条只写一个可独立判定的中文 Gherkin 场景。knowledge_refs 只能从对应 TestCondition 的 knowledge_refs 中选择。AI 条件必须使用 ai_behavior / ai_evaluation，并填写可执行的 oracle、Evaluator、阈值、Dataset 样本要求和 Phoenix 执行证据；parameter_extraction 条件必须填写字段级协议，其他 AI 维度的 parameter_extraction 必须为 null；普通业务条件的 ai_evaluation 必须为 null。Gherkin 中每一行前置条件、动作或结果都必须以 Cucumber zh-CN 的合法步骤关键字开头，不能夹带自由文本行。\n\n固定任务：\n${JSON.stringify(batch.map(({ condition, caseId }) => ({ caseId, condition })))}\n\n参数提取覆盖计划：\n${JSON.stringify(plan.parameter_extraction_assessment ?? null)}\n\n相关 TestPoint：\n${JSON.stringify(plan.test_points.filter((point) => point.trace_refs.some((id) => traceIds.has(id))))}\n\n相关 Risk：\n${JSON.stringify(plan.risks.filter((risk) => risk.trace_refs.some((id) => traceIds.has(id))))}\n\n相关批准基线：\n${JSON.stringify(accepted)}\n\n相关原文证据：\n${JSON.stringify(evidence)}\n\n已检索且允许引用的知识片段：\n${JSON.stringify([...retrievedKnowledge.values()].filter((hit) => batch.some(({ condition }) => condition.knowledge_refs.includes(hit.chunkId))).map((hit) => ({ chunk_id: hit.chunkId, filename: hit.filename, headings: hit.headings, page_numbers: hit.pageNumbers, text: hit.text })))}`;
+    let normalizedCases: TestCase[] | undefined;
+    let correction = "";
+    let lastValidationError: unknown;
+    for (let attempt = 1; attempt <= TEST_CASE_BATCH_MAX_ATTEMPTS; attempt += 1) {
+      const batchResponse = await invokeAgent(batchAgent, {
+        messages: [new HumanMessage({ content: `${batchPrompt}${correction}` })],
+      }, taskId, `cases-${Math.floor(offset / 12) + 1}-attempt-${attempt}`, input.requestedBy);
+      responses.push(batchResponse);
+      try {
+        const parsedBatch = batchSchema.parse(batchResponse.structuredResponse);
+        const candidateCases = batch.map(({ conditionId }) => ({
+          ...parsedBatch.cases[conditionId],
+          ai_evaluation: parsedBatch.cases[conditionId].ai_evaluation
+            ? {
+                ...parsedBatch.cases[conditionId].ai_evaluation,
+                parameter_extraction: parsedBatch.cases[conditionId].ai_evaluation.parameter_extraction ?? undefined,
+              }
+            : undefined,
+          gherkin: normalizeChineseGherkin(parsedBatch.cases[conditionId].gherkin),
+        }));
+        for (const testCase of candidateCases) validateChineseGherkin(testCase.gherkin);
+        normalizedCases = candidateCases;
+        break;
+      } catch (error) {
+        lastValidationError = error;
+        const message = error instanceof Error ? error.message : "未知校验错误";
+        correction = `\n\n上一版没有通过官方 Cucumber/结构化门禁：${message}\n上一版输出：${JSON.stringify(batchResponse.structuredResponse)}\n只修复门禁指出的问题，保持固定键、ID、追溯关系和业务语义不变，然后重新输出完整 cases。`;
+      }
+    }
+    if (!normalizedCases) throw lastValidationError;
     testCases.push(...normalizedCases);
   }
 
   const exclusions = new Map(plan.coverage_exclusions.map((item) => [item.trace_ref, item.reason]));
   const result = TestDesignSchema.parse({
     ...plan,
+    objective: `基于已批准且冻结的 Requirement Baseline ${input.baselineId}，完成风险、测试点、TestCondition 与原子 TestCase 设计；业务行为与 Testing for AI 共用可追溯、可人工修正的统一协议。`,
     test_cases: testCases,
-    knowledge_evidence: [...retrievedKnowledge.values()]
-      .filter((hit) => plan.risks.some((item) => item.knowledge_refs.includes(hit.chunkId))
-        || plan.test_points.some((item) => item.knowledge_refs.includes(hit.chunkId))
-        || plan.test_conditions.some((item) => item.knowledge_refs.includes(hit.chunkId)))
-      .map((hit) => ({
-        chunk_id: hit.chunkId,
-        document_id: hit.documentId,
-        filename: hit.filename,
-        score: hit.score,
-        text: hit.text,
-        headings: hit.headings,
-        page_numbers: hit.pageNumbers,
-        doc_items: hit.docItems,
-      })),
+    tool_applications: plan.tool_applications.map((item) => item.tool === "cucumber_gherkin" ? {
+      ...item,
+      status: "applied" as const,
+      reason: "全部 TestCase 已使用 Cucumber 中文 Gherkin 表达，并通过官方解析器校验。",
+    } : item),
+    knowledge_evidence: input.approvedModel.knowledge_evidence,
     coverage: Object.fromEntries(requiredCoverage.map((id) => [id, {
       test_point_refs: plan.test_points.filter((point) => point.trace_refs.includes(id)).map((point) => point.id),
       test_case_refs: testCases.filter((testCase) => testCase.trace_refs.includes(id)).map((testCase) => testCase.id),
@@ -200,7 +194,7 @@ async function invokeAgent(
 ) {
   return agent.invoke(input, {
     configurable: { thread_id: `${taskId}:test-design:${stage}` },
-    metadata: { requested_by: requestedBy ?? "local-user", "testmesh.stage": stage },
+    metadata: { requested_by: requestedBy ?? "local-user", "testmesh.stage": stage, "testmesh.prompt.version": PROMPT_VERSIONS.testCase },
   }).then((response: { messages: BaseMessage[]; structuredResponse?: unknown }) => ({
     messages: response.messages,
     structuredResponse: (response as typeof response & { structuredResponse?: unknown }).structuredResponse,
@@ -218,6 +212,7 @@ export const runTestDesignAgent = traceAgent(runTestDesignAgentImpl, {
     "testmesh.baseline.id": input.baselineId,
     "testmesh.baseline.accepted_count": input.baseline.accepted.length,
     "testmesh.prd.markdown_chars": input.prdMarkdown.length,
+    "testmesh.prompt.version": PROMPT_VERSIONS.testCase,
   }),
   processOutput: (output) => ({
     "testmesh.task.id": output.taskId,

@@ -1,4 +1,4 @@
-import type { BaselineSnapshot, TestDesign, TestDesignPlan } from "./schema.js";
+import { PARAMETER_EXTRACTION_ASPECTS, type BaselineSnapshot, type TestDesign, type TestDesignPlan, type TestModelDocument } from "./schema.js";
 import { validateChineseGherkin } from "./gherkin.js";
 
 const COVERAGE_SECTIONS = new Set([
@@ -12,6 +12,40 @@ function unique(values: string[], label: string): void {
 function assertRefs(values: string[], allowed: Set<string>, label: string): void {
   const invalid = values.filter((value) => !allowed.has(value));
   if (invalid.length) throw new Error(`${label} 引用了不存在的 ID：${[...new Set(invalid)].join("、")}`);
+}
+
+function validateParameterExtractionAssessment(plan: TestDesignPlan, sourceIds: Set<string>): void {
+  const assessment = plan.parameter_extraction_assessment;
+  const parameterConditions = (plan.test_conditions ?? []).filter((item) => item.ai_dimension === "parameter_extraction");
+  if (!assessment) {
+    if (parameterConditions.length) throw new Error("存在参数提取测试条件，但缺少参数提取能力适用性评估");
+    return;
+  }
+  assertRefs(assessment.source_refs, sourceIds, "parameter_extraction_assessment.source_refs");
+  if (assessment.status !== "applicable") {
+    if (parameterConditions.length) throw new Error(`参数提取能力状态为 ${assessment.status}，不能生成参数提取测试条件`);
+    if (assessment.aspects.length) throw new Error(`参数提取能力状态为 ${assessment.status} 时 aspects 必须为空`);
+    return;
+  }
+  if (!assessment.source_refs.length) throw new Error("参数提取能力适用时必须引用真实来源证据");
+  const aspectNames = assessment.aspects.map((item) => item.aspect);
+  unique(aspectNames, "参数提取测试维度");
+  const missing = PARAMETER_EXTRACTION_ASPECTS.filter((item) => !aspectNames.includes(item));
+  if (missing.length) throw new Error(`参数提取测试维度不完整，缺少：${missing.join("、")}`);
+  if (!assessment.aspects.some((item) => item.status === "planned")) {
+    throw new Error("参数提取能力已判定适用，但 18 个测试维度均未规划");
+  }
+  const parameterConditionIds = new Set(parameterConditions.map((item) => item.id));
+  const plannedConditionIds: string[] = [];
+  for (const row of assessment.aspects) {
+    if (row.status === "planned" && !row.condition_refs.length) throw new Error(`参数提取维度 ${row.aspect} 已规划但没有 TestCondition`);
+    if (row.status === "not_applicable" && row.condition_refs.length) throw new Error(`参数提取维度 ${row.aspect} 不适用时不能关联 TestCondition`);
+    assertRefs(row.condition_refs, parameterConditionIds, `参数提取维度 ${row.aspect}.condition_refs`);
+    plannedConditionIds.push(...row.condition_refs);
+  }
+  unique(plannedConditionIds, "参数提取 TestCondition 覆盖");
+  const unclassified = [...parameterConditionIds].filter((id) => !plannedConditionIds.includes(id));
+  if (unclassified.length) throw new Error(`参数提取 TestCondition 未归入专项维度：${unclassified.join("、")}`);
 }
 
 export function validateTestDesignPlan(plan: TestDesignPlan, baseline: BaselineSnapshot, allowedKnowledgeRefs = new Set<string>()): void {
@@ -38,6 +72,7 @@ export function validateTestDesignPlan(plan: TestDesignPlan, baseline: BaselineS
     assertRefs(condition.source_refs, sourceIds, `${condition.id}.source_refs`);
     assertRefs(condition.knowledge_refs, allowedKnowledgeRefs, `${condition.id}.knowledge_refs`);
   }
+  validateParameterExtractionAssessment(plan, sourceIds);
   const required = baseline.accepted
     .filter((entry) => COVERAGE_SECTIONS.has(entry.section))
     .map((entry) => entry.item.id);
@@ -47,6 +82,86 @@ export function validateTestDesignPlan(plan: TestDesignPlan, baseline: BaselineS
     const planned = conditions.filter((condition) => condition.primary_trace_ref === id);
     if (planned.length < 2) {
       throw new Error(`测试条件规划 Gate 未通过：${id} 只有 ${planned.length} 个测试条件，至少需要正常/有效路径与反向/异常路径各一个`);
+    }
+  }
+}
+
+export function validateTestModel(model: TestModelDocument, baseline: BaselineSnapshot): void {
+  const traceIds = new Set(baseline.accepted.map((entry) => entry.item.id));
+  const sourceIds = new Set(baseline.sourceRefs.map((source) => source.id));
+  const knowledgeIds = new Set(model.knowledge_evidence.map((item) => item.chunk_id));
+  validateTestDesignPlan(model.test_analysis, baseline, knowledgeIds);
+  unique(model.knowledge_evidence.map((item) => item.chunk_id), "KnowledgeEvidence");
+
+  const groups = Object.entries(model.business_model) as Array<[string, Array<{ id: string; source_refs: string[] }>] >;
+  for (const [group, items] of groups) {
+    unique(items.map((item) => item.id), `business_model.${group}`);
+    for (const item of items) {
+      assertRefs([item.id], traceIds, `business_model.${group}.${item.id}`);
+      assertRefs(item.source_refs, sourceIds, `business_model.${group}.${item.id}.source_refs`);
+    }
+  }
+
+  if (!model.behavior_models) throw new Error("测试模型缺少 M-01～M-04 四个行为模型视图，请建立新版模型");
+  {
+    const views = model.behavior_models;
+    unique(views.semantic_parameter.intents.map((item) => item.id), "M-01.intent");
+    unique(views.semantic_parameter.slots.map((item) => item.name), "M-01.slot");
+    unique(views.semantic_parameter.cross_parameter_constraints.map((item) => item.id), "M-01.constraint");
+    unique(views.business_decision.rules.map((item) => item.id), "M-02.rule");
+    unique(views.dialogue_state.states.map((item) => item.id), "M-03.state");
+    unique(views.dialogue_state.transitions.map((item) => item.id), "M-03.transition");
+    unique(views.dialogue_state.context_rules.map((item) => item.id), "M-03.context_rule");
+    unique(views.agent_interaction.tools.map((item) => item.name), "M-04.tool");
+    unique(views.agent_interaction.interaction_rules.map((item) => item.id), "M-04.interaction_rule");
+
+    const sourceBearing = [
+      ...views.semantic_parameter.intents,
+      ...views.semantic_parameter.slots,
+      ...views.semantic_parameter.cross_parameter_constraints,
+      ...views.business_decision.rules,
+      ...views.dialogue_state.states,
+      ...views.dialogue_state.transitions,
+      ...views.dialogue_state.context_rules,
+      ...views.agent_interaction.tools,
+      ...views.agent_interaction.interaction_rules,
+    ];
+    for (const item of sourceBearing) assertRefs(item.source_refs, sourceIds, `${"id" in item ? item.id : item.name}.source_refs`);
+
+    const stateIds = new Set(views.dialogue_state.states.map((item) => item.id));
+    for (const transition of views.dialogue_state.transitions) {
+      assertRefs([transition.from, transition.to], stateIds, `${transition.id}.state_refs`);
+    }
+    const toolNames = new Set(views.agent_interaction.tools.map((item) => item.name));
+    for (const rule of views.agent_interaction.interaction_rules) {
+      if (rule.tool) assertRefs([rule.tool], toolNames, `${rule.id}.tool`);
+    }
+  }
+
+  const requiredTargets = baseline.accepted
+    .filter((entry) => COVERAGE_SECTIONS.has(entry.section))
+    .map((entry) => entry.item.id);
+  assertRefs(model.quality_model.coverage_targets, new Set(requiredTargets), "quality_model.coverage_targets");
+  const exclusions = new Set(model.test_analysis.coverage_exclusions.map((item) => item.trace_ref));
+  const missingTargets = requiredTargets.filter((id) => !model.quality_model.coverage_targets.includes(id) && !exclusions.has(id));
+  if (missingTargets.length) throw new Error(`测试模型覆盖目标不完整，缺少：${missingTargets.join("、")}`);
+
+  const riskIds = new Set(model.test_analysis.risks.map((item) => item.id));
+  assertRefs(model.quality_model.risk_refs, riskIds, "quality_model.risk_refs");
+  const dimensions = [...new Set(model.test_analysis.test_conditions.flatMap((item) => item.ai_dimension ? [item.ai_dimension] : []))];
+  if (model.ai_model.applicable !== (dimensions.length > 0)) throw new Error("ai_model.applicable 与测试条件中的 AI 维度不一致");
+  const missingDimensions = dimensions.filter((item) => !model.ai_model.dimensions.includes(item));
+  const extraDimensions = model.ai_model.dimensions.filter((item) => !dimensions.includes(item));
+  if (missingDimensions.length || extraDimensions.length) {
+    throw new Error(`AI 模型维度与测试条件不一致：缺少 [${missingDimensions.join("、") || "无"}]；多余 [${extraDimensions.join("、") || "无"}]`);
+  }
+  if (model.ai_model.applicable) {
+    const requiredSubjects = ["testmesh", "target_application"];
+    const requiredLayers = ["agent_decision", "tool_execution", "business_outcome", "final_response"];
+    const missingSubjects = requiredSubjects.filter((item) => !model.ai_model.evaluation_subjects.includes(item as never));
+    const missingLayers = requiredLayers.filter((item) => !model.ai_model.evaluation_layers.includes(item as never));
+    if (missingSubjects.length || missingLayers.length) {
+      throw new Error(`AI 测试模型必须同时覆盖 TestMesh、被测 AI 应用及四层证据；缺少对象 [${missingSubjects.join("、") || "无"}]，缺少层级 [${missingLayers.join("、") || "无"}]`);
     }
   }
 }
@@ -103,6 +218,27 @@ export function validateTestDesign(design: TestDesign, baseline: BaselineSnapsho
     if (primaryCondition?.primary_trace_ref !== testCase.primary_trace_ref) {
       throw new Error(`${testCase.id} 的主要测试条件与主要基线项不一致`);
     }
+    if (primaryCondition?.ai_dimension) {
+      if (!testCase.ai_evaluation) throw new Error(`${testCase.id} 是 AI 行为测试，但缺少 ai_evaluation`);
+      if (testCase.ai_evaluation.dimension !== primaryCondition.ai_dimension) {
+        throw new Error(`${testCase.id}.ai_evaluation.dimension 与主要测试条件不一致`);
+      }
+      if (testCase.scenario_type !== "ai_behavior" || testCase.technique !== "ai_evaluation") {
+        throw new Error(`${testCase.id} 的 AI 行为测试必须使用 ai_behavior / ai_evaluation`);
+      }
+      if (primaryCondition.ai_dimension === "parameter_extraction") {
+        const parameter = testCase.ai_evaluation.parameter_extraction;
+        if (!parameter) throw new Error(`${testCase.id} 是参数提取测试，但缺少字段级判定协议`);
+        const assessmentRow = design.parameter_extraction_assessment?.aspects.find((item) => item.condition_refs.includes(primaryCondition.id));
+        if (!assessmentRow || assessmentRow.aspect !== parameter.aspect) {
+          throw new Error(`${testCase.id}.parameter_extraction.aspect 与参数提取覆盖计划不一致`);
+        }
+      } else if (testCase.ai_evaluation.parameter_extraction) {
+        throw new Error(`${testCase.id} 不是参数提取测试，不能附带字段级参数判定协议`);
+      }
+    } else if (testCase.ai_evaluation) {
+      throw new Error(`${testCase.id} 的普通业务测试不能附带 AI 评测配置`);
+    }
     const stepOrders = testCase.steps.map((step) => step.order);
     if (new Set(stepOrders).size !== stepOrders.length || stepOrders.some((order, index) => order !== index + 1)) {
       throw new Error(`${testCase.id}.steps 必须从 1 开始连续编号`);
@@ -134,6 +270,9 @@ export function validateTestDesign(design: TestDesign, baseline: BaselineSnapsho
   }
   if (toolRows.get("cucumber_gherkin")?.status !== "applied") {
     throw new Error("Cucumber/Gherkin 是 TD01 唯一 TestCase 表达，必须标记为 applied");
+  }
+  if (conditions.some((item) => item.ai_dimension) && toolRows.get("phoenix_evals")?.status !== "applied") {
+    throw new Error("存在 Testing for AI 条件时，Phoenix Dataset/Experiment/Evaluator 必须标记为 applied");
   }
 
   const exclusions = new Map(design.coverage_exclusions.map((item) => [item.trace_ref, item.reason]));

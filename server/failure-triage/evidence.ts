@@ -1,5 +1,6 @@
 import type { DomainStore } from "../store.js";
 import type { FailureDiagnosisContext, FailureDiagnosisRequest, FailureEvidence, FailureRunOption } from "./schema.js";
+import type { ApiYamlFailureRun } from "./postgres-store.js";
 
 const MAX_EVIDENCE_CHARS = 16_000;
 
@@ -85,6 +86,22 @@ export function buildFailureEvidence(store: DomainStore, input: FailureDiagnosis
   if (input.runKind === "api_schema") appendSchemaRun(store, input.runId, evidence);
   if (input.runKind === "api_scenario") appendScenarioRun(store, input.runId, evidence);
   if (input.runKind === "ui") appendUiRun(store, input.runId, evidence);
+  return evidence;
+}
+
+export function buildApiYamlFailureEvidence(run: ApiYamlFailureRun): FailureEvidence[] {
+  const evidence: FailureEvidence[] = [{
+    id: "EVD-RUN-SUMMARY", category: "test_run", title: "FastAPI YAML TestRun 摘要",
+    locator: `fastapi_yaml:${run.id}`, direct: true,
+    content: bounded({ scenarioId: run.scenarioId, scenarioName: run.scenarioName, status: run.status,
+      passed: run.passed, failed: run.failed, dataCases: run.dataCases, startedAt: run.startedAt, finishedAt: run.finishedAt }),
+  }];
+  run.items.filter((item) => item.status !== "passed").slice(0, 50).forEach((item, index) => evidence.push({
+    id: `EVD-FASTAPI-YAML-${index + 1}`, category: "assertion",
+    title: `${String(item.name ?? "YAML步骤")} 执行失败`,
+    locator: `fastapi_yaml:${run.id}:item:${index + 1}`, direct: true,
+    content: bounded(item),
+  }));
   return evidence;
 }
 

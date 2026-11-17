@@ -1,0 +1,64 @@
+format: testmesh-api/v1
+name: 本机受控售后业务链
+data_driven:
+  source: inline
+  continue_on_failure: true
+  cases:
+    - id: not-needed
+      name: 不再需要商品
+      tags: [normal]
+      variables: { order_id: ORDER-DEMO-001, return_reason: not_needed, expected_status: review_pending }
+    - id: damaged
+      name: 商品破损
+      tags: [business-variant]
+      variables: { order_id: ORDER-DEMO-002, return_reason: damaged, expected_status: review_pending }
+steps:
+  - kind: request
+    name: 提交完整退货申请
+    request:
+      method: POST
+      path: /returns
+      json:
+        orderId: ${order_id}
+        reason: ${return_reason}
+        confirmed: true
+    expected_status: 201
+    captures:
+      - name: return_id
+        type: jsonpath
+        expression: $.id
+      - name: return_status
+        type: jsonpath
+        expression: $.status
+    assertions:
+      - type: jsonpath
+        expression: $.orderId
+        operator: ==
+        expected: ${order_id}
+      - type: jsonpath
+        expression: $.status
+        operator: ==
+        expected: review_pending
+  - kind: request
+    name: 使用捕获 ID 查询状态
+    request:
+      method: GET
+      path: /returns/${return_id}
+    expected_status: 200
+    assertions:
+      - type: jsonpath
+        expression: $.id
+        operator: ==
+        expected: ${return_id}
+      - type: jsonpath
+        expression: $.status
+        operator: ==
+        expected: review_pending
+  - name: 按退货状态补充检查
+    "if ${return_status} == 'review_pending' and ${expected_status} == 'review_pending'":
+      - kind: request
+        name: 查询审核队列
+        request:
+          method: GET
+          path: /returns/${return_id}/review
+        expected_status: 200

@@ -85,11 +85,25 @@
 
 ## 当前测试设计规则（2026-10-09）
 
+## AI 应用测试默认调试对象（2026-11-12）
+
+- 用户指定：无论在本地还是云端开发、调试 TestMesh 的 AI 应用测试能力，默认使用仓库内 `examples/ai-application/smart-shopping-contract.md` 的模拟智能导购系统。不要依赖当前电脑桌面文件或真实公司 URL 才能理解调试场景。
+- 该模拟系统用于验证 Test Model、TestCondition、TestCase、Dataset 样本、工具调用、会话状态、Evaluator 和 Experiment 的工程链路；所有结果标记为 simulated，不作为真实企业业务验收或发布通过证据。
+- AI Experiment 必须让 Phoenix 每条 Example 的实际输入进入对应已批准 YAML 场景，并在 TestRun 中保存 sample ID；只重复运行相同脚本而不消费样本输入不构成 Dataset 执行。YAML 的实际步骤必须引用 `${dataset_input...}`，不得靠注释冒充绑定。
+- 契约只采纳文档明确给出的字段、规则和固定商品夹具。缺失的业务边界、参数定义、异常规则与状态细节标记为未定义；新增规则须在模拟契约中显式版本化，不能由 Agent 临场猜测。
+- 传统 API 自动化可共用执行底座，但 AI 应用测试的默认调试对象是该智能导购 Agent；售后 PRD 继续作为独立需求分析与测试建模样本，不替代智能导购调试契约。
+
+- 2026-11-12 起，TestCase 生成前必须先建立独立 Test Model。唯一主线为 `Requirement Baseline → Approved Test Model → Approved TestCase`；Agent 内部临时 plan 不再视为测试建模完成。
+- Test Model 包含质量目标、基线业务模型、风险、TestPoint、TestCondition、AI 双对象与四层证据范围。候选模型支持人工修正、确定性校验和版本冻结；没有 Approved Test Model 时禁止生成 TestCase。
+- TestCase Agent 只能读取冻结的 Approved Test Model，不得在生成阶段重新规划测试条件或绕过模型。Approved TestCase 必须记录来源 Test Model Version；质量计划和 OPA 发布准入必须检查该资产。
+- 用户明确授权清理旧 TestDesign/Approved TestCase 及其下游演示关联，不保留旧版兼容生成路径；需求基线、项目配置和质量计划继续保留。阶段记录见 `docs/PHASES/TM01.md`。
+
 - TD01 已获用户批准并进入实施。唯一输入是不可覆盖的 Requirement Baseline；不得从 candidate/reviewing 分析直接生成 TestCase。
 - 唯一 Agent Harness 继续使用 Deep Agents `createDeepAgent`；TestCase 统一输出简体中文 Cucumber/Gherkin，并由 `@cucumber/gherkin` 官方 Parser 校验。
 - 风险、测试点和 TestCase 必须回链接受的 Baseline 条目与真实 source ID。所有应覆盖 Baseline ID 是动态 Structured Output Schema 的固定键，不允许静默遗漏。
 - fast-check、NIST ACTS、GraphWalker 仅在对应输入域、参数约束或状态图完整时适用；不适用必须保存原因，不得让 AI 猜测缺失模型。
 - TestMesh 只保存业务 ID、结构化设计、评审事件和不可覆盖 Approved TestCase 版本；不实现 Gherkin Parser、组合算法、路径算法或第二套 Agent Loop。
+- 测试设计同时覆盖传统业务系统和 Testing for AI。AI 用例必须显式声明意图识别、多轮上下文、约束保持、回复准确性、Groundedness/幻觉、安全拒答、工具使用或鲁棒性维度，并记录 oracle、阈值、数据集与证据要求；存在 AI 用例时必须使用 Phoenix Dataset/Experiment/Evaluator，不得以主观评价代替。
 - 首个真实草稿 `36b0c1aa-0812-4a03-b674-ab62a96b2d6f` 虽通过旧覆盖 Gate，但以 8 条宽泛用例承载 36 个基线项，已被用户明确判定不满足测试设计质量，不得批准或作为验收成果。新生成必须是原子用例：每条只有一个主要验证对象、一个独立可判定场景和结构化步骤；每个未排除基线项至少成为一条用例的 `primary_trace_ref`，复杂分支继续展开，不以最低条数为目标。
 - 测试设计 Agent 必须完整读取获批 PRD 与基线，使用 Deep Agents 原生渐进式 Skills 执行测试分析规划、场景、等价类/边界值、判定表、状态迁移、失败模式与跨系统一致性分析；不得把全部方法压缩为一段通用提示词。
 - TestCondition 是 TestPoint 与 TestCase 之间的强制规划层。每个未排除基线项至少要有正常/有效与反向/异常两个不同条件，存在更多业务分支时继续展开；每个条件必须由独立原子 TestCase 覆盖。2026-10-10 第二次真实草稿虽达到 36 条，但仍恰好一项一例，已再次判定为最低覆盖而非质量验收成果。
@@ -102,10 +116,20 @@
 - 新 TestDesign 必须冻结实际使用的知识证据快照（chunk ID、文档、score、原文、标题、页码和 Docling 元素）；知识库删除不得破坏历史设计证据。用例页面必须展示 Baseline 原文摘录与定位，以及存在时的冻结知识证据，不能只展示引用 ID。
 - 2026-10-12 用户明确决定当前 72 条 TestCase 全部通过。系统已逐条写入 72 条 `accepted` 评审事件并冻结 Approved TestCase v1 `60e6e77a-6392-497a-bc66-a165a688d097`；TD01 已完成，后续只能读取该快照，不得覆盖。当前没有真实 RAG 资料，知识引用为空且不作为阻塞项，不得补造命中。
 
+## 当前项目质量管理规则（2026-10-16）
+
+- QM01 已获用户批准并进入实施。项目配置升级为“项目质量管理”，质量计划是项目、发布批次、质量目标、风险、质量属性、测试策略、证据要求和准入策略的核心对象。
+- 质量资产不复制成熟工具数据；TestMesh 通过稳定业务 ID 关联 Requirement Baseline、Approved TestCase、TestRun、Phoenix 评测配置/实验、发布准入证据和持续改进项。
+- 指标必须分为治理、覆盖、执行、AI 质量和持续改进层，不能只展示单一总分。没有真实执行或评测证据时显示缺失或零，不用 mock 填充。
+- 正式发布准入唯一策略引擎为 OPA/Rego。TestMesh 提供事实并保存 OPA 版本、策略版本、输入、结果和检查项；`deny` 不得人工覆盖，`review` 只允许留下有责任人和理由的风险接受记录。
+- 已批准质量计划和 Approved TestCase 均不可覆盖；变化必须创建新版本。改进项进入 `open → in_progress → verified → closed` 闭环，`verified/closed` 必须有可复核证据。
+- 质量计划 v1 已由路昭凡批准。OPA 策略 `qm01-v2` 将 AI 设计覆盖与执行证据分开：存在 AI TestCase 时，必须关联同一 Approved TestCase 版本、覆盖全部 AI 用例的 Phoenix Dataset/Experiment/Evaluator 通过证据；旧目标或旧版本的 AI 质量画像不能用于放行。当前 Approved v2 的 49 条 AI 用例尚无该证据，最新准入必须为 `deny`，不得伪造或人工覆盖。
+- 参数提取（Slot Filling）是被测 AI 能力，不是 TestMesh 自身的新 Harness。只有 Requirement Baseline 或获准的接口/工具契约证明适用时，现有 Deep Agents TestDesign Agent 才能启用；缺少参数 Schema、归一化、上下文状态或工具映射契约时必须标记 `blocked`，不得猜测。测试设计区分语义提取、结构/业务校验、工具参数映射三层，并逐项处理 18 个专项维度；Dataset、Experiment、字段级 Evaluation、指标聚合和版本比较继续由 Phoenix 负责，TestMesh 不自建 Slot Runner、结果表或第二套 Harness。
+
 ## 当前 API 自动化规则（2026-10-12）
 
 - AT01 已进入实施。唯一输入是不可覆盖的 Approved TestCase 版本、真实 OpenAPI 3.x、目标 Base URL 和本次运行所需认证；不得从 PRD 猜接口契约。
-- API 执行按目的使用两项成熟能力：Schemathesis 4.29.3 负责 OpenAPI 契约、生成、fuzzing 与 stateful；Hurl 8.0.1 负责经审核的确定性业务请求链、捕获与断言。两者不得互相 fallback，TestMesh 不自研 HTTP Client、断言 DSL、生成、Shrink、状态链或脚本沙箱。
+- Schemathesis 4.29.3 继续负责 OpenAPI 契约、生成、fuzzing 与 stateful。2026-10-28 用户明确授权传统 YAML API 执行器自研并要求后端改为 FastAPI；新的确定性业务请求链使用 FastAPI + httpx.AsyncClient，变量、提取、断言、受限流程控制和证据汇总由 TestMesh 实现，不执行任意 Python、Shell 或用户脚本。
 - TestMesh 只维护 Approved TestCase ↔ OpenAPI operation 映射与 TestRun 证据。只执行有映射的 operation，未映射项明确排除；映射不改变 Schemathesis 生成逻辑。
 - 旧 `/api/p02/*` 产品入口已删除。历史 SQLite OpenAPI 没有 Approved 版本 ID，不能进入新路径，必须重新导入；不得恢复旧需求/证据关联作为平行路径。
 - 认证和 Header 只用于本次执行，不持久化。Windows 子进程必须使用 UTF-8，避免 GBK 导致 Schemathesis Unicode 输出崩溃；Runner 无 JUnit 时保存真实错误并停止，不启用备用报告或 fallback。
@@ -114,6 +138,7 @@
 - 无公司 URL 时只使用 `examples/api-automation/` 的本机受控演示，必须明确标注“非业务验收”。2026-10-13 演示中 Hurl 3/3 请求通过，Schemathesis 在修正其真实发现的契约/实现问题后生成 143 个用例并全部通过；正式页面后端另保存了两类通过 TestRun。不得据此宣称售后业务系统已验收。
 - 项目配置是独立入口。TestMesh 项目 ID 是需求、用例、OpenAPI 和执行结果的业务归属键；环境 Base URL 与非敏感公共 Header 只维护一次，API 自动化必须引用项目/环境，不得在各测试页重复保存。
 - 敏感配置的正式目标平台是 Infisical。TestMesh 不得保存 Authorization、Cookie、Token、API Key、密码或证书，也不得自研加密密钥表；当前没有可运维 Infisical 实例时，只允许单次运行内存输入。未来接入必须使用官方 SDK/API、Machine Identity 和明确的项目/环境映射，不建立第二条秘密读取路径。
+- 2026-10-28 起，FastAPI 迁移后的传统确定性 API 场景格式为 `testmesh-api/v1` YAML。第一阶段使用 Pydantic、httpx、jsonpath-ng 实现响应提取、`${...}` 类型安全替换和有界 `foreach`；单响应 2 MB、单场景 500 请求、每层 100 项、最多 3 层。旧 `testmesh-hurl/v1` 只作为迁移前历史实现，不得继续扩展或与新入口长期双写。Base URL、公共非敏感 Header、公共非敏感变量和默认环境仍只从项目配置读取；场景必须关联 Approved TestCase，TestRun 必须进入质量计划、失败诊断和 OPA 准入事实。
 
 ## 当前 UI 自动化规则（2026-10-13）
 
@@ -141,12 +166,12 @@
 ## P01 实现约束
 
 - 工作台：Refine + Ant Design，参考 Ant Design Pro 的企业后台布局与视觉。
-- AI Chat：薄 UI，支持文本、图片和文件上传。
+- 需求分析页使用固定、版本化的分析任务，不提供自由文本对话框或意图分类；用户上传文本、图片和文件后直接启动现有 Requirement Analysis Agent。
 - AI：服务端直接调用 OpenAI Responses API；不得把 API Key 暴露到浏览器。
 - 模型：单一模型配置，不自动改用其他模型。
 - 输出：新需求分析固定十字段 RequirementAnalysis JSON，顶层为 `summary/requirements/actors/business_rules/flows/states/constraints/exceptions/open_questions/sources`；各非空条目含 `id/description/origin/source_refs/confidence`，公共 `origin` 只表达来源并取 `explicit/inferred`，`open_questions[]` 另含 `issue_type=missing/ambiguity/conflict`。没有内容时 summary 为 `null`、数组为空。Risk 与 TestCase 属于测试设计阶段，不在需求分析里补造。
 - `sources[]` 原文引用关联上传来源；能可靠定位时给出页码/段落/图片，不能定位时明确标记定位限制，不得输出伪造定位。页面报告和 Markdown 导出只从同一 JSON 渲染。
-- Chat Attachment 与 Project Knowledge 在概念和界面上分开；P01 只实现完成分析闭环的最小存储。
+- 需求原始资料与 Project Knowledge 在概念和界面上分开；P01 只实现完成分析闭环的最小存储。
 - 不引入 Open WebUI、Langflow、Temporal、Keploy、Playwright、Appium、k6、ZAP 或其他后续阶段能力。
 
 ## 变更与验证

@@ -88,6 +88,8 @@ export interface ApiScenarioSuiteRecord {
   environmentId: string;
   approvedVersionId: string;
   filename: string;
+  sourceFormat: "testmesh-hurl/v1";
+  sourceContent: string;
   approvedTestCaseIds: string[];
   createdAt: string;
 }
@@ -390,6 +392,8 @@ CREATE TABLE IF NOT EXISTS api_scenario_suites (
   approved_version_id TEXT NOT NULL,
   filename TEXT NOT NULL,
   content TEXT NOT NULL,
+  source_format TEXT NOT NULL DEFAULT 'testmesh-hurl/v1',
+  source_content TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS api_scenario_suite_test_cases (
@@ -610,6 +614,13 @@ export class DomainStore {
     }
     if (!columns.some((column) => column.name === "environment_id")) {
       this.db.exec("ALTER TABLE openapi_specs ADD COLUMN environment_id TEXT NOT NULL DEFAULT ''");
+    }
+    const scenarioColumns = this.db.pragma("table_info(api_scenario_suites)") as Array<{ name: string }>;
+    if (!scenarioColumns.some((column) => column.name === "source_format")) {
+      this.db.exec("ALTER TABLE api_scenario_suites ADD COLUMN source_format TEXT NOT NULL DEFAULT 'testmesh-hurl/v1'");
+    }
+    if (!scenarioColumns.some((column) => column.name === "source_content")) {
+      this.db.exec("ALTER TABLE api_scenario_suites ADD COLUMN source_content TEXT NOT NULL DEFAULT ''");
     }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS test_case_approved_links (
@@ -1059,14 +1070,16 @@ export class DomainStore {
     approvedVersionId: string;
     filename: string;
     content: string;
+    sourceFormat: "testmesh-hurl/v1";
+    sourceContent: string;
     approvedTestCaseIds: string[];
   }): ApiScenarioSuiteRecord {
     const id = randomUUID();
     const create = this.db.transaction(() => {
       this.db.prepare(
         `INSERT INTO api_scenario_suites
-         (id, project_id, environment_id, approved_version_id, filename, content, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         (id, project_id, environment_id, approved_version_id, filename, content, source_format, source_content, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         id,
         input.projectId,
@@ -1074,6 +1087,8 @@ export class DomainStore {
         input.approvedVersionId,
         input.filename,
         input.content,
+        input.sourceFormat,
+        input.sourceContent,
         new Date().toISOString(),
       );
       const insertLink = this.db.prepare(
@@ -1095,7 +1110,8 @@ export class DomainStore {
   getApiScenarioSuite(id: string): ApiScenarioSuiteRecord {
     const row = this.db.prepare(
       `SELECT id, project_id AS projectId, environment_id AS environmentId,
-              approved_version_id AS approvedVersionId, filename, created_at AS createdAt
+              approved_version_id AS approvedVersionId, filename,
+              source_format AS sourceFormat, source_content AS sourceContent, created_at AS createdAt
        FROM api_scenario_suites WHERE id = ?`,
     ).get(id) as Omit<ApiScenarioSuiteRecord, "approvedTestCaseIds"> | undefined;
     if (!row) throw new Error(`Hurl 场景集 ${id} 不存在`);

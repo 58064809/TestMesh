@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ProjectEnvironmentInputSchema, ProjectInputSchema } from "../server/project-config/schema.js";
+import { ProjectEnvironmentInputSchema, ProjectInputSchema, ProjectKnowledgeBindingInputSchema } from "../server/project-config/schema.js";
 
 describe("project configuration boundary", () => {
   it("accepts project metadata and non-sensitive environment configuration", () => {
@@ -8,7 +8,8 @@ describe("project configuration boundary", () => {
       name: "测试环境",
       baseUrl: "http://127.0.0.1:8080/",
       headers: [{ name: "X-Tenant-ID", value: "demo" }],
-    })).toMatchObject({ baseUrl: "http://127.0.0.1:8080" });
+      variables: [{ name: "tenantId", value: "demo" }],
+    })).toMatchObject({ baseUrl: "http://127.0.0.1:8080", variables: [{ name: "tenantId", value: "demo" }] });
   });
 
   it.each(["Authorization", "Cookie", "X-API-Key", "access-token", "client-secret", "db-password"])(
@@ -23,6 +24,13 @@ describe("project configuration boundary", () => {
     },
   );
 
+  it.each(["token", "apiKey", "db_password", "baseUrl"])("rejects persisted or reserved variable %s", (name) => {
+    const result = ProjectEnvironmentInputSchema.safeParse({
+      name: "测试环境", baseUrl: "https://example.test", headers: [], variables: [{ name, value: "must-not-persist" }],
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("rejects non-http target URLs", () => {
     const result = ProjectEnvironmentInputSchema.safeParse({
       name: "测试环境",
@@ -30,5 +38,11 @@ describe("project configuration boundary", () => {
       headers: [],
     });
     expect(result.success).toBe(false);
+  });
+
+  it("only accepts explicit mature-RAG document roles with an operator", () => {
+    expect(ProjectKnowledgeBindingInputSchema.safeParse({ documentId: "doc-1", role: "openapi", boundBy: "路昭凡" }).success).toBe(true);
+    expect(ProjectKnowledgeBindingInputSchema.safeParse({ documentId: "doc-1", role: "prompt", boundBy: "路昭凡" }).success).toBe(false);
+    expect(ProjectKnowledgeBindingInputSchema.safeParse({ documentId: "doc-1", role: "agent_contract", boundBy: "" }).success).toBe(false);
   });
 });

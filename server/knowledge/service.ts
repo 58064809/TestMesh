@@ -1,10 +1,27 @@
 import { createHash, randomUUID } from "node:crypto";
 import { OpenAIEmbeddings } from "@langchain/openai";
-import type { DocumentChunker } from "../document-parsing/docling.js";
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+import type { DoclingChunk, DocumentChunker } from "../document-parsing/docling.js";
 import type { KnowledgeDocumentRecord, KnowledgePostgresStore } from "./postgres-store.js";
 import { QdrantKnowledgeIndex, type KnowledgeSearchHit } from "./qdrant.js";
 
 export const KNOWLEDGE_EMBEDDING_MODEL = "text-embedding-3-small";
+
+const jsonSplitter = new RecursiveCharacterTextSplitter({ chunkSize: 1_000, chunkOverlap: 100 });
+
+export async function chunkKnowledgeJson(input: { filename: string; bytes: Buffer }): Promise<DoclingChunk[]> {
+  let value: unknown;
+  try { value = JSON.parse(input.bytes.toString("utf8")); }
+  catch (error) { throw new Error(`JSON 知识文件无效：${error instanceof Error ? error.message : "解析失败"}`, { cause: error }); }
+  const text = JSON.stringify(value, null, 2);
+  const parts = await jsonSplitter.splitText(text);
+  if (parts.length === 0) throw new Error("JSON 知识文件为空");
+  return parts.map((part, index) => ({
+    index, text: part, rawText: part, tokenCount: null,
+    headings: [], captions: [], docItems: [], pageNumbers: [],
+    metadata: { source_format: "json", filename: input.filename },
+  }));
+}
 
 export class KnowledgeService {
   constructor(
@@ -26,7 +43,9 @@ export class KnowledgeService {
     if (existing?.status === "indexed") return { record: existing, reused: true };
     const record = existing ?? await this.store.create({ ...input, sha256, embeddingModel: KNOWLEDGE_EMBEDDING_MODEL });
     try {
-      const chunks = await this.chunker.chunk(input);
+      const chunks = input.filename.toLowerCase().endsWith(".json")
+        ? await chunkKnowledgeJson(input)
+        : await this.chunker.chunk(input);
       const embeddings = new OpenAIEmbeddings({ apiKey: input.apiKey, model: KNOWLEDGE_EMBEDDING_MODEL });
       const vectors = await embeddings.embedDocuments(chunks.map((chunk) => chunk.text));
       if (vectors.some((vector) => vector.length !== 1536)) throw new Error("Embedding 向量维度不是 text-embedding-3-small 的 1536");

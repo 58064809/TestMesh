@@ -1,5 +1,19 @@
 # TestMesh Roadmap
 
+## 2026-11-12 AI 应用测试 Dataset 设计
+
+AIAT07 将 AI 应用测试页面按 Dataset 设计与样本、Evaluator 校准、Experiment 分步展示。Dataset Specification 从 Approved AI TestCase 和 TestCondition 派生，真实样本经人工审核后冻结并同步 Phoenix。详见 `docs/PHASES/AIAT07.md`。
+
+## 2026-11-12 测试建模前置门禁
+
+测试主线升级为 `Quality Plan → Requirement Baseline → Approved Test Model → Approved TestCondition → Approved TestCase → TestRun/Evaluation → Triage/Report/Gate`。Test Model 与 TestCondition 均为独立质量资产，支持人工修正、确定性校验、批准与不可覆盖版本；TestCase Agent 只读取已批准模型和条件，任一前置资产缺失时页面、API和 OPA 发布准入均阻断。智能导购模拟项目另提供显式、版本化的参考资产入口，但不会作为模型调用失败后的静默兜底；基线缺少 V1.0 规则或仍声明规则未定义时直接阻断。实现与边界见 `docs/PHASES/TM01.md` 与 `docs/PHASES/AIAT07.md`。
+
+## 2026-10-16 项目质量管理与 Testing for AI
+
+用户批准将“项目配置”升级为“项目质量管理”。新增 QM01：以版本化质量计划为核心，统一质量资产关系、分层指标、OPA 正式发布准入与持续改进闭环。智能测试设计同步扩展 Testing for AI，用例显式覆盖意图识别、多轮上下文、约束保持、回复准确性、Groundedness/幻觉、安全拒答、工具使用和鲁棒性，并映射 Phoenix Dataset/Experiment/Evaluator 证据。
+
+该阶段不覆盖既有 Approved TestCase v1，也不伪造 AI 评测结果；同一需求基线再次生成时创建新的测试设计候选版本，Approved v1 保持不可变。2026-10-18 已完成 v2 评审：68 条接受、4 条驳回，冻结的 Approved v2 包含 49 条 AI 用例并覆盖 9 个维度。质量计划 v1 已由路昭凡批准并冻结。OPA `qm01-v2` 同时要求 AI 设计维度覆盖与当前 Approved TestCase 版本对应的 Phoenix Dataset/Experiment/Evaluator 通过证据；最新结果因缺少 49 条 AI 用例的真实实验结果而 `deny`。参数提取（Slot Filling）作为目标 AI 的条件化测试能力接入现有 TestDesign/Phoenix/OPA 单一路径，不新增 Harness、Runner、结果库或独立评测平台；既有 Approved v1/v2 均不回写。当前状态与验收边界见 `docs/PHASES/QM01.md`。
+
 ## 2026-10-08 产品方向纠偏
 
 用户明确：推荐表只是调研候选，不是逐项建设清单；TestMesh 的终极目标是 **Agent / AI 应用质量保障体系**。需求分析只能有一个入口，目的是发现缺失、歧义和冲突并回链原文。
@@ -66,10 +80,11 @@ DI01 调研 Docling、PaddleOCR、MinerU、Unstructured 和 Apache Tika 后，�
 | AQ01 | 以当前需求分析 Agent 验证 Dataset、Trace、Eval、Experiment 与版本比较闭环 | 技术尖峰及评测治理入口已通过（候选 rubric 待人工批准） | 完成剩余问题评审并批准 candidate-v1，再扩充数据集和定义正式准入阈值 |
 | TD01 | 基于 Baseline 的测试设计、风险、测试点和 TestCase | 已完成（72 条人工全量通过，Approved TestCase v1 已冻结） | 已进入 AT01 |
 | KR01 | 通用企业知识检索：Docling 分块、Qdrant 检索与证据回链 | 已完成（中文真实入库/检索/删除验收；77 项测试、lint、build 通过） | 作为 TD01 的知识补充层，不形成平行业务入口 |
-| AT01 | Approved TestCase 到 API 自动化与真实 Runner 证据 | 进行中（Schemathesis 与 Hurl 平台闭环、可重复本机演示和刷新恢复均已通过；等待真实业务契约、场景与环境） | 真实业务验收通过后进入 AT02 |
+| AT01 | Approved TestCase 到 API 自动化与真实 Runner 证据 | 进行中（Schemathesis 保留；传统 YAML 执行器正迁移为 FastAPI/httpx，动态 foreach 核心已通过隔离测试，页面、持久化与质量证据尚待迁移） | FastAPI API 自动化闭环及真实业务验收后完成 |
 | AT02 | Approved TestCase 到 UI 自动化与 Playwright 证据 | 进行中（官方 Playwright 平台闭环已通过；等待真实前端资产） | 真实业务验收通过后进入 FT01 |
 | FT01 | API/UI 失败执行后的智能诊断与辅助缺陷定位 | 进行中（已撤回独立缺陷入口并内嵌执行结果；FT01-B 等待重启） | 重启后启动 Docker Desktop，继续 SkyWalking 受控全链路验收 |
 | HR01 | AI 候选稿人工修正、校验、Diff 与冻结 | 进行中（需求分析与 TestCase 已接入；API/UI 脚本待生成阶段复用） | 完成 API/UI 脚本生成后做真实修订验收 |
+| QM01 | 质量计划、统一质量资产、分层指标、OPA 发布准入与持续改进；纳入 Testing for AI | 进行中（计划 v1 已批准；Approved v2 已关联；AI 设计覆盖 9/9；OPA 因缺少 Phoenix 实验通过证据而 deny） | 获得真实目标 Agent 后执行 Phoenix Dataset/Experiment/Eval，再复验准入 |
 
 详细任务和依赖见 `docs/DEVELOPMENT_TASKS.md`。APP、性能和安全测试暂不进入新主线；既有实现作为历史能力保留。
 
@@ -87,8 +102,8 @@ DI01 调研 Docling、PaddleOCR、MinerU、Unstructured 和 Apache Tika 后，�
 ## P01 — 统一工作台与 PRD 多模态分析
 
 - **目标**：让用户在统一中文工作台上传 PRD/截图并获得有证据的结构化需求分析。
-- **范围**：Refine + Ant Design Shell、AI Chat、文本/图片/文件上传、最小 Project Knowledge、OpenAI Responses API、固定十字段 RequirementAnalysis、原文引用、页面报告与 Markdown 导出。
-- **验收标准**：进入工作台 → 打开 AI Chat → 上传包含文本或图片的 PRD → 输入“帮我分析这个需求” → 获得通过固定 Schema 与来源校验的结果 → 查看原文引用并导出同源报告；定位不可靠时显式说明。
+- **范围**：Refine + Ant Design Shell、固定任务的需求分析页、文本/图片/文件上传、最小 Project Knowledge、固定十字段 RequirementAnalysis、原文引用、页面报告与 Markdown 导出；不增加自由文本对话或意图分类。
+- **验收标准**：进入工作台 → 打开 AI 需求分析 → 上传包含文本或图片的 PRD → 点击“开始分析” → 服务端按固定任务生成通过 Schema 与来源校验的结果 → 查看原文引用并导出同源报告；定位不可靠时显式说明。
 - **明确不做**：UI/API 自动化、知识库增强、长流程编排、后续引擎、模型 fallback。
 - **依赖**：Node.js、Refine、Ant Design、OpenAI SDK、有效 `OPENAI_API_KEY` 与可用的单一模型。
 - **下一阶段入口**：全部自动检查和一次真实多模态闭环通过，P01 标记已完成，用户批准继续。

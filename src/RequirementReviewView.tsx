@@ -1,9 +1,10 @@
 import { DownloadOutlined, FileDoneOutlined } from "@ant-design/icons";
-import { Alert, App as AntdApp, Button, Card, Empty, Flex, Input, Modal, Segmented, Select, Space, Tag, Tooltip, Typography, Upload, type UploadFile } from "antd";
+import { Alert, App as AntdApp, Button, Card, Empty, Flex, Input, Modal, Segmented, Select, Space, Tabs, Tag, Tooltip, Typography, Upload, type UploadFile } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { mergedSourceEntries, renderReviewMarkdown, reviewEntries, unresolvedDecisionEntries, visibleReviewEntries, type ReviewEntry, type ReviewView } from "./review-report";
 import { issueTypeLabels, locatorLabels } from "./analysis-report";
 import { pdfPageRange, sourceFileUrl, visualEvidence } from "./evidence-preview";
+import DecisionMarkdown from "./DecisionMarkdown";
 import { PENDING_PRD_REVISION, type AnalysisAmendmentRecord, type AnalysisResponse, type AnalysisReviewRecord, type AnalysisReviewStatus, type AnalysisIssueType, type RequirementBaselineRecord } from "./types";
 
 const { Text, Paragraph } = Typography;
@@ -12,7 +13,8 @@ const reviewStatusLabels: Record<AnalysisReviewStatus, string> = {
 };
 type ReviewDraft = Omit<AnalysisReviewRecord, "id" | "analysisId" | "itemId" | "createdAt">;
 type ReviewField = "status" | "mergeInto" | "issueType" | "decision" | "decisionBy" | "prdRevision";
-type BaselineField = "revision" | "approver" | "file";
+type BaselineField = "revision" | "approver" | "previous" | "file";
+type BaselineLineageMode = "first" | "revision";
 const emptyDraft: ReviewDraft = {
   status: "accepted", reviewer: "", reason: "",
   issueType: "", mergeInto: "", decision: "", decisionBy: "", prdRevision: "",
@@ -56,6 +58,7 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
   const [baselineRevision, setBaselineRevision] = useState("");
   const [baselineApprover, setBaselineApprover] = useState("");
   const [previousBaselineId, setPreviousBaselineId] = useState("");
+  const [baselineLineageMode, setBaselineLineageMode] = useState<BaselineLineageMode>("first");
   const [reviewedPrd, setReviewedPrd] = useState<UploadFile[]>([]);
   const [baselineSnapshot, setBaselineSnapshot] = useState<{ record: RequirementBaselineRecord; accepted: Array<{ section: string; item: { id: string; description: string }; review: AnalysisReviewRecord }> }>();
   const [history, setHistory] = useState<{ itemId: string; events: AnalysisReviewRecord[] }>();
@@ -88,7 +91,14 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
     return counts;
   }, { missing: 0, ambiguity: 0, conflict: 0 });
   const unresolvedDecisions = unresolvedDecisionEntries(entries);
-  const currentBaseline = baselines.find((item) => item.analysisId === response.analysisId);
+  const analysisBaselines = baselines.filter((item) => item.analysisId === response.analysisId);
+  const currentBaseline = analysisBaselines[0];
+  const previousBaselineOptions = baselines
+    .filter((item) => item.analysisId !== response.analysisId)
+    .map((item) => ({
+      value: item.id,
+      label: `${item.prdRevision} · ${item.prdFilename} · ${item.approvedBy}`,
+    }));
   const mergeTarget = draft.mergeInto ? entries.find((entry) => entry.item.id === draft.mergeInto) : undefined;
   const baselineBlockedReason = currentBaseline
     ? `已建立需求基线 v${currentBaseline.version}`
@@ -181,6 +191,7 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
     const validation: Partial<Record<BaselineField, string>> = {};
     if (!baselineRevision.trim()) validation.revision = "请填写获批 PRD 的正式版本号。";
     if (!baselineApprover.trim()) validation.approver = "请填写实际批准该版本的负责人。";
+    if (baselineLineageMode === "revision" && !previousBaselineId) validation.previous = "请选择同一业务的前一需求基线。";
     if (!file) validation.file = "请上传评审完成并已获批的 PRD 文件。";
     setBaselineErrors(validation);
     if (Object.keys(validation).length > 0 || !file) return;
@@ -202,6 +213,8 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
       setReviewedPrd([]);
       setBaselineRevision("");
       setBaselineApprover("");
+      setPreviousBaselineId("");
+      setBaselineLineageMode("first");
       setBaselineErrors({});
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "无法建立基线");
@@ -280,13 +293,17 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
               return <Tooltip key={id} title={source ? `${source.source_file_name} · ${locatorLabels[source.locator_type]} ${source.locator} · ${source.excerpt || source.description}` : "引用不存在"}><a href={`#analysis-source-${response.analysisId}-${id}`}><Tag color="geekblue">原文 {id}</Tag></a></Tooltip>;
             })}
           </Space>
-          {entry.review?.decision && <Paragraph type="secondary" style={{ marginTop: 8 }}>决策：{entry.review.decision} · {entry.review.decisionBy} · PRD {entry.review.prdRevision || PENDING_PRD_REVISION}</Paragraph>}
+          {entry.review?.decision && <div className="review-decision-block">
+            <Text strong>正式评审决策</Text>
+            <DecisionMarkdown value={entry.review.decision} compact />
+            <Text type="secondary">决策人：{entry.review.decisionBy} · PRD {entry.review.prdRevision || PENDING_PRD_REVISION}</Text>
+          </div>}
           {entry.review?.reason && <Text type="secondary">评审理由：{entry.review.reason}</Text>}
         </Card>
       )) : <Empty description={view === "pending" ? "没有待评审条目" : "此视图暂无条目"} />}
 
-      {baselines.length > 0 && <section style={{ marginTop: 14 }}><Text strong>基线版本</Text><Space size={[8, 8]} wrap style={{ marginTop: 8 }}>
-        {baselines.map((item) => <Card key={item.id} size="small"><Space direction="vertical" size={3}>
+      {analysisBaselines.length > 0 && <section style={{ marginTop: 14 }}><Text strong>当前需求的基线版本</Text><Space size={[8, 8]} wrap style={{ marginTop: 8 }}>
+        {analysisBaselines.map((item) => <Card key={item.id} size="small"><Space direction="vertical" size={3}>
           <Text>v{item.version} · {item.prdRevision} · {item.prdFilename}</Text>
           <Text type="secondary">登记批准人：{item.approvedBy} · {new Date(item.approvedAt).toLocaleString("zh-CN")}</Text>
           <Space><Button size="small" onClick={() => void openBaseline(item.id)}>查看冻结内容</Button><a href={`/api/requirement-baselines/${encodeURIComponent(item.id)}/prd`} download><Button size="small">下载获批 PRD</Button></a></Space>
@@ -298,7 +315,8 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
           {error && <Alert type="error" showIcon message="评审保存失败" description={error} />}
           <Paragraph>{selected.item.description}</Paragraph>
           <Alert type="info" showIcon message="可直接修正 AI 候选内容" description="保存时会校验来源 ID，并与评审作为同一次事务留痕；已冻结基线不可修改。修改内容时必须填写评审人和修改理由。" />
-          {requiredLabel("修正后的内容")}<Input.TextArea rows={4} value={amendedDescription} onChange={(event) => setAmendedDescription(event.target.value)} />
+          {requiredLabel("问题描述（可修正 AI 识别结果）")}<Input.TextArea rows={4} value={amendedDescription} onChange={(event) => setAmendedDescription(event.target.value)} />
+          <Text type="secondary">这里描述“缺少、歧义或冲突在哪里”，不是填写最终业务答案。</Text>
           <Text>保留的原文引用</Text><Select mode="multiple" value={amendedSourceRefs} onChange={setAmendedSourceRefs} options={response.result.sources.map((source) => ({ value: source.id, label: `${source.id} · ${source.source_file_name} · ${source.excerpt.slice(0, 48)}` }))} optionFilterProp="label" />
           {"issue_type" in selected.item && <Tag color="gold">AI 问题分类：{issueTypeLabels[selected.item.issue_type as AnalysisIssueType]}</Tag>}
           {selected.item.source_refs.length > 0 && <><Text strong>关联原文（先核对原文件和图片，再登记接受）</Text>
@@ -360,8 +378,31 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
             {draft.status === "accepted" ? requiredLabel("问题类型（人工复核，不改写 AI issue_type）") : <Text>问题类型（人工复核，不改写 AI issue_type）</Text>}<Select status={reviewErrors.issueType ? "error" : undefined} value={draft.issueType || undefined} onChange={(issueType: AnalysisIssueType) => { clearReviewError("issueType"); updateDraft({ issueType }); }} placeholder="选择缺失、歧义或冲突" options={Object.entries(issueTypeLabels).map(([value, label]) => ({ value, label }))} />
             {draft.status === "accepted" && fieldHint("按人工复核结果选择缺失、歧义或冲突。", reviewErrors.issueType)}
             {draft.status === "accepted" && <>
-              {requiredLabel("正式评审决策（进入基线前填写）")}<Input.TextArea status={reviewErrors.decision ? "error" : undefined} value={draft.decision} onChange={(event) => { clearReviewError("decision"); updateDraft({ decision: event.target.value }); }} rows={2} placeholder="记录产品、开发和测试讨论后的最终规则" />
-              {fieldHint("填写最终确认的业务规则、边界或处理结论。", reviewErrors.decision)}
+              {requiredLabel("最终解决方案 / 业务规则（进入基线）")}
+              <Alert type="info" showIcon message="这里填写问题的正式答案" description="支持 Markdown 长文本、标题、列表、表格和代码块。内容将作为需求基线中的正式产品决策，不要再次填写“尚未定义”。" />
+              <Tabs size="small" items={[
+                {
+                  key: "edit",
+                  label: "编辑 Markdown",
+                  children: <Input.TextArea
+                    className="review-decision-editor"
+                    status={reviewErrors.decision ? "error" : undefined}
+                    value={draft.decision}
+                    onChange={(event) => { clearReviewError("decision"); updateDraft({ decision: event.target.value }); }}
+                    autoSize={{ minRows: 12, maxRows: 28 }}
+                    showCount
+                    placeholder={"例如：\n\n## BR-001：推荐数量\n\n| 场景 | 正式规则 |\n| --- | --- |\n| 未指定数量 | 默认推荐 3 款 |\n| 数量超过 5 | 提示最多推荐 5 款，不执行查询 |"}
+                  />,
+                },
+                {
+                  key: "preview",
+                  label: "格式预览",
+                  children: draft.decision.trim()
+                    ? <DecisionMarkdown value={draft.decision} />
+                    : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="填写正式决策后可在这里预览" />,
+                },
+              ]} />
+              {fieldHint("填写最终确认的业务规则、边界、状态或处理结论；表格请使用 Markdown 表格语法。", reviewErrors.decision)}
               {requiredLabel("决策人（进入基线前填写）")}<Input status={reviewErrors.decisionBy ? "error" : undefined} value={draft.decisionBy} onChange={(event) => { clearReviewError("decisionBy"); updateDraft({ decisionBy: event.target.value }); }} placeholder="例如：产品负责人张三" />
               {fieldHint("填写对该结论负责并完成确认的人。", reviewErrors.decisionBy)}
               {requiredLabel("回写到哪版 PRD")}<Select
@@ -370,7 +411,7 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
                 onChange={(prdRevision) => { clearReviewError("prdRevision"); updateDraft({ prdRevision }); }}
                 options={[
                   { value: PENDING_PRD_REVISION, label: `${PENDING_PRD_REVISION}（建立基线时统一填写版本号）` },
-                  ...baselines.map((item) => ({
+                  ...analysisBaselines.map((item) => ({
                     value: item.prdRevision,
                     label: `${item.prdRevision}（已冻结，不可回写）`,
                     disabled: true,
@@ -384,16 +425,60 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
         </Space>}
       </Modal>
 
-      <Modal title="建立需求基线" open={baselineOpen} onCancel={() => setBaselineOpen(false)} onOk={() => void createBaseline()} okText="冻结基线" confirmLoading={saving} destroyOnHidden>
-        <Space direction="vertical" size={12} style={{ width: "100%" }}>
-          <Alert type="info" showIcon message="先由产品修订并批准 PRD，再上传获批版本。基线冻结后不覆盖；发生变更时重新上传新 PRD 生成新分析，并关联前一基线。" />
-          {requiredLabel("获批 PRD 修订标识")}<Input status={baselineErrors.revision ? "error" : undefined} value={baselineRevision} onChange={(event) => { clearBaselineError("revision"); setBaselineRevision(event.target.value); }} placeholder="例如 v1.0" />
-          {fieldHint("填写获批文档中的正式版本号，例如 v1.0。", baselineErrors.revision)}
-          {requiredLabel("登记批准人")}<Input status={baselineErrors.approver ? "error" : undefined} value={baselineApprover} onChange={(event) => { clearBaselineError("approver"); setBaselineApprover(event.target.value); }} placeholder="例如：产品负责人张三" />
-          {fieldHint("填写实际批准该版本的负责人。", baselineErrors.approver)}
-          <Text>前一基线（首次建立可留空）</Text><Select allowClear value={previousBaselineId || undefined} onChange={(value) => setPreviousBaselineId(value ?? "")} options={baselines.map((item) => ({ value: item.id, label: `v${item.version} · ${item.prdRevision} · ${item.prdFilename}` }))} />
-          {requiredLabel("上传评审后获批的 PRD 文件")}<Upload accept=".pdf,.doc,.docx,.rtf,.odt,.md,.txt,.html,.htm" beforeUpload={() => false} maxCount={1} fileList={reviewedPrd} onChange={({ fileList }) => { clearBaselineError("file"); setReviewedPrd(fileList.slice(-1)); }}><Button danger={Boolean(baselineErrors.file)}>选择获批 PRD</Button></Upload>
-          {fieldHint("上传已经完成问题回写并获批的 PRD 文件。", baselineErrors.file)}
+      <Modal title="建立需求基线" open={baselineOpen} onCancel={() => setBaselineOpen(false)} onOk={() => void createBaseline()} okText="冻结基线" confirmLoading={saving} destroyOnHidden width={680} style={{ maxWidth: "calc(100vw - 24px)" }}>
+        <Space direction="vertical" size={16} className="baseline-form">
+          <Alert type="info" showIcon message="上传产品负责人已确认的完整需求文件" description="模拟业务也需要真实的版本文件作为冻结证据。你可以上传《智能导购系统业务需求基线 V1.0》的 Markdown 或 TXT 文件。" />
+          <div className="baseline-form-field">
+            {requiredLabel("获批 PRD 修订标识")}
+            <Input status={baselineErrors.revision ? "error" : undefined} value={baselineRevision} onChange={(event) => { clearBaselineError("revision"); setBaselineRevision(event.target.value); }} placeholder="例如：V1.0" />
+            {fieldHint("填写获批文档中的正式版本号，例如 V1.0。", baselineErrors.revision)}
+          </div>
+          <div className="baseline-form-field">
+            {requiredLabel("登记批准人")}
+            <Input status={baselineErrors.approver ? "error" : undefined} value={baselineApprover} onChange={(event) => { clearBaselineError("approver"); setBaselineApprover(event.target.value); }} placeholder="例如：产品负责人路昭凡" />
+            {fieldHint("填写实际确认并批准该需求版本的负责人。", baselineErrors.approver)}
+          </div>
+          <div className="baseline-form-field">
+            <Text strong>版本关系</Text>
+            <Segmented block value={baselineLineageMode} onChange={(value) => {
+              const mode = value as BaselineLineageMode;
+              setBaselineLineageMode(mode);
+              clearBaselineError("previous");
+              if (mode === "first") setPreviousBaselineId("");
+            }} options={[{ label: "首次建立", value: "first" }, { label: "已有基线的后续版本", value: "revision" }]} />
+            {baselineLineageMode === "first"
+              ? <Alert type="success" showIcon message="这是该业务的第一份基线" description="前一基线保持为空，冻结后版本号从 v1 开始。" />
+              : <>
+                {requiredLabel("选择同一业务的前一基线")}
+                <Select
+                  allowClear
+                  showSearch
+                  status={baselineErrors.previous ? "error" : undefined}
+                  value={previousBaselineId || undefined}
+                  onChange={(value) => { clearBaselineError("previous"); setPreviousBaselineId(value ?? ""); }}
+                  placeholder="选择本业务上一版已冻结的需求基线"
+                  optionFilterProp="label"
+                  options={previousBaselineOptions}
+                  style={{ width: "100%" }}
+                  notFoundContent="没有可关联的历史基线"
+                />
+                {fieldHint("只能关联同一业务的上一版本；不要选择售后系统或其他项目的基线。", baselineErrors.previous)}
+              </>}
+          </div>
+          <div className="baseline-form-field">
+            {requiredLabel("上传评审后获批的 PRD 文件")}
+            <Upload.Dragger
+              accept=".pdf,.doc,.docx,.rtf,.odt,.md,.txt,.html,.htm"
+              beforeUpload={() => false}
+              maxCount={1}
+              fileList={reviewedPrd}
+              onChange={({ fileList }) => { clearBaselineError("file"); setReviewedPrd(fileList.slice(-1)); }}
+            >
+              <p className="ant-upload-text">点击或拖入获批需求文件</p>
+              <p className="ant-upload-hint">支持 PDF、Word、Markdown、TXT 等；仅保存正式批准版本</p>
+            </Upload.Dragger>
+            {fieldHint("对于当前模拟业务，上传你确认的《智能导购系统业务需求基线 V1.0》文件。", baselineErrors.file)}
+          </div>
         </Space>
       </Modal>
 
@@ -401,7 +486,7 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
         {baselineSnapshot && <Space direction="vertical" size={8} style={{ width: "100%" }}>
           <Text>获批 PRD：{baselineSnapshot.record.prdFilename} · {baselineSnapshot.record.prdRevision}</Text>
           <Text type="secondary">文件 SHA-256：{baselineSnapshot.record.prdSha256}</Text>
-          {baselineSnapshot.accepted.map((entry) => <Card size="small" key={entry.item.id}><Text strong>{entry.item.id} · {entry.section}</Text><Paragraph>{entry.item.description}</Paragraph>{"issue_type" in entry.item && <Tag color="gold">AI 分类：{issueTypeLabels[entry.item.issue_type as AnalysisIssueType]}</Tag>}{entry.review.issueType && <Tag color="blue">人工分类：{issueTypeLabels[entry.review.issueType]}</Tag>}{entry.review.decision && <Text>最终决策：{entry.review.decision}</Text>}</Card>)}
+          {baselineSnapshot.accepted.map((entry) => <Card size="small" key={entry.item.id}><Text strong>{entry.item.id} · {entry.section}</Text><Paragraph>{entry.item.description}</Paragraph>{"issue_type" in entry.item && <Tag color="gold">AI 分类：{issueTypeLabels[entry.item.issue_type as AnalysisIssueType]}</Tag>}{entry.review.issueType && <Tag color="blue">人工分类：{issueTypeLabels[entry.review.issueType]}</Tag>}{entry.review.decision && <div className="review-decision-block"><Text strong>最终决策</Text><DecisionMarkdown value={entry.review.decision} compact /></div>}</Card>)}
         </Space>}
       </Modal>
 
@@ -411,7 +496,7 @@ export default function RequirementReviewView({ response, sourceFiles, onReviewS
           {history.events.map((event) => <Card size="small" key={event.id}>
             <Space wrap><Tag>{reviewStatusLabels[event.status]}</Tag><Text>{event.reviewer}</Text><Text type="secondary">{new Date(event.createdAt).toLocaleString("zh-CN")}</Text></Space>
             {event.reason && <Paragraph>理由：{event.reason}</Paragraph>}
-            {event.decision && <Paragraph>决策：{event.decision} · {event.decisionBy} · PRD {event.prdRevision || PENDING_PRD_REVISION}</Paragraph>}
+            {event.decision && <div className="review-decision-block"><Text strong>正式评审决策</Text><DecisionMarkdown value={event.decision} compact /><Text type="secondary">决策人：{event.decisionBy} · PRD {event.prdRevision || PENDING_PRD_REVISION}</Text></div>}
           </Card>)}
         </Space> : <Empty description="尚无评审记录" />)}
       </Modal>

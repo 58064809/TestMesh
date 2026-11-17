@@ -32,5 +32,10 @@ export function selectTestDesignSkills(baseline: BaselineSnapshot): TestDesignSk
       applicable: sections.has("exceptions") || sections.has("flows") || sections.has("constraints"),
       reason: "基线包含异常、流程或依赖约束，需要分析失败模式、跨角色和跨系统一致性",
     },
+    {
+      skill_id: "testing-for-ai",
+      applicable: /(?:AI|人工智能|大模型|模型|Agent|智能|意图|参数提取|槽位|Slot Filling|结构化输出|Function Calling|多轮|上下文|回复|回答|幻觉|知识库|工具调用)/i.test(text),
+      reason: "基线涉及 AI/Agent 行为，需要按证据选择意图、参数提取、多轮上下文、约束保持、正确性、幻觉、工具使用和鲁棒性",
+    },
   ];
 }

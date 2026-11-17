@@ -21,11 +21,16 @@ import {
   Row,
   Space,
   Spin,
+  Tabs,
   Tag,
   Typography,
   message,
 } from "antd";
 import { useCallback, useEffect, useState } from "react";
+import AiDatasetExports from "./AiDatasetExports";
+import AiExperimentReadiness from "./AiExperimentReadiness";
+import AiEvaluationSamples from "./AiEvaluationSamples";
+import EvaluatorCalibration from "./EvaluatorCalibration";
 
 const { Paragraph, Text } = Typography;
 
@@ -111,6 +116,7 @@ export default function AiQuality() {
   const [error, setError] = useState<string>();
   const [approving, setApproving] = useState<QualityProfile>();
   const [saving, setSaving] = useState(false);
+  const [section, setSection] = useState("dataset");
   const [form] = Form.useForm<ApprovalValues>();
 
   const load = useCallback(async () => {
@@ -165,6 +171,17 @@ export default function AiQuality() {
 
   return (
     <div className="quality-page">
+      <Alert showIcon type="info" message="AI 应用测试流程" description="先在智能测试设计中批准 Test Model 和 AI TestCase，再设计并审核 Dataset 样本，校准 Evaluator，最后运行 Experiment。传统 API 自动化在独立页面执行，两者共用项目配置、执行证据和质量报告。" />
+      <Tabs activeKey={section} onChange={setSection} items={[
+        { key: "dataset", label: "1 · Dataset 设计与样本" },
+        { key: "calibration", label: "2 · Evaluator 校准" },
+        { key: "experiment", label: "3 · Experiment" },
+        { key: "profile", label: "评测配置" },
+      ]} />
+      {section === "dataset" && <><AiEvaluationSamples /><AiDatasetExports /></>}
+      {section === "calibration" && <EvaluatorCalibration />}
+      {section === "experiment" && <AiExperimentReadiness />}
+      {section === "profile" && <>
       {error && <Alert type="error" showIcon message="AI 质量评估暂不可用" description={error} />}
       {!error && profiles.length === 0 && <Empty description="尚未建立评测配置" />}
       {profiles.map((profile) => {
@@ -320,6 +337,7 @@ export default function AiQuality() {
         );
       })}
 
+      </>}
       <Modal
         title={<Space><SafetyCertificateOutlined />批准 AI 质量评测配置</Space>}
         open={Boolean(approving)}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DomainStore } from "../server/store.js";
-import { buildFailureEvidence, listFailureRuns, resolveFailureContext } from "../server/failure-triage/evidence.js";
+import { buildApiYamlFailureEvidence, buildFailureEvidence, listFailureRuns, resolveFailureContext } from "../server/failure-triage/evidence.js";
 import { FailureTriageSchema, type FailureDiagnosisContext, type FailureEvidence } from "../server/failure-triage/schema.js";
 import { validateFailureTriage } from "../server/failure-triage/validation.js";
 
@@ -78,5 +78,18 @@ describe("FT01 failure evidence and completion gate", () => {
       id: "EVD-TRACE-1", category: "telemetry" as const, title: "错误 Trace", content: "after-sales-service error span", locator: "trace:1", direct: true,
     }];
     expect(() => validateFailureTriage(candidate, evidence)).not.toThrow();
+  });
+
+  it("turns FastAPI YAML failed assertions and data rows into direct evidence", () => {
+    const evidence = buildApiYamlFailureEvidence({
+      id: "yaml-run-1", scenarioId: "scenario-1", scenarioName: "订单数据驱动", projectId: "project-1",
+      environmentId: "env-1", approvedVersionId: "v1", approvedTestCaseIds: ["TC-001"],
+      status: "failed", passed: 1, failed: 1, variables: {},
+      dataCases: [{ id: "case-1", status: "failed" }],
+      items: [{ name: "查询订单", status: "failed", assertions: [{ expected: 200, actual: 500, passed: false }] }],
+      startedAt: "2026-10-29T00:00:00.000Z", finishedAt: "2026-10-29T00:00:01.000Z",
+    });
+    expect(evidence.map((item) => item.id)).toEqual(["EVD-RUN-SUMMARY", "EVD-FASTAPI-YAML-1"]);
+    expect(evidence[1]).toMatchObject({ category: "assertion", direct: true });
   });
 });

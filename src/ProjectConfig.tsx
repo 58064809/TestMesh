@@ -1,4 +1,4 @@
-import { CloudServerOutlined, CodeOutlined, EditOutlined, PlusOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
+import { CloudServerOutlined, CodeOutlined, DatabaseOutlined, DeleteOutlined, EditOutlined, PlusOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
 import {
   Alert,
   App as AntdApp,
@@ -24,8 +24,17 @@ import type { ProjectEnvironmentRecord, ProjectRecord } from "./types";
 const { Text, Title, Paragraph } = Typography;
 
 type ProjectForm = { name: string; code: string; description: string };
-type EnvironmentForm = { name: string; baseUrl: string; headersText: string };
+type EnvironmentForm = { name: string; baseUrl: string; headersText: string; variablesText: string };
 type AutomationForm = { defaultApiEnvironmentId: string; defaultUiEnvironmentId: string; uiRepositoryPath: string };
+type KnowledgeBindingForm = { documentId: string; role: "openapi" | "agent_contract" | "business_rules" | "test_data"; boundBy: string };
+type KnowledgeDocument = { id: string; filename: string; status: "processing" | "indexed" | "failed"; chunkCount: number; sha256: string };
+type KnowledgeBinding = KnowledgeBindingForm & { id: string; projectId: string; filename: string; documentStatus: string; chunkCount: number; sha256: string; createdAt: string };
+type ContractReadiness = { ready: boolean; openApiContracts: Array<{ filename: string; valid: boolean; operationCount: number; error: string }>; agentContracts: Array<{ filename: string; valid: boolean }>; blockers: string[] };
+
+const knowledgeRoleLabels: Record<KnowledgeBindingForm["role"], string> = {
+  openapi: "OpenAPI 接口契约", agent_contract: "Agent 会话与 Trace 契约",
+  business_rules: "业务规则", test_data: "测试数据说明",
+};
 
 function headersToText(headers: Array<{ name: string; value: string }>): string {
   return headers.map((header) => `${header.name}: ${header.value}`).join("\n");
@@ -39,6 +48,18 @@ function parseHeaders(value: string): Array<{ name: string; value: string }> {
   });
 }
 
+function variablesToText(variables: Array<{ name: string; value: string }>): string {
+  return variables.map((variable) => `${variable.name}=${variable.value}`).join("\n");
+}
+
+function parseVariables(value: string): Array<{ name: string; value: string }> {
+  return value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const separator = line.indexOf("=");
+    if (separator <= 0) throw new Error(`公共变量格式错误：${line}`);
+    return { name: line.slice(0, separator).trim(), value: line.slice(separator + 1) };
+  });
+}
+
 export default function ProjectConfig() {
   const { message } = AntdApp.useApp();
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
@@ -46,6 +67,10 @@ export default function ProjectConfig() {
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [environmentModalOpen, setEnvironmentModalOpen] = useState(false);
   const [automationModalOpen, setAutomationModalOpen] = useState(false);
+  const [knowledgeModalOpen, setKnowledgeModalOpen] = useState(false);
+  const [knowledgeDocuments, setKnowledgeDocuments] = useState<KnowledgeDocument[]>([]);
+  const [knowledgeBindings, setKnowledgeBindings] = useState<KnowledgeBinding[]>([]);
+  const [contractReadiness, setContractReadiness] = useState<ContractReadiness>();
   const [editingProject, setEditingProject] = useState<ProjectRecord>();
   const [editingEnvironment, setEditingEnvironment] = useState<ProjectEnvironmentRecord>();
   const [loading, setLoading] = useState(false);
@@ -54,6 +79,7 @@ export default function ProjectConfig() {
   const [projectForm] = Form.useForm<ProjectForm>();
   const [environmentForm] = Form.useForm<EnvironmentForm>();
   const [automationForm] = Form.useForm<AutomationForm>();
+  const [knowledgeForm] = Form.useForm<KnowledgeBindingForm>();
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId),
@@ -86,6 +112,46 @@ export default function ProjectConfig() {
       .finally(() => setInitialLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    void Promise.all([
+      fetch("/api/knowledge-documents", { cache: "no-store" }).then((response) => response.json() as Promise<KnowledgeDocument[]>),
+      fetch(`/api/projects/${selectedProjectId}/knowledge-bindings`, { cache: "no-store" }).then(async (response) => {
+        const body = await response.json() as KnowledgeBinding[] | { error?: string };
+        if (!response.ok) throw new Error("error" in body ? body.error ?? "知识绑定加载失败" : "知识绑定加载失败");
+        return body as KnowledgeBinding[];
+      }),
+      fetch(`/api/projects/${selectedProjectId}/ai-contract-readiness`, { cache: "no-store" }).then((response) => response.json() as Promise<ContractReadiness>),
+    ]).then(([documents, bindings, readiness]) => { setKnowledgeDocuments(documents); setKnowledgeBindings(bindings); setContractReadiness(readiness); })
+      .catch((caught) => setError(caught instanceof Error ? caught.message : "知识绑定加载失败"));
+  }, [selectedProjectId]);
+
+  async function saveKnowledgeBinding() {
+    if (!selectedProject) return;
+    const values = await knowledgeForm.validateFields();
+    setLoading(true); setError(undefined);
+    try {
+      const response = await fetch(`/api/projects/${selectedProject.id}/knowledge-bindings`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(values),
+      });
+      const body = await response.json() as KnowledgeBinding | { error?: string };
+      if (!response.ok) throw new Error("error" in body ? body.error ?? "知识绑定失败" : "知识绑定失败");
+      setKnowledgeBindings((current) => [body as KnowledgeBinding, ...current]);
+      setContractReadiness(await fetch(`/api/projects/${selectedProject.id}/ai-contract-readiness`, { cache: "no-store" }).then((item) => item.json() as Promise<ContractReadiness>));
+      setKnowledgeModalOpen(false); knowledgeForm.resetFields(); message.success("项目知识用途已绑定");
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "知识绑定失败"); }
+    finally { setLoading(false); }
+  }
+
+  async function removeKnowledgeBinding(bindingId: string) {
+    if (!selectedProject) return;
+    const response = await fetch(`/api/projects/${selectedProject.id}/knowledge-bindings/${bindingId}`, { method: "DELETE" });
+    if (!response.ok) { const body = await response.json() as { error?: string }; setError(body.error ?? "解除绑定失败"); return; }
+    setKnowledgeBindings((current) => current.filter((item) => item.id !== bindingId));
+    setContractReadiness(await fetch(`/api/projects/${selectedProject.id}/ai-contract-readiness`, { cache: "no-store" }).then((item) => item.json() as Promise<ContractReadiness>));
+    message.success("已解除项目知识绑定；知识库原文未删除");
+  }
+
   function openProject(project?: ProjectRecord) {
     setEditingProject(project);
     projectForm.setFieldsValue(project ? { name: project.name, code: project.code, description: project.description } : { name: "", code: "", description: "" });
@@ -98,7 +164,8 @@ export default function ProjectConfig() {
       name: environment.name,
       baseUrl: environment.baseUrl,
       headersText: headersToText(environment.headers),
-    } : { name: "", baseUrl: "", headersText: "" });
+      variablesText: variablesToText(environment.variables),
+    } : { name: "", baseUrl: "", headersText: "", variablesText: "" });
     setEnvironmentModalOpen(true);
   }
 
@@ -135,6 +202,7 @@ export default function ProjectConfig() {
         name: values.name,
         baseUrl: values.baseUrl,
         headers: parseHeaders(values.headersText || ""),
+        variables: parseVariables(values.variablesText || ""),
       };
       const url = editingEnvironment
         ? `/api/projects/${selectedProject.id}/environments/${editingEnvironment.id}`
@@ -247,7 +315,7 @@ export default function ProjectConfig() {
                         title={<Space>{environment.name}<Tag color="blue">非敏感配置</Tag></Space>}
                         description={<Space direction="vertical" size={2}>
                           <Text code>{environment.baseUrl}</Text>
-                          <Text type="secondary">{environment.headers.length} 条公共 Header · 凭据在运行时临时提供</Text>
+                          <Text type="secondary">{environment.headers.length} 条公共 Header · {environment.variables.length} 个公共变量 · 凭据在运行时临时提供</Text>
                         </Space>}
                       />
                     </List.Item>
@@ -278,6 +346,25 @@ export default function ProjectConfig() {
             </Row>
           )}
         </Card>
+        <Card
+          title={<Space><DatabaseOutlined />项目 RAG / 契约来源</Space>}
+          extra={<Button type="primary" icon={<PlusOutlined />} disabled={!selectedProject} onClick={() => { knowledgeForm.resetFields(); setKnowledgeModalOpen(true); }}>绑定已索引文档</Button>}
+        >
+          <Alert type="info" showIcon message="这里只建立项目与成熟 RAG 资产的业务关系" description="文档解析使用 Docling，检索使用 Qdrant；TestMesh 记录文档用途和版本证据。AI 脚本生成只读取本项目绑定的 OpenAPI/Agent 契约，不从 PRD 猜接口。" />
+          {contractReadiness && <Alert
+            type={contractReadiness.ready ? "success" : "warning"}
+            showIcon
+            message={contractReadiness.ready ? "AI 脚本生成契约已就绪" : "AI 脚本生成保持阻塞"}
+            description={contractReadiness.ready ? `${contractReadiness.openApiContracts.filter((item) => item.valid).length} 份 OpenAPI 原文件校验通过，${contractReadiness.agentContracts.filter((item) => item.valid).length} 份 Agent 契约通过交叉校验。` : contractReadiness.blockers.join("；")}
+          />}
+          <List
+            dataSource={knowledgeBindings}
+            locale={{ emptyText: "尚未绑定项目知识；AI 脚本生成将保持阻塞" }}
+            renderItem={(item) => <List.Item actions={[<Button key="remove" danger type="link" icon={<DeleteOutlined />} onClick={() => void removeKnowledgeBinding(item.id)}>解除绑定</Button>]}>
+              <List.Item.Meta title={<Space><Text strong>{item.filename}</Text><Tag color="blue">{knowledgeRoleLabels[item.role]}</Tag></Space>} description={`${item.chunkCount} 个检索片段 · SHA-256 ${item.sha256.slice(0, 12)}… · ${item.boundBy}`} />
+            </List.Item>}
+          />
+        </Card>
       </Space>
 
       <Modal title={editingProject ? "编辑项目" : "新建项目"} open={projectModalOpen} onCancel={() => setProjectModalOpen(false)} onOk={() => void saveProject()} okText="保存" cancelText="取消" confirmLoading={loading} destroyOnHidden>
@@ -295,6 +382,9 @@ export default function ProjectConfig() {
           <Form.Item label="公共 Header" name="headersText" extra="每行一条 Name: Value。Authorization、Cookie、Token、API Key 等敏感信息会被拒绝保存。">
             <TextArea rows={4} placeholder={"例如：\nX-Tenant-ID: demo\nAccept-Language: zh-CN"} />
           </Form.Item>
+          <Form.Item label="公共变量" name="variablesText" extra="每行一条 name=value，可在 YAML 中以 ${name} 引用。Token、密码、API Key 和 baseUrl 等敏感或保留变量会被拒绝保存。">
+            <TextArea rows={4} placeholder={"例如：\ntenantId=demo\nchannel=web"} />
+          </Form.Item>
         </Form>
       </Modal>
 
@@ -309,6 +399,17 @@ export default function ProjectConfig() {
           <Form.Item label="Playwright Git 仓库根目录" name="uiRepositoryPath" extra="保存时检查仓库；执行页只读取，不再重复填写。">
             <Input placeholder="例如：F:\\TestMesh" />
           </Form.Item>
+        </Form>
+      </Modal>
+      <Modal title="绑定项目 RAG / 契约来源" open={knowledgeModalOpen} onCancel={() => setKnowledgeModalOpen(false)} onOk={() => void saveKnowledgeBinding()} okText="保存绑定" confirmLoading={loading} destroyOnHidden>
+        <Form form={knowledgeForm} layout="vertical">
+          <Form.Item label="已索引知识文档" name="documentId" rules={[{ required: true, message: "请选择知识文档" }]}>
+            <Select showSearch optionFilterProp="label" placeholder="只显示已完成索引的文档" options={knowledgeDocuments.filter((item) => item.status === "indexed").map((item) => ({ value: item.id, label: `${item.filename} · ${item.chunkCount} chunks` }))} />
+          </Form.Item>
+          <Form.Item label="在本项目中的用途" name="role" rules={[{ required: true, message: "请选择文档用途" }]}>
+            <Select options={Object.entries(knowledgeRoleLabels).map(([value, label]) => ({ value, label }))} />
+          </Form.Item>
+          <Form.Item label="操作人" name="boundBy" rules={[{ required: true, whitespace: true, message: "请填写操作人" }]}><Input placeholder="例如：路昭凡" /></Form.Item>
         </Form>
       </Modal>
     </div>

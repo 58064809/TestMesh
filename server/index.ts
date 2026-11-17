@@ -14,7 +14,8 @@ import {
 } from "./analysis.js";
 import { MAX_OPENAPI_BYTES, parseHeaderLines, parseOpenApi, validateTargetBaseUrl } from "./openapi.js";
 import { SCHEMATHESIS_VERSION, runSchemathesis, type RunnerAuth } from "./schemathesis.js";
-import { HURL_VERSION, MAX_HURL_BYTES, runHurlScenario, validateHurlScenario } from "./hurl.js";
+import { HURL_VERSION, runHurlScenario } from "./hurl.js";
+import { API_YAML_FORMAT, compileApiYamlScenario } from "./api-automation/yaml-scenario.js";
 import { inspectRepository } from "./repository.js";
 import { PLAYWRIGHT_VERSION, inspectPlaywrightProject, runPlaywrightTest } from "./playwright.js";
 import {
@@ -30,6 +31,7 @@ import { createAnalysisPostgresResources } from "./requirement-analysis/postgres
 import {
   RequirementAnalysisService,
 } from "./requirement-analysis/service.js";
+import { REQUIREMENT_ANALYSIS_TASK } from "./requirement-analysis/prompt.js";
 import { createDoclingClientFromEnvironment } from "./document-parsing/docling.js";
 import { parseAnalysisSources } from "./document-parsing/parse-sources.js";
 import { z } from "zod";
@@ -41,13 +43,39 @@ import {
   type AiQualityProfile,
 } from "./ai-quality/profile.js";
 import { TestDesignService } from "./test-design/service.js";
-import { BaselineSnapshotSchema, TestCaseSchema } from "./test-design/schema.js";
+import { BaselineSnapshotSchema, TestCaseSchema, TestModelDocumentSchema } from "./test-design/schema.js";
+import { TestModelService } from "./test-design/test-model-service.js";
 import { KnowledgeService } from "./knowledge/service.js";
 import { QdrantKnowledgeIndex } from "./knowledge/qdrant.js";
-import { ProjectAutomationConfigInputSchema, ProjectEnvironmentInputSchema, ProjectInputSchema } from "./project-config/schema.js";
+import { ProjectAutomationConfigInputSchema, ProjectEnvironmentInputSchema, ProjectInputSchema, ProjectKnowledgeBindingInputSchema } from "./project-config/schema.js";
 import { FailureDiagnosisRequestSchema } from "./failure-triage/schema.js";
-import { listFailureRuns } from "./failure-triage/evidence.js";
 import { FailureTriageService } from "./failure-triage/service.js";
+import {
+  ImprovementActionInputSchema,
+  ImprovementActionUpdateSchema,
+  QualityPlanApprovalSchema,
+  QualityPlanInputSchema,
+  RiskAcceptanceSchema,
+} from "./quality-management/schema.js";
+import { QualityManagementService } from "./quality-management/service.js";
+import { renderQualityReport } from "./quality-management/report.js";
+import { AiDatasetExportInputSchema, AiDatasetExportService } from "./ai-quality/dataset-export.js";
+import { AiExperimentReadinessService } from "./ai-quality/experiment-readiness.js";
+import { AiExperimentRunInputSchema, AiExperimentRunService } from "./ai-quality/experiment-run.js";
+import { ProjectContractReadinessService } from "./ai-quality/project-contracts.js";
+import {
+  EvaluationDatasetExportSchema,
+  EvaluationSampleFreezeSchema,
+  EvaluationSamplePayloadSchema,
+  EvaluationSampleReviewSchema,
+  EvaluationSampleService,
+  EvaluationSampleSetInputSchema,
+} from "./ai-quality/evaluation-samples.js";
+import { EvaluatorCalibrationInputSchema, EvaluatorCalibrationService } from "./ai-quality/evaluator-calibration.js";
+import { ASSET_SCHEMA_VERSIONS, PROMPT_VERSIONS, TestConditionSetDocumentSchema } from "./test-design/asset-contracts.js";
+import { TEST_DESIGN_PROMPT_REGISTRY } from "./test-design/prompt-registry.js";
+import { runTestConditionAgent } from "./test-design/test-condition-agent.js";
+import { createOpenAITestDesignModel } from "./test-design/agent.js";
 
 initializePhoenixTracing();
 
@@ -59,16 +87,36 @@ const analysisResources = await createAnalysisPostgresResources();
 const requirementAnalysisStore = analysisResources.requirementAnalysisStore;
 const aiQualityStore = analysisResources.aiQualityStore;
 const testDesignStore = analysisResources.testDesignStore;
+const testModelStore = analysisResources.testModelStore;
+const testConditionStore = analysisResources.testConditionStore;
 const knowledgeStore = analysisResources.knowledgeStore;
 const projectConfigStore = analysisResources.projectConfigStore;
 const failureTriageStore = analysisResources.failureTriageStore;
+const qualityManagementStore = analysisResources.qualityManagementStore;
 const requirementAnalysisService = new RequirementAnalysisService(analysisResources);
 const documentParser = createDoclingClientFromEnvironment();
 const knowledgeService = new KnowledgeService(knowledgeStore, documentParser, new QdrantKnowledgeIndex());
-const testDesignService = new TestDesignService(requirementAnalysisStore, testDesignStore, documentParser, knowledgeService);
+const testModelService = new TestModelService(requirementAnalysisStore, testModelStore, documentParser, knowledgeService);
+const testDesignService = new TestDesignService(requirementAnalysisStore, testDesignStore, documentParser, testModelStore, testConditionStore);
+const aiDatasetExportService = new AiDatasetExportService(testDesignStore, aiQualityStore);
+const aiExperimentReadinessService = new AiExperimentReadinessService(testDesignStore, aiQualityStore);
+const aiExperimentRunService = new AiExperimentRunService(aiExperimentReadinessService, aiQualityStore);
+const projectContractReadinessService = new ProjectContractReadinessService(projectConfigStore, knowledgeStore);
+const evaluationSampleService = new EvaluationSampleService(testDesignStore, aiQualityStore);
+const evaluatorCalibrationService = new EvaluatorCalibrationService(aiQualityStore);
 const failureTriageService = new FailureTriageService(store, failureTriageStore, testDesignStore);
+const qualityManagementService = new QualityManagementService(
+  qualityManagementStore,
+  projectConfigStore,
+  requirementAnalysisStore,
+  testDesignStore,
+  testModelStore,
+  aiQualityStore,
+  failureTriageStore,
+  store,
+);
 
-app.use(express.json({ limit: "256kb" }));
+app.use(express.json({ limit: "768kb" }));
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -91,18 +139,6 @@ const openApiUpload = multer({
   fileFilter: (_request, file, callback) => {
     if (!/\.(json|ya?ml)$/i.test(file.originalname)) {
       callback(new Error(`OpenAPI 只支持 JSON/YAML：${file.originalname}`));
-      return;
-    }
-    callback(null, true);
-  },
-});
-
-const hurlUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_HURL_BYTES, files: 1 },
-  fileFilter: (_request, file, callback) => {
-    if (!/\.hurl$/i.test(file.originalname)) {
-      callback(new Error(`业务场景只支持 .hurl 文件：${file.originalname}`));
       return;
     }
     callback(null, true);
@@ -155,8 +191,25 @@ const AiQualityApprovalSchema = z.object({
 
 const TestDesignRequestSchema = z.object({
   baselineId: z.string().trim().min(1),
+  approvedTestModelVersionId: z.string().trim().min(1),
+  approvedTestConditionVersionId: z.string().trim().min(1),
   regenerate: z.boolean().default(false),
 }).strict();
+
+const TestModelRequestSchema = z.object({
+  baselineId: z.string().trim().min(1),
+  requestedBy: z.string().trim().default(""),
+}).strict();
+
+const TestModelAmendmentSchema = z.object({
+  document: TestModelDocumentSchema,
+  editor: z.string().trim().min(1),
+  reason: z.string().trim().min(1),
+}).strict();
+
+const TestModelApprovalSchema = z.object({ approvedBy: z.string().trim().min(1) }).strict();
+const TestConditionCreateSchema = z.object({ baselineId: z.string().trim().min(1), approvedTestModelVersionId: z.string().trim().min(1) }).strict();
+const TestConditionApprovalSchema = z.object({ approvedBy: z.string().trim().min(1) }).strict();
 
 const KnowledgeSearchSchema = z.object({
   query: z.string().trim().min(2),
@@ -381,6 +434,177 @@ app.put("/api/projects/:projectId/environments/:id", async (request, response) =
   }
 });
 
+app.get("/api/projects/:id/knowledge-bindings", async (request, response) => {
+  try {
+    response.json(await projectConfigStore.listKnowledgeBindings(request.params.id));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "无法读取项目知识绑定" });
+  }
+});
+
+app.post("/api/projects/:id/knowledge-bindings", async (request, response) => {
+  const parsed = ProjectKnowledgeBindingInputSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.issues[0]?.message ?? "知识绑定参数不合法" }); return; }
+  try {
+    response.status(201).json(await projectConfigStore.bindKnowledge(request.params.id, parsed.data));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "知识绑定失败" });
+  }
+});
+
+app.delete("/api/projects/:projectId/knowledge-bindings/:bindingId", async (request, response) => {
+  try {
+    await projectConfigStore.unbindKnowledge(request.params.projectId, request.params.bindingId);
+    response.status(204).end();
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "解除知识绑定失败" });
+  }
+});
+
+app.get("/api/projects/:id/ai-contract-readiness", async (request, response) => {
+  try {
+    response.json(await projectContractReadinessService.inspect(request.params.id));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "无法检查项目 AI 契约" });
+  }
+});
+
+app.get("/api/quality-management/plans", async (request, response) => {
+  try {
+    response.json(await qualityManagementStore.listPlans(typeof request.query.projectId === "string" ? request.query.projectId : undefined));
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "无法读取质量计划" });
+  }
+});
+
+app.post("/api/quality-management/plans", async (request, response) => {
+  const parsed = QualityPlanInputSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.issues[0]?.message ?? "质量计划不合法" }); return; }
+  try {
+    await qualityManagementService.validatePlanAssets(parsed.data);
+    response.status(201).json(await qualityManagementStore.createPlan(parsed.data));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "无法创建质量计划" });
+  }
+});
+
+app.put("/api/quality-management/plans/:id", async (request, response) => {
+  const parsed = QualityPlanInputSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.issues[0]?.message ?? "质量计划不合法" }); return; }
+  try {
+    await qualityManagementService.validatePlanAssets(parsed.data);
+    response.json(await qualityManagementStore.updatePlan(request.params.id, parsed.data));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "无法更新质量计划" });
+  }
+});
+
+app.post("/api/quality-management/plans/:id/approve", async (request, response) => {
+  const parsed = QualityPlanApprovalSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.issues[0]?.message ?? "批准信息不合法" }); return; }
+  try {
+    const plan = await qualityManagementStore.getPlan(request.params.id);
+    await qualityManagementService.validatePlanAssets(plan);
+    response.json(await qualityManagementStore.approvePlan(plan.id, parsed.data.approvedBy, parsed.data.note));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "无法批准质量计划" });
+  }
+});
+
+app.get("/api/quality-management/plans/:id/snapshot", async (request, response) => {
+  try {
+    response.json(await qualityManagementService.snapshot(await qualityManagementStore.getPlan(request.params.id)));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "无法生成质量快照" });
+  }
+});
+
+app.get("/api/quality-management/plans/:id/report.md", async (request, response) => {
+  try {
+    const plan = await qualityManagementStore.getPlan(request.params.id);
+    const snapshot = await qualityManagementService.snapshot(plan);
+    const report = renderQualityReport(snapshot);
+    const archived = await qualityManagementStore.saveReport(plan, snapshot, report);
+    response.type("text/markdown; charset=utf-8");
+    response.setHeader("ETag", `"${archived.contentSha256}"`);
+    response.setHeader("X-TestMesh-Report-Id", archived.id);
+    response.setHeader("Content-Disposition", `attachment; filename=quality-report-${request.params.id}.md`);
+    response.send(report);
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "质量报告生成失败" });
+  }
+});
+
+app.get("/api/quality-management/plans/:id/reports", async (request, response) => {
+  try {
+    const reports = await qualityManagementStore.listReports(request.params.id);
+    response.json(reports.map((report) => ({
+      id: report.id,
+      planId: report.planId,
+      projectId: report.projectId,
+      contentSha256: report.contentSha256,
+      generatedAt: report.generatedAt,
+    })));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "质量报告记录读取失败" });
+  }
+});
+
+app.get("/api/quality-management/reports/:id/report.md", async (request, response) => {
+  try {
+    const report = await qualityManagementStore.getReport(request.params.id);
+    response.type("text/markdown; charset=utf-8");
+    response.setHeader("ETag", `"${report.contentSha256}"`);
+    response.setHeader("Content-Disposition", `attachment; filename=quality-report-${report.id}.md`);
+    response.send(report.markdown);
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "归档质量报告不存在" });
+  }
+});
+
+app.post("/api/quality-management/plans/:id/release-gates", async (request, response) => {
+  try {
+    response.status(201).json(await qualityManagementService.evaluate(request.params.id));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "发布准入评估失败" });
+  }
+});
+
+app.get("/api/quality-management/release-gates", async (request, response) => {
+  const projectId = typeof request.query.projectId === "string" ? request.query.projectId : "";
+  if (!projectId) { response.status(400).json({ error: "缺少 projectId" }); return; }
+  try { response.json(await qualityManagementStore.listGates(projectId)); }
+  catch (error) { response.status(500).json({ error: error instanceof Error ? error.message : "无法读取准入记录" }); }
+});
+
+app.post("/api/quality-management/release-gates/:id/risk-acceptance", async (request, response) => {
+  const parsed = RiskAcceptanceSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.issues[0]?.message ?? "风险接受信息不合法" }); return; }
+  try { response.json(await qualityManagementStore.acceptGateRisk(request.params.id, parsed.data)); }
+  catch (error) { response.status(409).json({ error: error instanceof Error ? error.message : "无法接受风险" }); }
+});
+
+app.get("/api/quality-management/improvements", async (request, response) => {
+  const projectId = typeof request.query.projectId === "string" ? request.query.projectId : "";
+  if (!projectId) { response.status(400).json({ error: "缺少 projectId" }); return; }
+  try { response.json(await qualityManagementStore.listImprovements(projectId)); }
+  catch (error) { response.status(500).json({ error: error instanceof Error ? error.message : "无法读取改进项" }); }
+});
+
+app.post("/api/quality-management/plans/:id/improvements", async (request, response) => {
+  const parsed = ImprovementActionInputSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.issues[0]?.message ?? "改进项不合法" }); return; }
+  try { response.status(201).json(await qualityManagementStore.createImprovement(await qualityManagementStore.getPlan(request.params.id), parsed.data)); }
+  catch (error) { response.status(409).json({ error: error instanceof Error ? error.message : "无法创建改进项" }); }
+});
+
+app.put("/api/quality-management/improvements/:id", async (request, response) => {
+  const parsed = ImprovementActionUpdateSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.issues[0]?.message ?? "改进项更新不合法" }); return; }
+  try { response.json(await qualityManagementStore.updateImprovement(request.params.id, parsed.data)); }
+  catch (error) { response.status(409).json({ error: error instanceof Error ? error.message : "无法更新改进项" }); }
+});
+
 app.get("/api/knowledge-documents", async (_request, response) => {
   try {
     response.json(await knowledgeService.list());
@@ -435,12 +659,6 @@ app.post(
   ]),
   async (request, response, next) => {
     try {
-      const message = typeof request.body.message === "string" ? request.body.message.trim() : "";
-      if (!message) {
-        response.status(400).json({ error: "请输入分析指令" });
-        return;
-      }
-
       const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) {
         response.status(503).json({ error: "服务端未配置 OPENAI_API_KEY，分析已停止" });
@@ -458,7 +676,7 @@ app.post(
       const uploadedSources = createSources(attachments, knowledge);
       const sources = await parseAnalysisSources(uploadedSources, documentParser);
       const analysis = await requirementAnalysisService.start({
-        message,
+        message: REQUIREMENT_ANALYSIS_TASK,
         sources,
         apiKey,
       });
@@ -509,6 +727,170 @@ app.post("/api/ai-quality/profiles/:id/approve", async (request, response) => {
     )));
   } catch (error) {
     response.status(409).json({ error: error instanceof Error ? error.message : "无法批准 AI 质量评测配置" });
+  }
+});
+
+app.get("/api/ai-quality/dataset-exports", async (_request, response) => {
+  try {
+    response.json(await aiDatasetExportService.list());
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "无法读取 Phoenix Dataset 映射" });
+  }
+});
+
+app.get("/api/ai-quality/dataset-exports/preview/:approvedVersionId", async (request, response) => {
+  try {
+    response.json(await aiDatasetExportService.preview(request.params.approvedVersionId));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "无法生成 Dataset 预览" });
+  }
+});
+
+app.post("/api/ai-quality/dataset-exports", async (request, response) => {
+  const parsed = AiDatasetExportInputSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: parsed.error.issues[0]?.message ?? "Dataset 导出参数不合法" });
+    return;
+  }
+  try {
+    response.status(201).json(await aiDatasetExportService.export(
+      parsed.data.approvedTestCaseVersionId,
+      parsed.data.exportedBy,
+    ));
+  } catch (error) {
+    response.status(502).json({ error: error instanceof Error ? error.message : "Phoenix Dataset 导出失败" });
+  }
+});
+
+app.get("/api/ai-quality/evaluation-sample-sets", async (request, response) => {
+  try {
+    const approvedVersionId = typeof request.query.approvedVersionId === "string" ? request.query.approvedVersionId : undefined;
+    response.json(await evaluationSampleService.list(approvedVersionId));
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "无法读取 AI 评测样本集" });
+  }
+});
+
+app.get("/api/ai-quality/dataset-specifications/:approvedVersionId", async (request, response) => {
+  try {
+    response.json(await evaluationSampleService.specification(request.params.approvedVersionId));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "无法读取 Dataset 设计" });
+  }
+});
+
+app.post("/api/ai-quality/evaluation-sample-sets", async (request, response) => {
+  const parsed = EvaluationSampleSetInputSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.issues[0]?.message }); return; }
+  try {
+    response.status(201).json(await evaluationSampleService.create(parsed.data));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "无法创建 AI 评测样本集" });
+  }
+});
+
+app.get("/api/ai-quality/evaluation-sample-sets/:id/readiness", async (request, response) => {
+  try {
+    response.json(await evaluationSampleService.readiness(request.params.id));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "无法检查样本集准备度" });
+  }
+});
+
+app.post("/api/ai-quality/evaluation-sample-sets/:id/samples", async (request, response) => {
+  const parsed = EvaluationSamplePayloadSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.issues[0]?.message }); return; }
+  try {
+    response.status(201).json(await evaluationSampleService.saveSample(request.params.id, parsed.data));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "无法保存 AI 评测样本" });
+  }
+});
+
+app.put("/api/ai-quality/evaluation-sample-sets/:id/samples/:sampleId", async (request, response) => {
+  const parsed = EvaluationSamplePayloadSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.issues[0]?.message }); return; }
+  try {
+    response.json(await evaluationSampleService.saveSample(request.params.id, parsed.data, request.params.sampleId));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "无法修正 AI 评测样本" });
+  }
+});
+
+app.post("/api/ai-quality/evaluation-sample-sets/:id/samples/:sampleId/review", async (request, response) => {
+  const parsed = EvaluationSampleReviewSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.issues[0]?.message }); return; }
+  try {
+    response.json(await evaluationSampleService.reviewSample(request.params.id, request.params.sampleId, parsed.data));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "无法评审 AI 评测样本" });
+  }
+});
+
+app.post("/api/ai-quality/evaluation-sample-sets/:id/freeze", async (request, response) => {
+  const parsed = EvaluationSampleFreezeSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.issues[0]?.message }); return; }
+  try {
+    response.json(await evaluationSampleService.freeze(request.params.id, parsed.data.frozenBy));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "样本集未达到冻结条件" });
+  }
+});
+
+app.post("/api/ai-quality/evaluation-sample-sets/:id/export", async (request, response) => {
+  const parsed = EvaluationDatasetExportSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.issues[0]?.message }); return; }
+  try {
+    response.status(201).json(await evaluationSampleService.export(request.params.id, parsed.data.exportedBy));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "评测数据集同步失败" });
+  }
+});
+
+app.get("/api/ai-quality/evaluator-calibrations", async (_request, response) => {
+  try {
+    response.json(await evaluatorCalibrationService.list());
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "无法读取 Evaluator 校准记录" });
+  }
+});
+
+app.post("/api/ai-quality/evaluator-calibrations", async (request, response) => {
+  const parsed = EvaluatorCalibrationInputSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.issues[0]?.message }); return; }
+  try {
+    response.status(201).json(await evaluatorCalibrationService.calibrate(parsed.data));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "Evaluator 校准失败" });
+  }
+});
+
+app.get("/api/ai-quality/experiments/readiness/:datasetExportId", async (request, response) => {
+  try {
+    response.json(await aiExperimentReadinessService.inspect(request.params.datasetExportId));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "无法检查 AI Experiment 执行准备度" });
+  }
+});
+
+app.get("/api/ai-quality/experiments", async (_request, response) => {
+  try {
+    response.json(await aiExperimentRunService.list());
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "无法读取 Phoenix Experiment 映射" });
+  }
+});
+
+app.post("/api/ai-quality/experiments", async (request, response) => {
+  const parsed = AiExperimentRunInputSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: parsed.error.issues[0]?.message ?? "Experiment 参数不合法" });
+    return;
+  }
+  try {
+    response.status(201).json(await aiExperimentRunService.run(parsed.data));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "Phoenix Experiment 启动失败" });
   }
 });
 
@@ -660,6 +1042,173 @@ app.get("/api/requirement-baselines/:id/prd", async (request, response) => {
   }
 });
 
+app.get("/api/test-models", async (request, response) => {
+  try {
+    response.json(await testModelStore.list(typeof request.query.baselineId === "string" ? request.query.baselineId : undefined));
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "无法读取测试模型" });
+  }
+});
+
+app.get("/api/test-models/approved-versions", async (request, response) => {
+  try {
+    response.json(await testModelStore.listApprovedVersions(typeof request.query.baselineId === "string" ? request.query.baselineId : undefined));
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "无法读取 Approved Test Model" });
+  }
+});
+
+app.post("/api/test-models", async (request, response) => {
+  try {
+    const parsed = TestModelRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: "请选择已建立的需求基线" });
+      return;
+    }
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      response.status(503).json({ error: "服务端未配置 OPENAI_API_KEY，测试建模已停止" });
+      return;
+    }
+    response.status(201).json(await testModelService.generate({ ...parsed.data, apiKey }));
+  } catch (error) {
+    response.status(422).json({ error: error instanceof Error ? error.message : "测试建模失败" });
+  }
+});
+
+app.post("/api/test-models/simulation-reference", async (request, response) => {
+  try {
+    const parsed = TestModelRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: "请选择智能导购模拟需求基线" });
+      return;
+    }
+    response.status(201).json(await testModelService.createSimulationReference(parsed.data));
+  } catch (error) {
+    response.status(422).json({ error: error instanceof Error ? error.message : "无法加载模拟参考模型" });
+  }
+});
+
+app.get("/api/test-models/simulation-reference-readiness", async (request, response) => {
+  const baselineId = typeof request.query.baselineId === "string" ? request.query.baselineId.trim() : "";
+  if (!baselineId) { response.status(400).json({ error: "请选择需求基线" }); return; }
+  try {
+    response.json(await testModelService.inspectSimulationReference(baselineId));
+  } catch (error) {
+    response.status(422).json({ error: error instanceof Error ? error.message : "无法检查模拟参考模型就绪状态" });
+  }
+});
+
+app.get("/api/test-models/:id", async (request, response) => {
+  try {
+    response.json(await testModelStore.get(request.params.id));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "测试模型不存在" });
+  }
+});
+
+app.put("/api/test-models/:id", async (request, response) => {
+  try {
+    const parsed = TestModelAmendmentSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: parsed.error.issues.map((item) => item.message).join("；") });
+      return;
+    }
+    response.json(await testModelStore.amend(request.params.id, parsed.data));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "测试模型修正失败" });
+  }
+});
+
+app.post("/api/test-models/:id/approve", async (request, response) => {
+  try {
+    const parsed = TestModelApprovalSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: "请填写测试模型批准人" });
+      return;
+    }
+    response.status(201).json(await testModelStore.approve(request.params.id, parsed.data.approvedBy));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "测试模型批准失败" });
+  }
+});
+
+app.get("/api/test-design/prompt-registry", (_request, response) => {
+  response.json({ schemaVersions: ASSET_SCHEMA_VERSIONS, promptVersions: PROMPT_VERSIONS, stages: TEST_DESIGN_PROMPT_REGISTRY });
+});
+
+app.get("/api/test-conditions", async (request, response) => {
+  try {
+    response.json(await testConditionStore.list(typeof request.query.baselineId === "string" ? request.query.baselineId : undefined));
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "无法读取测试条件" });
+  }
+});
+
+app.get("/api/test-conditions/approved-versions", async (request, response) => {
+  try {
+    response.json(await testConditionStore.listApprovedVersions(typeof request.query.baselineId === "string" ? request.query.baselineId : undefined));
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "无法读取 Approved TestCondition" });
+  }
+});
+
+app.post("/api/test-conditions", async (request, response) => {
+  try {
+    const parsed = TestConditionCreateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: "请选择需求基线和 Approved Test Model" });
+      return;
+    }
+    const approvedModel = await testModelStore.getApprovedVersion(parsed.data.approvedTestModelVersionId);
+    if (approvedModel.record.baselineId !== parsed.data.baselineId) throw new Error("Approved Test Model 与需求基线不一致");
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      response.status(503).json({ error: "服务端未配置 OPENAI_API_KEY，测试条件生成已停止" });
+      return;
+    }
+    const baselineResult = await requirementAnalysisStore.getBaseline(parsed.data.baselineId);
+    const baseline = BaselineSnapshotSchema.parse(baselineResult.snapshot);
+    const generated = await runTestConditionAgent({
+      baselineId: parsed.data.baselineId,
+      baseline,
+      approvedModel: approvedModel.snapshot,
+      model: createOpenAITestDesignModel(apiKey),
+    });
+    const record = await testConditionStore.create({
+      ...parsed.data,
+      document: TestConditionSetDocumentSchema.parse({
+        schemaVersion: ASSET_SCHEMA_VERSIONS.testCondition,
+        baselineId: parsed.data.baselineId,
+        approvedTestModelVersionId: parsed.data.approvedTestModelVersionId,
+        objective: approvedModel.snapshot.test_analysis.objective,
+        conditions: generated.conditions,
+        generation: {
+          mode: "prompt",
+          promptVersion: PROMPT_VERSIONS.testCondition,
+          note: "由独立 TestCondition Prompt 从 Approved TestModel 生成，并通过结构、追溯与覆盖校验。",
+        },
+      }),
+    });
+    response.status(201).json(record);
+  } catch (error) {
+    response.status(422).json({ error: error instanceof Error ? error.message : "测试条件建立失败" });
+  }
+});
+
+app.post("/api/test-conditions/:id/approve", async (request, response) => {
+  try {
+    const parsed = TestConditionApprovalSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).json({ error: "请填写测试条件批准人" });
+      return;
+    }
+    response.status(201).json(await testConditionStore.approve(request.params.id, parsed.data.approvedBy));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "测试条件批准失败" });
+  }
+});
+
 app.get("/api/test-designs", async (_request, response) => {
   try {
     const designs = await testDesignStore.listDesigns();
@@ -694,7 +1243,7 @@ app.post("/api/test-designs", async (request, response) => {
   try {
     const parsed = TestDesignRequestSchema.safeParse(request.body);
     if (!parsed.success) {
-      response.status(400).json({ error: "请选择已建立的需求基线" });
+      response.status(400).json({ error: "请选择需求基线和 Approved Test Model" });
       return;
     }
     const apiKey = process.env.OPENAI_API_KEY;
@@ -702,7 +1251,7 @@ app.post("/api/test-designs", async (request, response) => {
       response.status(503).json({ error: "服务端未配置 OPENAI_API_KEY，测试设计已停止" });
       return;
     }
-    const result = await testDesignService.generate({ baselineId: parsed.data.baselineId, regenerate: parsed.data.regenerate, apiKey });
+    const result = await testDesignService.generate({ baselineId: parsed.data.baselineId, approvedTestModelVersionId: parsed.data.approvedTestModelVersionId, approvedTestConditionVersionId: parsed.data.approvedTestConditionVersionId, regenerate: parsed.data.regenerate, apiKey });
     response.status(result.reused ? 200 : 201).json(result);
   } catch (error) {
     response.status(422).json({ error: error instanceof Error ? error.message : "测试设计生成失败" });
@@ -718,7 +1267,7 @@ app.get("/api/test-designs/:id", async (request, response) => {
       testDesignStore.getApprovedVersion(design.id),
       requirementAnalysisStore.getBaseline(design.baselineId),
     ]);
-    response.json({ ...design, reviews, amendments, approvedVersion: approved, baselineSources: BaselineSnapshotSchema.parse(baseline.snapshot).sourceRefs });
+    response.json({ ...design, reviews, amendments, approvedVersion: approved?.record ?? null, baselineSources: BaselineSnapshotSchema.parse(baseline.snapshot).sourceRefs });
   } catch (error) {
     response.status(404).json({ error: error instanceof Error ? error.message : "测试设计不存在" });
   }
@@ -809,7 +1358,7 @@ app.post("/api/api-automation/openapi", openApiUpload.single("spec"), async (req
 
 app.put("/api/api-automation/operations/:id/links", async (request, response) => {
   try {
-    const approvedTestCaseIds = Array.isArray(request.body.approvedTestCaseIds)
+    const approvedTestCaseIds: string[] = Array.isArray(request.body.approvedTestCaseIds)
       ? request.body.approvedTestCaseIds.filter((item: unknown): item is string => typeof item === "string")
       : [];
     const approvedVersionId = store.getApprovedVersionIdForOperation(request.params.id);
@@ -829,42 +1378,47 @@ app.get("/api/api-automation/scenario-suites", (_request, response) => {
   response.json(store.listApiScenarioSuites());
 });
 
-app.post("/api/api-automation/scenario-suites", hurlUpload.single("scenario"), async (request, response) => {
+app.post("/api/api-automation/scenario-suites/validate", (request, response) => {
   try {
-    if (!request.file) {
-      response.status(400).json({ error: "请选择 .hurl 业务场景文件" });
-      return;
-    }
+    const yamlContent = typeof request.body.yamlContent === "string" ? request.body.yamlContent : "";
+    const compiled = compileApiYamlScenario(yamlContent);
+    response.json({ name: compiled.name, stepCount: compiled.stepCount, hurlContent: compiled.hurlContent });
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : "YAML 场景校验失败" });
+  }
+});
+
+app.post("/api/api-automation/scenario-suites", async (request, response) => {
+  try {
     const projectId = typeof request.body.projectId === "string" ? request.body.projectId.trim() : "";
     const environmentId = typeof request.body.environmentId === "string" ? request.body.environmentId.trim() : "";
     const approvedVersionId = typeof request.body.approvedVersionId === "string" ? request.body.approvedVersionId.trim() : "";
     if (!projectId || !environmentId) throw new Error("请选择项目和测试环境");
     if (!approvedVersionId) throw new Error("请选择 Approved TestCase 版本");
-    let approvedTestCaseIds: string[] = [];
-    try {
-      const parsed = JSON.parse(typeof request.body.approvedTestCaseIds === "string" ? request.body.approvedTestCaseIds : "[]") as unknown;
-      if (Array.isArray(parsed)) approvedTestCaseIds = parsed.filter((item): item is string => typeof item === "string");
-    } catch {
-      throw new Error("Approved TestCase 映射格式无效");
-    }
+    const approvedTestCaseIds: string[] = Array.isArray(request.body.approvedTestCaseIds)
+      ? request.body.approvedTestCaseIds.filter((item: unknown): item is string => typeof item === "string")
+      : [];
     if (approvedTestCaseIds.length === 0) throw new Error("至少关联一条 Approved TestCase");
     await projectConfigStore.getEnvironment(projectId, environmentId);
     const approved = await testDesignStore.getApprovedVersionById(approvedVersionId);
     const allowed = new Set(approved.snapshot.test_cases.map((item) => item.id));
     const invalid = approvedTestCaseIds.filter((id) => !allowed.has(id));
     if (invalid.length > 0) throw new Error(`以下 TestCase 不属于所选 Approved 版本：${invalid.join("、")}`);
-    const content = request.file.buffer.toString("utf8");
-    validateHurlScenario(content);
+    const yamlContent = typeof request.body.yamlContent === "string" ? request.body.yamlContent : "";
+    const compiled = compileApiYamlScenario(yamlContent);
+    const filenameBase = compiled.name.replace(/[^\p{L}\p{N}_-]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "api-scenario";
     response.status(201).json(store.createApiScenarioSuite({
       projectId,
       environmentId,
       approvedVersionId,
-      filename: normalizeUploadFilename(request.file.originalname),
-      content,
+      filename: `${filenameBase}.hurl`,
+      content: compiled.hurlContent,
+      sourceFormat: API_YAML_FORMAT,
+      sourceContent: compiled.yamlContent,
       approvedTestCaseIds,
     }));
   } catch (error) {
-    response.status(400).json({ error: error instanceof Error ? error.message : "Hurl 场景导入失败" });
+    response.status(400).json({ error: error instanceof Error ? error.message : "YAML 场景保存失败" });
   }
 });
 
@@ -896,7 +1450,7 @@ app.post("/api/api-automation/scenario-runs", async (request, response) => {
           password: typeof rawAuth.password === "string" ? rawAuth.password : undefined,
         }
       : { type: "none" };
-    const run = await runHurlScenario({ suiteId, targetBaseUrl, headers, auth }, store);
+    const run = await runHurlScenario({ suiteId, targetBaseUrl, headers, variables: environment.variables, auth }, store);
     response.status(run.status === "error" ? 502 : 200).json(run);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Hurl 运行失败";
@@ -1003,9 +1557,9 @@ app.get("/api/ui-automation/runs/:id/artifacts/:artifactId", (request, response)
   }
 });
 
-app.get("/api/failure-triage/runs", (_request, response) => {
+app.get("/api/failure-triage/runs", async (_request, response) => {
   try {
-    response.json(listFailureRuns(store));
+    response.json(await failureTriageService.listFailureRuns());
   } catch (error) {
     response.status(500).json({ error: error instanceof Error ? error.message : "无法读取失败 TestRun" });
   }

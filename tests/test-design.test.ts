@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { normalizeChineseGherkin, validateChineseGherkin } from "../server/test-design/gherkin.js";
-import { BaselineSnapshotSchema, createModelTestDesignSchema, createTestCaseBatchSchema, TestDesignSchema } from "../server/test-design/schema.js";
+import { normalizeEvidenceSourceRefs } from "../server/test-design/test-model-agent.js";
+import { BaselineSnapshotSchema, createModelTestDesignSchema, createTestCaseBatchSchema, ModelTestDesignPlanSchema, PARAMETER_EXTRACTION_ASPECTS, TestDesignSchema, TestModelDocumentSchema } from "../server/test-design/schema.js";
 import { selectTestDesignSkills } from "../server/test-design/skill-selection.js";
-import { validateTestDesign } from "../server/test-design/validation.js";
+import { buildSmartShoppingSimulationReference } from "../server/test-design/simulation-reference.js";
+import { validateTestDesign, validateTestModel } from "../server/test-design/validation.js";
 
 const baseline = BaselineSnapshotSchema.parse({
   accepted: [{
@@ -22,6 +24,38 @@ const baseline = BaselineSnapshotSchema.parse({
     locator_type: "paragraph", locator: "段落 1", excerpt: "订单超过 30 分钟未支付应关闭",
     description: "订单超时规则",
   }],
+});
+
+describe("test model evidence normalization", () => {
+  it("maps baseline trace IDs to their original source evidence IDs", () => {
+    expect(normalizeEvidenceSourceRefs(["REQ-001", "STATE-001", "SRC-001"], baseline)).toEqual(["SRC-001"]);
+  });
+
+  it("preserves unknown IDs so deterministic validation still rejects them", () => {
+    expect(normalizeEvidenceSourceRefs(["REQ-404"], baseline)).toEqual(["REQ-404"]);
+  });
+});
+
+describe("smart-shopping simulation reference gate", () => {
+  it("rejects the obsolete frozen baseline instead of inventing the later V1.0 rules", () => {
+    const obsoleteBaseline = BaselineSnapshotSchema.parse({
+      accepted: [],
+      reviews: [],
+      sourceRefs: [{
+        id: "SRC-1", source_file_id: "ATT-1", source_file_name: "smart-shopping-contract.md",
+        locator_type: "paragraph", locator: "段落 1", excerpt: "状态：simulated。",
+        description: "模拟资料",
+      }, {
+        id: "SRC-3", source_file_id: "ATT-1", source_file_name: "smart-shopping-contract.md",
+        locator_type: "paragraph", locator: "段落 3",
+        excerpt: "没有给出默认数量、价格上限、单位换算、品牌别名或冲突处理规则；测试中不得自行补定。",
+        description: "尚未定义的规则",
+      }],
+    });
+
+    expect(() => buildSmartShoppingSimulationReference("BASELINE-OLD", obsoleteBaseline))
+      .toThrow("当前冻结基线仍是旧版模拟契约");
+  });
 });
 
 function candidate() {
@@ -191,6 +225,87 @@ describe("TD01 mature-tool test design gate", () => {
     expect(decisions.find((item) => item.skill_id === "failure-cross-system")?.applicable).toBe(false);
   });
 
+  it("requires an explicit oracle and Phoenix evidence for Testing for AI cases", () => {
+    const input = candidate();
+    input.test_conditions![0] = {
+      ...input.test_conditions![0],
+      category: "intent_recognition",
+      technique: "ai_evaluation",
+      ai_dimension: "intent_recognition",
+    };
+    input.test_cases[0] = {
+      ...input.test_cases[0],
+      scenario_type: "ai_behavior",
+      technique: "ai_evaluation",
+    };
+    expect(() => validateTestDesign(input, baseline)).toThrow("ai_evaluation");
+
+    input.test_cases[0].ai_evaluation = {
+      dimension: "intent_recognition",
+      oracle_type: "reference_answer",
+      expected_behavior: "识别订单超时关闭查询意图，不误判为取消订单",
+      evaluator: "Phoenix 分类准确率 evaluator",
+      threshold: ">= 0.95",
+      dataset_requirements: ["包含标准表达、口语改写和相近干扰意图"],
+      evidence_requirements: ["保存 Dataset 版本、Experiment、逐样本结果和 Trace"],
+    };
+    expect(() => validateTestDesign(input, baseline)).toThrow("Phoenix");
+    input.tool_applications.push({ tool: "phoenix_evals", status: "applied", reason: "版本化数据集、实验与评测证据" });
+    expect(() => validateTestDesign(input, baseline)).not.toThrow();
+  });
+
+  it("rejects an AI evaluator attached to an ordinary business case", () => {
+    const input = candidate();
+    input.test_cases[0].ai_evaluation = {
+      dimension: "groundedness_hallucination",
+      oracle_type: "llm_judge",
+      expected_behavior: "回答必须有证据支撑",
+      evaluator: "Phoenix groundedness evaluator",
+      threshold: ">= 0.9",
+      dataset_requirements: ["包含可回答与不可回答样本"],
+      evidence_requirements: ["保存引用和评测解释"],
+    };
+    expect(() => validateTestDesign(input, baseline)).toThrow("普通业务测试不能附带 AI 评测配置");
+  });
+
+  it("requires complete evidence-backed Slot Filling coverage and a field-level oracle", () => {
+    const input = candidate();
+    input.test_conditions![0] = {
+      ...input.test_conditions![0], category: "parameter_extraction", technique: "ai_evaluation", ai_dimension: "parameter_extraction",
+    };
+    input.test_cases[0] = {
+      ...input.test_cases[0], scenario_type: "ai_behavior", technique: "ai_evaluation",
+      ai_evaluation: {
+        dimension: "parameter_extraction", oracle_type: "code_evaluator",
+        expected_behavior: "人数参数被归一化为整数 4", evaluator: "Phoenix Slot Value evaluator", threshold: "必须通过",
+        dataset_requirements: ["固定 Schema、参考时间和人工确认 Ground Truth"], evidence_requirements: ["Dataset Version、Experiment、字段级结果和 Trace"],
+      },
+    };
+    input.tool_applications.push({ tool: "phoenix_evals", status: "applied", reason: "由 Phoenix 保存 Dataset、Experiment 和字段级评测" });
+    input.parameter_extraction_assessment = {
+      status: "applicable", implementation_pattern: "function_calling", reason: "基线要求自然语言人数映射到工具参数",
+      source_refs: ["SRC-001"], schema_version: "slot-schema-v1",
+      aspects: PARAMETER_EXTRACTION_ASPECTS.slice(0, -1).map((aspect, index) => ({
+        aspect, status: index === 0 ? "planned" as const : "not_applicable" as const,
+        condition_refs: index === 0 ? ["TCND-001"] : [], reason: index === 0 ? "验证人数槽位名称" : "当前基线没有该现象或契约",
+      })),
+    };
+    expect(() => validateTestDesign(input, baseline)).toThrow("参数提取测试维度不完整");
+
+    input.parameter_extraction_assessment.aspects.push({
+      aspect: "prompt_injection_resistance", status: "not_applicable", condition_refs: [], reason: "当前基线没有不可信外部输入",
+    });
+    expect(() => validateTestDesign(input, baseline)).toThrow("字段级判定协议");
+    input.test_cases[0].ai_evaluation!.parameter_extraction = {
+      layer: "semantic_extraction", aspect: "parameter_identification", slot_name: "party_size",
+      expected_presence: true, expected_value_json: "4", expected_type: "integer", match_type: "exact",
+      normalization_rule: "中文数字转换为整数", tolerance: "0", expected_action: "extract", state_target: "slot_delta",
+      reference_datetime: "2026-10-18T14:00:00+08:00", timezone: "Asia/Shanghai", locale: "zh-CN",
+      schema_version: "slot-schema-v1", risk_level: "P1",
+    };
+    expect(() => validateTestDesign(input, baseline)).not.toThrow();
+  });
+
   it("makes every baseline ID a required Structured Output coverage key", () => {
     const input = candidate();
     delete input.coverage["STATE-001"];
@@ -206,8 +321,133 @@ describe("TD01 mature-tool test design gate", () => {
     ]);
     expect(batch.safeParse({ cases: { "TCND-001": input.test_cases[0] } }).success).toBe(false);
     expect(batch.safeParse({ cases: {
-      "TCND-001": input.test_cases[0],
-      "TCND-002": input.test_cases[2],
+      "TCND-001": { ...input.test_cases[0], ai_evaluation: null },
+      "TCND-002": { ...input.test_cases[2], ai_evaluation: null },
     } }).success).toBe(true);
+  });
+
+  it("requires explicit nulls for non-AI fields in OpenAI Structured Outputs", () => {
+    const input = candidate();
+    const plan = {
+      objective: input.objective,
+      risks: input.risks,
+      test_points: input.test_points,
+      test_conditions: input.test_conditions,
+      tool_applications: input.tool_applications,
+      coverage_exclusions: input.coverage_exclusions,
+    };
+    expect(ModelTestDesignPlanSchema.safeParse(plan).success).toBe(false);
+    expect(ModelTestDesignPlanSchema.safeParse({
+      ...plan,
+      parameter_extraction_assessment: null,
+      test_conditions: plan.test_conditions?.map((condition) => ({ ...condition, ai_dimension: null })),
+    }).success).toBe(true);
+
+    const batch = createTestCaseBatchSchema([{ conditionId: "TCND-001", caseId: "TC-001", traceRef: "REQ-001" }]);
+    expect(batch.safeParse({ cases: { "TCND-001": input.test_cases[0] } }).success).toBe(false);
+    expect(batch.safeParse({ cases: { "TCND-001": { ...input.test_cases[0], ai_evaluation: null } } }).success).toBe(true);
+  });
+
+  it("locks each AI evaluator dimension to its planned TestCondition", () => {
+    const input = candidate();
+    const batch = createTestCaseBatchSchema([{
+      conditionId: "TCND-001",
+      caseId: "TC-001",
+      traceRef: "REQ-001",
+      aiDimension: "intent_recognition",
+    }]);
+    const evaluation = {
+      dimension: "intent_recognition" as const,
+      evaluation_subjects: ["target_application" as const],
+      evaluation_layers: ["agent_decision" as const, "final_response" as const],
+      oracle_type: "reference_answer" as const,
+      expected_behavior: "识别为订单查询意图",
+      evaluator: "Phoenix 分类准确率 evaluator",
+      threshold: ">= 0.95",
+      dataset_requirements: ["标准表达、口语改写与干扰意图"],
+      evidence_requirements: ["Dataset 版本、Experiment 和逐样本结果"],
+      parameter_extraction: null,
+    };
+    expect(batch.safeParse({ cases: { "TCND-001": {
+      ...input.test_cases[0],
+      scenario_type: "ai_behavior",
+      technique: "ai_evaluation",
+      ai_evaluation: evaluation,
+    } } }).success).toBe(true);
+    expect(batch.safeParse({ cases: { "TCND-001": {
+      ...input.test_cases[0],
+      ai_evaluation: { ...evaluation, dimension: "response_correctness" },
+    } } }).success).toBe(false);
+    expect(batch.safeParse({ cases: { "TCND-001": {
+      ...input.test_cases[0],
+      scenario_type: "normal",
+      technique: "scenario",
+      ai_evaluation: evaluation,
+    } } }).success).toBe(false);
+
+    const businessBatch = createTestCaseBatchSchema([{
+      conditionId: "TCND-001", caseId: "TC-001", traceRef: "REQ-001",
+    }]);
+    expect(businessBatch.safeParse({ cases: { "TCND-001": {
+      ...input.test_cases[0],
+      scenario_type: "ai_behavior",
+      technique: "ai_evaluation",
+      ai_evaluation: null,
+    } } }).success).toBe(false);
+  });
+
+  it("requires an approved-ready Test Model before TestCase generation", () => {
+    const design = candidate();
+    const model = TestModelDocumentSchema.parse({
+      objective: "先建立订单测试模型",
+      quality_model: {
+        objectives: [design.objective],
+        risk_refs: design.risks.map((item) => item.id),
+        coverage_targets: ["REQ-001", "STATE-001"],
+      },
+      business_model: {
+        actors: [], business_rules: [], flows: [], constraints: [], exceptions: [],
+        states: [{ id: "STATE-001", description: "订单从待支付进入已关闭", source_refs: ["SRC-001"] }],
+      },
+      ai_model: { applicable: false, evaluation_subjects: [], evaluation_layers: [], dimensions: [] },
+      behavior_models: {
+        semantic_parameter: {
+          model_id: "M-01", name: "订单语义与参数模型",
+          intents: [{ id: "order_query", description: "查询订单", in_scope: true, required_slots: [], source_refs: ["SRC-001"] }],
+          slots: [], cross_parameter_constraints: [],
+        },
+        business_decision: {
+          model_id: "M-02", name: "订单业务决策模型",
+          rules: [{ id: "D-001", conditions: ["订单处于待支付"], actions: ["允许关闭"], priority: 1, source_refs: ["SRC-001"] }],
+        },
+        dialogue_state: {
+          model_id: "M-03", name: "订单状态模型",
+          states: [
+            { id: "PENDING", description: "待支付", terminal: false, source_refs: ["SRC-001"] },
+            { id: "CLOSED", description: "已关闭", terminal: true, source_refs: ["SRC-001"] },
+          ],
+          transitions: [{ id: "T-001", from: "PENDING", event: "关闭订单", guard: "订单未支付", actions: ["关闭订单"], to: "CLOSED", search_allowed: false, source_refs: ["SRC-001"] }],
+          context_rules: [],
+        },
+        agent_interaction: {
+          model_id: "M-04", name: "订单 Agent 交互模型", tools: [],
+          interaction_rules: [{ id: "I-001", trigger: "用户查询订单", preconditions: [], tool: "", argument_mapping: [], success_outcome: "返回订单状态", empty_outcome: "返回订单不存在", failure_outcome: "返回受控错误", evidence_requirements: ["Agent 决策证据"], source_refs: ["SRC-001"] }],
+        },
+      },
+      test_analysis: {
+        objective: design.objective,
+        risks: design.risks,
+        test_points: design.test_points,
+        test_conditions: design.test_conditions,
+        tool_applications: design.tool_applications,
+        coverage_exclusions: design.coverage_exclusions,
+      },
+      knowledge_evidence: [],
+    });
+    expect(() => validateTestModel(model, baseline)).not.toThrow();
+    expect(() => validateTestModel({
+      ...model,
+      quality_model: { ...model.quality_model, coverage_targets: ["REQ-001"] },
+    }, baseline)).toThrow("覆盖目标不完整");
   });
 });

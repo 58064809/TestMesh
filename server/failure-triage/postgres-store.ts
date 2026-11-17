@@ -25,7 +25,7 @@ export class FailureTriagePostgresStore {
         task_id TEXT NOT NULL UNIQUE,
         project_id TEXT NOT NULL REFERENCES ${this.schema}.projects(id) ON DELETE RESTRICT,
         environment_id TEXT NOT NULL REFERENCES ${this.schema}.project_environments(id) ON DELETE RESTRICT,
-        run_kind TEXT NOT NULL CHECK (run_kind IN ('api_schema', 'api_scenario', 'ui')),
+        run_kind TEXT NOT NULL CHECK (run_kind IN ('api_schema', 'api_scenario', 'fastapi_yaml', 'ui')),
         run_id TEXT NOT NULL,
         input_json JSONB NOT NULL,
         evidence_json JSONB NOT NULL,
@@ -36,6 +36,11 @@ export class FailureTriagePostgresStore {
         trace_id TEXT NOT NULL DEFAULT '',
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `);
+    await this.pool.query(`
+      ALTER TABLE ${this.schema}.failure_triages DROP CONSTRAINT IF EXISTS failure_triages_run_kind_check;
+      ALTER TABLE ${this.schema}.failure_triages ADD CONSTRAINT failure_triages_run_kind_check
+        CHECK (run_kind IN ('api_schema', 'api_scenario', 'fastapi_yaml', 'ui'));
     `);
     await this.pool.query(`
       CREATE INDEX IF NOT EXISTS failure_triages_run
@@ -76,6 +81,29 @@ export class FailureTriagePostgresStore {
     return this.parse(result.rows[0]);
   }
 
+  async listApiYamlFailureRuns(): Promise<ApiYamlFailureRun[]> {
+    const result = await this.pool.query(`
+      SELECT r.*, s.name AS scenario_name
+      FROM ${this.schema}.api_yaml_runs r
+      JOIN ${this.schema}.api_yaml_scenarios s ON s.id = r.scenario_id
+      WHERE r.status IN ('failed', 'error')
+      ORDER BY r.started_at DESC
+      LIMIT 100
+    `);
+    return result.rows.map((row) => this.apiYamlRun(row));
+  }
+
+  async getApiYamlRun(id: string): Promise<ApiYamlFailureRun> {
+    const result = await this.pool.query(`
+      SELECT r.*, s.name AS scenario_name
+      FROM ${this.schema}.api_yaml_runs r
+      JOIN ${this.schema}.api_yaml_scenarios s ON s.id = r.scenario_id
+      WHERE r.id = $1
+    `, [id]);
+    if (result.rowCount !== 1) throw new Error(`FastAPI YAML TestRun ${id} 不存在`);
+    return this.apiYamlRun(result.rows[0]);
+  }
+
   private parse(row: Record<string, unknown>): FailureTriageRecord {
     return {
       id: String(row.id),
@@ -90,4 +118,25 @@ export class FailureTriagePostgresStore {
       createdAt: new Date(String(row.created_at)).toISOString(),
     };
   }
+
+  private apiYamlRun(row: Record<string, unknown>): ApiYamlFailureRun {
+    return {
+      id: String(row.id), scenarioId: String(row.scenario_id), scenarioName: String(row.scenario_name),
+      projectId: String(row.project_id), environmentId: String(row.environment_id),
+      approvedVersionId: String(row.approved_version_id),
+      approvedTestCaseIds: Array.isArray(row.approved_test_case_ids) ? row.approved_test_case_ids.map(String) : [],
+      status: row.status as ApiYamlFailureRun["status"], passed: Number(row.passed), failed: Number(row.failed),
+      variables: row.variables_json as Record<string, unknown>,
+      items: Array.isArray(row.items_json) ? row.items_json as Record<string, unknown>[] : [],
+      dataCases: Array.isArray(row.data_cases_json) ? row.data_cases_json as Record<string, unknown>[] : [],
+      startedAt: new Date(String(row.started_at)).toISOString(), finishedAt: new Date(String(row.finished_at)).toISOString(),
+    };
+  }
+}
+
+export interface ApiYamlFailureRun {
+  id: string; scenarioId: string; scenarioName: string; projectId: string; environmentId: string;
+  approvedVersionId: string; approvedTestCaseIds: string[]; status: "failed" | "error";
+  passed: number; failed: number; variables: Record<string, unknown>; items: Record<string, unknown>[];
+  dataCases: Record<string, unknown>[]; startedAt: string; finishedAt: string;
 }
